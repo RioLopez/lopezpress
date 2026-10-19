@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # lopezpress — web image: Preact static dist + Nginx.
 #
 # Nginx serves the built SPA and reverse-proxies /api, /health and /uploads to
