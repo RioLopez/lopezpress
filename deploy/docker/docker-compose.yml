@@ -14,7 +14,7 @@
 services:
   api:
     build:
-      context: ..
+      context: ../..
       dockerfile: deploy/docker/Dockerfile.api
     image: lopezpress/api:latest
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
 
   web:
     build:
-      context: ..
+      context: ../..
       dockerfile: deploy/docker/Dockerfile.web
     image: lopezpress/web:latest
     restart: unless-stopped
