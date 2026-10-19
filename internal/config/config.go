@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // Config holds runtime configuration loaded from .env (or defaults).

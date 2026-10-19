@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# echo-content-api — API image: pure-Go static binary on distroless.
+# lopezpress — API image: pure-Go static binary on distroless.
 #
 # The backend has zero CGO (glebarez/sqlite), so we can emit a fully static,
 # stripped binary that runs on a ~2 MB distroless base with no libc. Build
 # from the REPO ROOT so the root .dockerignore keeps the context lean:
 #
-#   docker build -f deploy/docker/Dockerfile.api -t echo-content-api/api ..
+#   docker build -f deploy/docker/Dockerfile.api -t lopezpress/api ..
 #
 # Multi-arch: buildx exports TARGETOS/TARGETARCH; override with --platform.
 
@@ -25,14 +25,14 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" \
-    -o /out/echo-content-api ./cmd/server \
+    -o /out/lopezpress ./cmd/server \
     && mkdir -p /data && chown -R 65532:65532 /data
 
 # --- runtime: distroless static, non-root ---
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
-COPY --from=build --chown=65532:65532 /out/echo-content-api /app/echo-content-api
+COPY --from=build --chown=65532:65532 /out/lopezpress /app/lopezpress
 # Seed /data owned by the nonroot uid (65532) so a fresh named volume is writable.
 COPY --from=build --chown=65532:65532 /data /data
 
@@ -51,4 +51,4 @@ EXPOSE 8080
 VOLUME ["/data"]
 
 USER nonroot
-ENTRYPOINT ["/app/echo-content-api"]
+ENTRYPOINT ["/app/lopezpress"]

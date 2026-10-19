@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // --- site config (spec 05) ---

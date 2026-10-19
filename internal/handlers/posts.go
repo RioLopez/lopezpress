@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"echo-content-api/internal/services"
+	"lopezpress/internal/services"
 )
 
 // GetPostPublic returns a published post without requiring authentication.

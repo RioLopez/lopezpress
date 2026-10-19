@@ -8,10 +8,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/middleware"
-	"echo-content-api/internal/models"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/config"
+	"lopezpress/internal/middleware"
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // UserContextKey is the context key under which the WithAuth handler

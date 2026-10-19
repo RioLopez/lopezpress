@@ -1,4 +1,4 @@
-# echo-content-api — container deployment (Docker Compose)
+# lopezpress — container deployment (Docker Compose)
 #
 # Two services mirroring the proven systemd layout:
 #   api — Go static binary on distroless; SQLite + local uploads under /data
@@ -16,7 +16,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.api
-    image: echo-content-api/api:latest
+    image: lopezpress/api:latest
     restart: unless-stopped
     env_file:
       - api.env
@@ -36,7 +36,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.web
-    image: echo-content-api/web:latest
+    image: lopezpress/web:latest
     restart: unless-stopped
     depends_on:
       - api

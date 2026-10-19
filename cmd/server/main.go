@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/handlers"
-	"echo-content-api/internal/middleware"
-	"echo-content-api/internal/router"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/config"
+	"lopezpress/internal/handlers"
+	"lopezpress/internal/middleware"
+	"lopezpress/internal/router"
+	"lopezpress/internal/services"
 )
 
 // main entry point.
@@ -84,7 +84,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("echo-content-api listening on :%s", cfg.Port)
+		log.Printf("lopezpress listening on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server exited: %v", err)
 		}

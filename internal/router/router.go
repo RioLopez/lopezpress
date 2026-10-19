@@ -6,9 +6,9 @@ package router
 import (
 	"net/http"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/handlers"
-	"echo-content-api/internal/middleware"
+	"lopezpress/internal/config"
+	"lopezpress/internal/handlers"
+	"lopezpress/internal/middleware"
 )
 
 // New builds the composed http.Handler:
@@ -47,7 +47,7 @@ func New(cfg *config.Config, limiter *middleware.Limiter, loginLimiter *middlewa
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write([]byte(`{"service":"echo-content-api","endpoints":["/health","/api/auth/register","/api/auth/login","/api/posts","/api/posts/{id}","/feed","/sitemap.xml"]}`))
+		_, _ = w.Write([]byte(`{"service":"lopezpress","endpoints":["/health","/api/auth/register","/api/auth/login","/api/posts","/api/posts/{id}","/feed","/sitemap.xml"]}`))
 	})
 
 	// Public: health check.

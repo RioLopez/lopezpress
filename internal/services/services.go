@@ -26,8 +26,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/models"
+	"lopezpress/internal/config"
+	"lopezpress/internal/models"
 )
 
 // Service carries the shared dependencies (db + cfg) and implements every
@@ -251,7 +251,7 @@ type ImportResult struct {
 // rejected up front rather than silently corrupting the database.
 const (
 	BackupSchemaVersion = 1
-	BackupAppVersion    = "echo-content-api-2026"
+	BackupAppVersion    = "lopezpress-2026"
 )
 
 // BackupResult is returned by ExportBackup.
