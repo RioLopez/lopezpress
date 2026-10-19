@@ -1,0 +1,51 @@
+# .dockerignore — build context is the repo root (both Dockerfiles build with
+# `-f deploy/docker/Dockerfile.* .`). Keep the context small and free of
+# secrets: web/node_modules alone is thousands of files.
+
+# --- VCS / editor / agent scratch ---
+.git
+.gitignore
+.workbuddy
+.vscode
+
+# --- Go build artifacts / local one-click binaries ---
+/bin
+*.exe
+*.exe~
+echo-api.exe
+echo-api.exe~
+backend.log
+
+# --- Node: never ship deps or a stale dist into the image ---
+**/node_modules
+web/dist
+
+# --- Local data, databases, secrets, logs ---
+/data
+*.db
+*.db-*
+*.bak-*
+*.log
+.env
+
+# --- Docs & specs (not needed to build or run) ---
+*.md
+docs
+PROGRESS.md
+HANDOVER.md
+README.md
+
+# --- systemd/VPS deploy assets (the container set lives in deploy/docker) ---
+# NOTE: only deploy/ one-level entries; deploy/docker/* is intentionally kept
+# because Dockerfile.web copies deploy/docker/nginx.conf into the image.
+deploy/*.sh
+deploy/*.ps1
+deploy/*.service
+deploy/*.env
+deploy/*.conf
+deploy/*.md
+
+# --- Docker files themselves (never need to be inside the context) ---
+Dockerfile*
+.dockerignore
+docker-compose*.yml

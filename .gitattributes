@@ -1,0 +1,9 @@
+# 跨平台行尾归一化（Windows 开发 / Linux 容器构建）
+# 关键：*.sh 必须是 LF，否则 Linux/Docker 里 shebang 带 \r 直接起不来
+# 仓库级 core.autocrlf=false，这里统一强制 LF（仅 .bat/.ps1 保留 CRLF）
+* text=auto eol=lf
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+go.mod text eol=lf
+go.sum text eol=lf
