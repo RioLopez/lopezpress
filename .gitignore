@@ -4,10 +4,16 @@ bin/
 *.exe
 *.test
 
-# 数据目录（SQLite 文件）
+# 数据目录（SQLite 文件 + 运行期产生的 uploads/logs/backups 全部在这里）
 data/
 *.db
 *.sqlite
+*.bak
+*.bak-*
+
+# 备份目录兜底（默认在 data/backups 下，已被 data/ 覆盖；此处防落到仓库根）
+backups/
+backups-diag/
 
 # 环境变量
 .env
