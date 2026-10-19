@@ -7,9 +7,9 @@ Wants=network-online.target
 Type=simple
 User=echoapi
 Group=echoapi
-WorkingDirectory=/opt/echo-content-api
-EnvironmentFile=/opt/echo-content-api/.env
-ExecStart=/opt/echo-content-api/echo-content-api
+WorkingDirectory=/opt/lopezpress
+EnvironmentFile=/opt/lopezpress/.env
+ExecStart=/opt/lopezpress/lopezpress
 Restart=on-failure
 RestartSec=5
 # --- 资源保护：1G 机器 70% ≈ 768M，留 256M 余量 ---

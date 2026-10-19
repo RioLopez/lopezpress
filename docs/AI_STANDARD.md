@@ -1,7 +1,7 @@
 # AI 协作标准(AI_STANDARD)
 
 > 版本:v1.0 | 2026-10-19 建立
-> 定位:本文件是 echo-content-api 项目**驱动 AI 干活的唯一标准**,回答三个问题:
+> 定位:本文件是 lopezpress 项目**驱动 AI 干活的唯一标准**,回答三个问题:
 > **AI 按什么流程干活、干到什么程度算完、干完怎么沉淀**。
 > 速查入口是根目录 `AGENTS.md`;本文件是完整版,冲突时以本文件为准。
 > 配套:`docs/prompts/`(场景提示词模板)、`docs/reference/AI_CODING_REFERENCES.md`(外部方法论来源)。

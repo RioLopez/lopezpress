@@ -6,7 +6,7 @@
 ## 提示词正文(粘贴区)
 
 ```
-按 echo-content-api 的 AI 协作标准修复 bug。
+按 lopezpress 的 AI 协作标准修复 bug。
 
 【现象】
 <粘贴:报错信息 / 复现步骤 / 期望 vs 实际>

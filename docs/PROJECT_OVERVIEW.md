@@ -1,4 +1,4 @@
-# echo-content-api 项目全貌（接手快照 · 2026-10-13）
+# lopezpress 项目全貌（接手快照 · 2026-10-13）
 
 > 本文是 **代码地图 + 当前真实状态快照**，与 `HANDOVER.md`（接手清单）、`PROGRESS.md`（轮次记录）、`docs/ARCHITECTURE.md`（架构设计）、`docs/AUDIT_REPORT.md`（安全审计）互补。
 > 作者于 2026-10-13 通读了全部后端 `internal/` 与前端 `web/src/` 源码，并实测 `go build ./...` + `go vet ./...` 全绿。
@@ -34,14 +34,14 @@
 | 前端路由 | `wouter`（薄封装见 `web/src/core/router.tsx`） |
 | 状态/UI | Preact hooks + Context（auth / app / i18n），无 Redux |
 | i18n | 手写中(默认)/英双语（`web/src/core/i18n.tsx`，约 1200 行字典） |
-| 部署 | `EchoAPI.bat`（Win 一键）+ `deploy/`（systemd / nohup） |
+| 部署 | `LopezPress.bat`（Win 一键）+ `deploy/`（systemd / nohup） |
 
 ---
 
 ## 3. 目录结构与代码地图
 
 ```
-echo-content-api/
+lopezpress/
 ├─ cmd/server/main.go          # 入口：加载 .env → 迁移 → 装配 handler → 启动 :8080
 ├─ internal/
 │  ├─ config/config.go         # 配置解析 + 数据库迁移(runManualMigrations) + 红线所在
@@ -64,7 +64,7 @@ echo-content-api/
 │     ├─ pages/                # 19 个页面（见 §5）
 │     └─ ui/                   # 8 个复用组件（Layout/AdminLayout/PostEditor/Sidebar/UserMenu/...）
 ├─ deploy/                     # VPS 部署脚本（systemd / nohup）
-├─ EchoAPI.bat                 # Win 一键启动（幂等、自动开浏览器）
+├─ LopezPress.bat                 # Win 一键启动（幂等、自动开浏览器）
 ├─ PROGRESS.md                 # 22 轮开发记录
 ├─ HANDOVER.md                 # 接手总览（必读）
 ├─ README.md                   # 快速上手

@@ -33,8 +33,8 @@
 ## 4. 怎么跑 / 怎么验
 
 ```bat
-EchoAPI.bat            :: 一键起后端 :8080 + 前端 :5173(幂等,自动开浏览器)
-EchoAPI.bat status|stop|restart|dev|build|help
+LopezPress.bat            :: 一键起后端 :8080 + 前端 :5173(幂等,自动开浏览器)
+LopezPress.bat status|stop|restart|dev|build|help
 ```
 
 ```powershell

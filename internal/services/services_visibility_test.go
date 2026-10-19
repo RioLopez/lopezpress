@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // --- ListPostsPage: the three visibility branches (spec 22 + #9) ---

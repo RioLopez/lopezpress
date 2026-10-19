@@ -10,8 +10,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"echo-content-api/internal/models"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // withUser injects a user into the request context the same way WithAuth does,

@@ -1,7 +1,7 @@
 package services
 
 import (
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // Centralised role-privilege helpers. Every "can X do Y" decision in the

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestCreatePostKeepsCover is the regression test for the cross-stack

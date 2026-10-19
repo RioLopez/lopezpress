@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestImportAndRestoreAreRootOnly is the regression test for the as-built

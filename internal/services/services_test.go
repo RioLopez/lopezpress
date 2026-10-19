@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/models"
+	"lopezpress/internal/config"
+	"lopezpress/internal/models"
 )
 
 // newTestService opens an in-memory SQLite DB, runs migrations, and returns a

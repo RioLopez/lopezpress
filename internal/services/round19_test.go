@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestRegisterGateClosedByDefault verifies that with no site-config row the

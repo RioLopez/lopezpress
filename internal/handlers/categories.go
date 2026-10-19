@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"echo-content-api/internal/services"
+	"lopezpress/internal/services"
 )
 
 // ListCategories returns all categories.

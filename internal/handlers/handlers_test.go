@@ -14,10 +14,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"echo-content-api/internal/config"
-	"echo-content-api/internal/middleware"
-	"echo-content-api/internal/models"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/config"
+	"lopezpress/internal/middleware"
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // setup wires a real *Service backed by a temp-file SQLite DB into the

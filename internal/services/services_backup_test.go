@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestImportBackupDryRun verifies that a dry-run import validates the payload,

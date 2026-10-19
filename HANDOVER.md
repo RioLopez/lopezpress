@@ -14,7 +14,7 @@
 - **当前代码已落地第 1–22 轮开发 + 10 项安全加固**，全部 `go build` / `go vet` / `go test` / `tsc --noEmit` / `vite build` 通过。
 - **有一个会反复咬人的陷阱**：`glebarez/sqlite` 驱动 + GORM `AutoMigrate` 在"误判需要重建表"时会走 copy-rename 路径，生成的 `INSERT` 可能漏掉 NOT NULL 列导致启动崩溃。修复方式见 §7.1，改 `internal/config/config.go` 时务必小心，**不要回退成无条件的 `AutoMigrate`**。
 - **AI 协作先读 `AGENTS.md` + `docs/AI_STANDARD.md`**：本仓库有一整套驱动 AI 干活的标准（五阶段工作流、验证门禁、十条红线、提示词模板库 `docs/prompts/`）。新接手的 AI 按它执行，用户说「继续」即触发「读上下文 → 选下一优先级 TODO → 实现 → 门禁 → 记录」循环。
-- **本地一键启动用 `EchoAPI.bat`**（Windows）。它已检测端口、避免重复启动、自动开浏览器。服务器进程请用「独立窗口 / 后台任务」方式运行，否则对话会话结束会被回收（见 §3）。
+- **本地一键启动用 `LopezPress.bat`**（Windows）。它已检测端口、避免重复启动、自动开浏览器。服务器进程请用「独立窗口 / 后台任务」方式运行，否则对话会话结束会被回收（见 §3）。
 - **首启 admin 密码是随机生成的**，只在 stderr 打印一次；登录后会被强制跳到 `/change-password` 改密（除非你用 `ADMIN_INITIAL_PASSWORD` 固定）。
 
 ---
@@ -50,35 +50,35 @@
 
 ## 3. 如何运行
 
-### 3.1 本地开发（Windows，推荐 `EchoAPI.bat`）
+### 3.1 本地开发（Windows，推荐 `LopezPress.bat`）
 
-项目根目录的 `EchoAPI.bat` 已做好：
+项目根目录的 `LopezPress.bat` 已做好：
 - **幂等**：启动前检测 `:8080` / `:5173` 是否已在监听，已运行就跳过，不重复拉起。
-- 后端优先用现成 `echo-api.exe`（`start /MIN` 独立窗口），否则回退 `go run ./cmd/server`。
+- 后端优先用现成 `lopezpress.exe`（`start /MIN` 独立窗口），否则回退 `go run ./cmd/server`。
 - 前端 `npx vite --port 5173`。
 - 启动完自动打开浏览器到 `http://localhost:5173`。
 
 子命令：
 
 ```bat
-EchoAPI.bat            :: 启动后端 + 前端，开浏览器到 :5173
-EchoAPI.bat status     :: 显示 :8080 / :5173 是否在监听
-EchoAPI.bat stop       :: 杀掉两个服务
-EchoAPI.bat restart    :: 先 stop 再 start
-EchoAPI.bat dev        :: 只起前端 vite
-EchoAPI.bat build      :: vite build 打包到 web/dist
-EchoAPI.bat help       :: 查看子命令
+LopezPress.bat            :: 启动后端 + 前端，开浏览器到 :5173
+LopezPress.bat status     :: 显示 :8080 / :5173 是否在监听
+LopezPress.bat stop       :: 杀掉两个服务
+LopezPress.bat restart    :: 先 stop 再 start
+LopezPress.bat dev        :: 只起前端 vite
+LopezPress.bat build      :: vite build 打包到 web/dist
+LopezPress.bat help       :: 查看子命令
 ```
 
 > 双击即用。Go 路径脚本会自动探测 `PATH` → `%USERPROFILE%\go-install\go\bin` → `C:\go\bin`。
 
-### 3.2 手动启动（等价于 EchoAPI.bat 内部逻辑）
+### 3.2 手动启动（等价于 LopezPress.bat 内部逻辑）
 
 **后端**（需要 Go 1.22+，脚本里 Go 在 `C:\Users\Lopez\go-install\go\bin`）：
 
 ```powershell
-cd echo-content-api
-go run ./cmd/server          # 或：go build -o echo-api.exe ./cmd/server && .\echo-api.exe
+cd lopezpress
+go run ./cmd/server          # 或：go build -o lopezpress.exe ./cmd/server && .\lopezpress.exe
 # 监听 :8080；首启会在 stderr 打印随机 admin 密码横幅
 ```
 
@@ -98,11 +98,11 @@ curl -X POST http://localhost:8080/api/auth/login -H "Content-Type: application/
 curl http://localhost:5173/api/site-config    # 经前端代理应 200
 ```
 
-> ⚠️ **VPS 运维陷阱（踩过）**：之前用"会话后台任务"拉起 `go run` 进程，对话轮次切换/电脑重启后进程被回收，`:8080` 不监听，前端 vite 代理打不通后端，浏览器看到所有 `/api/*` 全是 500（实为 502 被代理层包成 500）。**长期运行请用 `EchoAPI.bat`（独立窗口）或 `deploy/` 的 systemd / nohup，不要依赖对话内后台进程。**
+> ⚠️ **VPS 运维陷阱（踩过）**：之前用"会话后台任务"拉起 `go run` 进程，对话轮次切换/电脑重启后进程被回收，`:8080` 不监听，前端 vite 代理打不通后端，浏览器看到所有 `/api/*` 全是 500（实为 502 被代理层包成 500）。**长期运行请用 `LopezPress.bat`（独立窗口）或 `deploy/` 的 systemd / nohup，不要依赖对话内后台进程。**
 
 ### 3.3 生产部署
 
-见 `deploy/`：`build.sh`（交叉编译 Linux）、`deploy-to-vps.sh` / `deploy-to-vps.ps1`（一键上传）、`echo-content-api.service`（systemd）、`echo-content-api.env`（生产环境变量）、`nginx.conf`（反代 + 前端静态托管）、`install-systemd.sh`、`LOCAL.md`、`README.md`。生产务必设置：强 `JWT_SECRET`、`CORS_ORIGINS` 显式列表、`APP_ENV=prod`、HTTPS。
+见 `deploy/`：`build.sh`（交叉编译 Linux）、`deploy-to-vps.sh` / `deploy-to-vps.ps1`（一键上传）、`lopezpress.service`（systemd）、`lopezpress.env`（生产环境变量）、`nginx.conf`（反代 + 前端静态托管）、`install-systemd.sh`、`LOCAL.md`、`README.md`。生产务必设置：强 `JWT_SECRET`、`CORS_ORIGINS` 显式列表、`APP_ENV=prod`、HTTPS。
 
 ---
 
@@ -110,7 +110,7 @@ curl http://localhost:5173/api/site-config    # 经前端代理应 200
 
 ```powershell
 # 后端
-cd echo-content-api
+cd lopezpress
 go build ./...              # 编译
 go vet ./...               # 静态检查
 go test ./...              # 单测（14 个 _test.go 文件，全绿）
@@ -184,7 +184,7 @@ npm run build              # 生产构建
 ## 6. 目录结构与关键文件
 
 ```
-echo-content-api/
+lopezpress/
 ├── cmd/server/main.go        # 入口：loadDotEnv → Load → ValidateSecurity → InitDB → 建 svc → 建双限流器 → 优雅关闭
 ├── internal/
 │   ├── config/config.go      # .env 读取 + ValidateSecurity + InitDB（手动迁移门控 + AutoMigrate 门控）+ 种子数据
@@ -198,7 +198,7 @@ echo-content-api/
 ├── web/                      # 前端（Preact + Vite + TS）
 ├── deploy/                   # 部署脚本（systemd / Nginx / 一键上传）
 ├── docs/                     # ARCHITECTURE / AUDIT_REPORT / specs(20) / decisions(0001-0004)
-├── EchoAPI.bat               # 一键启动（Windows）
+├── LopezPress.bat               # 一键启动（Windows）
 ├── .env.example              # 配置项示例（含全部新增项）
 ├── go.mod
 └── PROGRESS.md               # 22 轮开发全记录
@@ -321,7 +321,7 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 1. `go build ./...` ✅ / `go vet ./...` ✅ / `go test ./...` ✅（14 测试文件全绿）
 2. `cd web && npx tsc --noEmit` ✅ / `npm run build` ✅
-3. 双击 `EchoAPI.bat` → 浏览器开 `http://localhost:5173` → 首页/列表/归档/作者页能加载（无 500）
+3. 双击 `LopezPress.bat` → 浏览器开 `http://localhost:5173` → 首页/列表/归档/作者页能加载（无 500）
 4. 用首启随机密码登录 admin → 自动跳 `/change-password` → 改密成功
 5. 连续 5 次错误密码登录 → 第 6 次应 429 + `Retry-After` 头
 6. 管理页 → 备份导入 URL 加 `?dry_run=1` → 返回统计不落库

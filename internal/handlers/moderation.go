@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"echo-content-api/internal/services"
+	"lopezpress/internal/services"
 )
 
 // --- content moderation + banned vault (spec: review workflow) ---

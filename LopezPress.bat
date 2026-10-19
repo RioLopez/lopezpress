@@ -94,7 +94,7 @@ echo Go tool  : %GO%
 rem === Per-run log files (every test keeps its own log for later debugging) ===
 if not exist "%ROOT%logs" mkdir "%ROOT%logs"
 for /f %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "TS=%%t"
-echo Logs     : %ROOT%logs\echo-api-!TS!.log  ^&  %ROOT%logs\vite-!TS!.log
+echo Logs     : %ROOT%logs\lopezpress-!TS!.log  ^&  %ROOT%logs\vite-!TS!.log
 
 rem 1. Check frontend port
 netstat -ano | findstr ":5173" | findstr "LISTENING" >nul 2>&1
@@ -113,13 +113,13 @@ netstat -ano | findstr ":8080" | findstr "LISTENING" >nul 2>&1
 if %errorlevel%==0 (
     echo [backend]  :8080 already running, skipping start
 ) else (
-    echo [backend]  starting echo-api on :8080 ...
-    if exist "%ROOT%echo-api.exe" (
-        start "echo-api" /MIN /D "%ROOT%" cmd /c "%ROOT%echo-api.exe > %ROOT%logs\echo-api-!TS!.log 2>&1"
-        echo [backend]  log: %ROOT%logs\echo-api-!TS!.log
+    echo [backend]  starting lopezpress on :8080 ...
+    if exist "%ROOT%lopezpress.exe" (
+        start "lopezpress" /MIN /D "%ROOT%" cmd /c "%ROOT%lopezpress.exe > %ROOT%logs\lopezpress-!TS!.log 2>&1"
+        echo [backend]  log: %ROOT%logs\lopezpress-!TS!.log
     ) else (
         rem No compiled binary - build with Go on the fly
-        start "echo-api" /MIN cmd /c "cd /d %ROOT% && %GO% run ./cmd/server"
+        start "lopezpress" /MIN cmd /c "cd /d %ROOT% && %GO% run ./cmd/server"
     )
 )
 
@@ -132,21 +132,21 @@ echo [done]  backend  http://localhost:8080
 echo         frontend http://localhost:5173
 echo.
 echo Quick commands:
-echo   EchoAPI.bat status    - check ports
-echo   EchoAPI.bat stop      - kill both services
-echo   EchoAPI.bat restart   - stop + start
+echo   LopezPress.bat status    - check ports
+echo   LopezPress.bat stop      - kill both services
+echo   LopezPress.bat restart   - stop + start
 goto :end
 
 === ========================================================= ===
 :help
 echo.
 echo Usage:
-echo   EchoAPI.bat            - start (idempotent; skips already-running services)
-echo   EchoAPI.bat dev        - start vite only
-echo   EchoAPI.bat status     - show which ports are up
-echo   EchoAPI.bat stop       - stop both
-echo   EchoAPI.bat restart    - stop then start
-echo   EchoAPI.bat build      - build web dist
+echo   LopezPress.bat            - start (idempotent; skips already-running services)
+echo   LopezPress.bat dev        - start vite only
+echo   LopezPress.bat status     - show which ports are up
+echo   LopezPress.bat stop       - stop both
+echo   LopezPress.bat restart    - stop then start
+echo   LopezPress.bat build      - build web dist
 echo.
 goto :end
 

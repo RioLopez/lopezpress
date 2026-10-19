@@ -8,14 +8,14 @@
 
 | 文件 | 说明 |
 |---|---|
-| `bin/echo-content-api.exe` | Windows 本地开发用（`go build` 默认） |
-| `bin/echo-content-api-linux-amd64` | Linux amd64 交叉编译（`CGO_ENABLED=0`，用于部署到 VPS） |
+| `bin/lopezpress.exe` | Windows 本地开发用（`go build` 默认） |
+| `bin/lopezpress-linux-amd64` | Linux amd64 交叉编译（`CGO_ENABLED=0`，用于部署到 VPS） |
 | `web/dist/` | 前端构建产物（`vite build` 生成） |
 
 > 每次代码改动后重新构建：
 > ```powershell
 > # 后端
-> & 'C:\Users\Lopez\go-install\go\bin\go.exe' build -trimpath -ldflags="-s -w" -o bin\echo-content-api.exe ./cmd/server
+> & 'C:\Users\Lopez\go-install\go\bin\go.exe' build -trimpath -ldflags="-s -w" -o bin\lopezpress.exe ./cmd/server
 >
 > # 前端
 > cd web
@@ -48,8 +48,8 @@ BACKUP_DIR=data/backups
 ### 2. 启动后端
 
 ```powershell
-cd c:\Users\Lopez\Desktop\Lopez\echo-content-api
-.\bin\echo-content-api.exe
+cd c:\Users\Lopez\Desktop\Lopez\lopezpress
+.\bin\lopezpress.exe
 ```
 
 首次启动会自动：
@@ -81,7 +81,7 @@ cd web
 Copy-Item -Recurse -Force web\dist dist
 
 # 2. 启动
-.\bin\echo-content-api.exe
+.\bin\lopezpress.exe
 ```
 
 浏览器访问 `http://localhost:8080` 即可看到完整站点。
@@ -104,16 +104,16 @@ bash build.sh
 # 3. 验证
 ssh user@vps.example.com
 curl http://localhost/health
-sudo systemctl status echo-content-api
+sudo systemctl status lopezpress
 ```
 
 `deploy-to-vps.sh` 会：
-- 把 `bin/echo-content-api` + `web/dist/` 打包推送
-- 解压到 `/opt/echo-content-api`
-- 安装 `echo-content-api.service`（systemd，`MemoryMax=768M`）
+- 把 `bin/lopezpress` + `web/dist/` 打包推送
+- 解压到 `/opt/lopezpress`
+- 安装 `lopezpress.service`（systemd，`MemoryMax=768M`）
 - 启用 Nginx 反代（`/` → 静态文件，`/api` `/uploads` → `:8080`）
-- 写入 `/opt/echo-content-api/.env`（提示覆盖 `JWT_SECRET`）
-- `systemctl daemon-reload && systemctl enable --now echo-content-api`
+- 写入 `/opt/lopezpress/.env`（提示覆盖 `JWT_SECRET`）
+- `systemctl daemon-reload && systemctl enable --now lopezpress`
 
 ---
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // newPost helper: create a live post in the service's DB with the given title/body.

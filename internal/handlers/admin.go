@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"echo-content-api/internal/models"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // requireAdmin checks the caller is an admin or the root and writes 403

@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# echo-content-api — web image: Preact static dist + Nginx.
+# lopezpress — web image: Preact static dist + Nginx.
 #
 # Nginx serves the built SPA and reverse-proxies /api, /health and /uploads to
 # the "api" service. Build from the REPO ROOT:
 #
-#   docker build -f deploy/docker/Dockerfile.web -t echo-content-api/web ..
+#   docker build -f deploy/docker/Dockerfile.web -t lopezpress/web ..
 
 FROM node:22-alpine AS build
 WORKDIR /src

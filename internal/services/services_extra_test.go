@@ -10,7 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestSignAndVerifyToken exercises the JWT round trip: a signed token must

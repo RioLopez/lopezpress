@@ -6,7 +6,7 @@
 ## 提示词正文(粘贴区)
 
 ```
-按 echo-content-api 的 AI 协作标准执行「继续」流程:
+按 lopezpress 的 AI 协作标准执行「继续」流程:
 
 1. 读上下文(禁止跳过):
    - AGENTS.md(红线速查)

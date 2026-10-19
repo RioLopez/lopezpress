@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // --- security notifications via SMTP ---

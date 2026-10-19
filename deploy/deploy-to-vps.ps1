@@ -10,7 +10,7 @@ param(
     [string]$VPSUser = $env:VPS_USER,
     [string]$VPSHost = $env:VPS_HOST,
     [string]$VPSPort = $env:VPS_SSH_PORT,
-    [string]$AppDir  = "/opt/echo-content-api"
+    [string]$AppDir  = "/opt/lopezpress"
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,10 +42,10 @@ try {
     $env:CGO_ENABLED = "0"
     $env:GOOS = "linux"
     $env:GOARCH = "amd64"
-    & $goExe build -ldflags="-s -w" -o "$BinDir\echo-content-api" .\cmd\server
+    & $goExe build -ldflags="-s -w" -o "$BinDir\lopezpress" .\cmd\server
     if ($LASTEXITCODE -ne 0) { throw "go build 失败 (exit $LASTEXITCODE)" }
-    $size = (Get-Item "$BinDir\echo-content-api").Length / 1KB
-    Write-Host "    产物: bin\echo-content-api ($([math]::Round($size,1)) KB)"
+    $size = (Get-Item "$BinDir\lopezpress").Length / 1KB
+    Write-Host "    产物: bin\lopezpress ($([math]::Round($size,1)) KB)"
 } finally {
     Pop-Location
 }
@@ -67,7 +67,7 @@ try {
 }
 
 # ---- 准备 .env ----
-$envTemplate = Join-Path $ScriptDir "echo-content-api.env"
+$envTemplate = Join-Path $ScriptDir "lopezpress.env"
 $envOut      = Join-Path $ScriptDir ".env.vps"
 Copy-Item -Path $envTemplate -Destination $envOut -Force
 Write-Host "==> 已生成 $envOut（上传后会改名 .env；记得改 JWT_SECRET）" -ForegroundColor Cyan
@@ -81,9 +81,9 @@ $sshBase = @("-P", $VPSPort, "${VPSUser}@${VPSHost}")
 if ($LASTEXITCODE -ne 0) { throw "ssh mkdir 失败" }
 
 $files = @(
-    "$BinDir\echo-content-api",
+    "$BinDir\lopezpress",
     "$ScriptDir\install-systemd.sh",
-    "$ScriptDir\echo-content-api.service"
+    "$ScriptDir\lopezpress.service"
 )
 foreach ($f in $files) {
     Write-Host "    scp $(Split-Path $f -Leaf)"
@@ -109,4 +109,4 @@ Write-Host ""
 Write-Host "==> 部署完成！" -ForegroundColor Green
 Write-Host "    健康检查：ssh -P ${VPSPort} ${VPSUser}@${VPSHost} 'curl -s http://localhost:8080/health'"
 Write-Host "    记得在 ${AppDir}/.env 里把 JWT_SECRET 换成强随机值（openssl rand -hex 32）"
-Write-Host "    改完执行：ssh -P ${VPSPort} ${VPSUser}@${VPSHost} 'systemctl restart echo-content-api'"
+Write-Host "    改完执行：ssh -P ${VPSPort} ${VPSUser}@${VPSHost} 'systemctl restart lopezpress'"

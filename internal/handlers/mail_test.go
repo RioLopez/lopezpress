@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 func TestSendTestMailRequiresAdmin(t *testing.T) {

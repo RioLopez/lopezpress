@@ -6,7 +6,7 @@
 ## 提示词正文(粘贴区)
 
 ```
-按 echo-content-api 的 AI 协作标准做一次全栈自查审计。
+按 lopezpress 的 AI 协作标准做一次全栈自查审计。
 
 【范围】
 <全栈 / 或指定:如"只管 internal/services 权限相关" / "前端 i18n 覆盖">

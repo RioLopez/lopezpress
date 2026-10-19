@@ -12,8 +12,8 @@
 /bin
 *.exe
 *.exe~
-echo-api.exe
-echo-api.exe~
+lopezpress.exe
+lopezpress.exe~
 backend.log
 
 # --- Node: never ship deps or a stale dist into the image ---

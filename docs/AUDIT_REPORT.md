@@ -22,7 +22,7 @@ Echo Content API 是一个**面向低配 VPS（1 vCPU / 1.5 GB RAM / 5 GB 磁盘
 个人作者（或小型团队）想在**一台廉价、不稳定的 VPS** 上跑一个能长期维护的内容站点，不想要 WordPress / Ghost 那种"全家桶"。我们给的是一个**足够轻、逻辑足够透明、可以整台 VPS 全托管**的方案：
 
 - 单二进制（Go）+ 单文件数据库（SQLite）= 部署即解压，无系统依赖。
-- 零 CGO，纯 Go 交叉编译，任何 Linux 发行版直接 `./echo-api` 跑起来。
+- 零 CGO，纯 Go 交叉编译，任何 Linux 发行版直接 `./lopezpress` 跑起来。
 - 前端是静态产物（~180 kB JS / ~48 kB CSS），放 nginx 任意静态目录即可。
 - 总依赖 < 20 个模块（后端 12 个 + 前端 2 个 npm 包），供应链可审计。
 
@@ -234,9 +234,9 @@ admin:     全部
 
 ```bash
 # 后端
-cd echo-content-api
-go build -o echo-api.exe ./cmd/server
-./echo-api.exe          # 监听 :8080
+cd lopezpress
+go build -o lopezpress.exe ./cmd/server
+./lopezpress.exe          # 监听 :8080
 
 # 前端
 cd web && npm install && npm run dev   # 监听 :5173，HMR

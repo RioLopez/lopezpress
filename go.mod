@@ -1,4 +1,4 @@
-module echo-content-api
+module lopezpress
 
 go 1.22
 

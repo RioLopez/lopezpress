@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // makePost creates a post owned by author with the given status/body and

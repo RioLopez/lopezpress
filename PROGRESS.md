@@ -677,3 +677,19 @@
 | `go vet ./...` | ✅ |
 | `go test ./...` | ✅ 全绿；本轮新增 `moderation_test.go` 7 个用例（pending 403 / 队列作用域 / reject 必带 note / ban 需 root / 封禁库对 admin 不可见 / send-back 出库 / 硬删） |
 | 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑 |
+
+---
+
+## 六、版本化与工程底座（2026-10-20）
+
+用户决定第一阶段到此为止、进入真实测试/beta 阶段，并以 **`v0.1.0`** 作为起始版本号（0.x = 接口可能变更，给自己留"改主意"余地）。
+
+- `git init -b main`；本仓库本地身份 `Lopez` / `lopez@local`（**未改全局配置**）。
+- 新增 `.gitattributes`：仓库级 `core.autocrlf=false` + `* text=auto eol=lf`，`.sh` 强制 LF、`.bat/.ps1` 保留 CRLF——解决 Windows 开发 → Linux 容器构建的行尾坑（否则 shebang 带 `\r` 容器起不来）。
+- 新增 `.editorconfig`：Go=tab，前端/JSON/YAML/MD=2 空格，UTF-8，LF。
+- 补 `.gitignore`：`logs/` `*.log` `backend.log` `web/uploads/` `.workbuddy/`。
+- 首次提交 `8458e36`（170 文件，无真实密钥 / 无构建产物）；打 annotated tag **`v0.1.0`**（msg: stage 1 complete, enter testing, 0.x APIs may change）。
+- 验证：`git ls-files --eol deploy/*.sh` = `i/lf w/lf`；工作树 clean；两个 `*.env` 部署模板（仅 `CHANGE_ME` 占位符）随库提交，真实密钥走运行时注入或被忽略的 `.env`。
+- 无远程，未 push；后续 push 需先 `git remote add origin <url>` 再 `git push --tags`。
+
+**版本号策略**：beta 阶段 `0.x.y`（如 0.1.0 → 0.2.0 …）；临近生产升 `1.0.0-beta.N` → `1.0.0-rc.N` → `1.0.0`。每次发版打 `vX.Y.Z` tag，发版前跑全量验证门禁（go build/vet/test + tsc + vite build）。

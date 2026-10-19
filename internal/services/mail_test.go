@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // --- SendTestMail error paths (no real socket; SMTP not configured) ---

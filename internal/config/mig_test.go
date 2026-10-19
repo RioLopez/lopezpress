@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // buildOldSchema creates a DB with the legacy posts table (with scheduled_at)

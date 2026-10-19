@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"echo-content-api/internal/models"
-	"echo-content-api/internal/services"
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // TestFeedRSSHandler verifies the public RSS feed: it is served as

@@ -42,7 +42,7 @@ curl http://<主机IP>/                 # 前端 SPA index.html
 ## 数据持久化
 
 - SQLite 与本地图片都在 api 容器的 `/data`（`app.db` + `uploads/`），落在命名卷 **`api-data`**。
-- 备份：`docker run --rm -v echo-content-api_api-data:/data -v "$PWD":/backup alpine tar czf /backup/app-data.tgz -C /data .`
+- 备份：`docker run --rm -v lopezpress_api-data:/data -v "$PWD":/backup alpine tar czf /backup/app-data.tgz -C /data .`
 - 想用主机目录代替命名卷：把 compose 里 `api-data:/data` 改成 `./data:/data`，并确保该目录对容器内 `nonroot`（uid 65532）可写：`sudo chown -R 65532:65532 ./data`。
 
 ## 端口与 TLS

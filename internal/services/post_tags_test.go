@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"echo-content-api/internal/models"
+	"lopezpress/internal/models"
 )
 
 // TestCreatePostSavesTagsAtomically verifies that CreatePost persists the post

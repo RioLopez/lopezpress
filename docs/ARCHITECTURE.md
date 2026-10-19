@@ -1,4 +1,4 @@
-# 架构设计文档 — echo-content-api（Go 内容型站点后端）
+# 架构设计文档 — lopezpress（Go 内容型站点后端）
 
 > 状态：设计稿（未改代码）。本文档描述目标架构、技术选型与后续实施路线，供决策与落地参考。
 > 组合取向：**标准库 `net/http`（传输层）+ GORM（数据层）+ SQLite（起步存储）**。
@@ -41,7 +41,7 @@
 ## 3. 项目目录结构（分层架构）
 
 ```
-echo-content-api/
+lopezpress/
 ├── cmd/
 │   └── server/
 │       └── main.go            # 唯一 main：装配配置→初始化 DB→构建 Router→启动 HTTP（薄壳）
