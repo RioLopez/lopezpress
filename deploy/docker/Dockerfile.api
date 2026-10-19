@@ -14,6 +14,10 @@ WORKDIR /src
 
 # Dependency layer first (better caching when only source changes).
 COPY go.mod go.sum ./
+# Go module proxy: Google's proxy.golang.org (and sumdb) are unreachable from
+# some networks; use a reachable CN mirror and skip the blocked sumdb.
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=off
 RUN go mod download
 
 # Source. (.dockerignore strips node_modules, dist, data, *.db, secrets.)
