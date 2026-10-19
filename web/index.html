@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Echo Content</title>
+    <meta name="description" content="Echo Content API 前端 — 注册登录 + 文章管理" />
+    <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed" />
+    <script>
+      // Set data-theme before first paint to avoid a light-theme flash on
+      // dark-mode reloads. Mirrors the resolve() logic in core/theme.tsx.
+      (function () {
+        var m = localStorage.getItem('echo.theme') || 'system'
+        var t = m === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : m
+        document.documentElement.setAttribute('data-theme', t)
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

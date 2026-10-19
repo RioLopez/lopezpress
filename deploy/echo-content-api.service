@@ -1,0 +1,25 @@
+[Unit]
+Description=Echo Content API (Go/SQLite)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echoapi
+Group=echoapi
+WorkingDirectory=/opt/echo-content-api
+EnvironmentFile=/opt/echo-content-api/.env
+ExecStart=/opt/echo-content-api/echo-content-api
+Restart=on-failure
+RestartSec=5
+# --- 资源保护：1G 机器 70% ≈ 768M，留 256M 余量 ---
+MemoryMax=768M
+MemoryHigh=640M
+CPUQuota=100%
+LimitNOFILE=4096
+# 优雅关闭：main.go 监听 SIGTERM，给 30s 排空
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

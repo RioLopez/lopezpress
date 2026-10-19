@@ -1,4 +1,4 @@
-# lopezpress
+# echo-content-api
 
 基于 **Go 标准库（`net/http`）+ GORM + SQLite + Preact** 的内容型站点全栈项目，前后端分离。
 
@@ -17,7 +17,7 @@
 ## 项目结构
 
 ```
-lopezpress/
+echo-content-api/
 ├── cmd/server/main.go         # 入口：装配依赖、初始化 DB、启动 HTTP 服务（优雅关闭）
 ├── internal/
 │   ├── config/                # 配置（.env）+ 数据库连接 + 迁移 + 种子数据
@@ -31,13 +31,13 @@ lopezpress/
 ├── deploy/                    # 部署脚本（systemd / Nginx / 一键上传）
 ├── docs/ARCHITECTURE.md       # 架构设计文档
 ├── HANDOVER.md                # 交接文档（AI 接手必读：陷阱 / 未决决策 / 自测清单）
-├── LopezPress.bat                # 一键启动（Windows）：后端 + 前端，自动开浏览器
+├── EchoAPI.bat                # 一键启动（Windows）：后端 + 前端，自动开浏览器
 ├── .env                       # 运行时配置（端口 / JWT / DB 路径 / 限流）
 └── go.mod
 ```
 
 > 启动命令：`go run ./cmd/server`，默认监听 `:8080`。
-> **一键启动（Windows）**：双击根目录 `LopezPress.bat` 即可同时拉起后端（:8080）和前端（:5173）并自动打开浏览器；支持 `status` / `stop` / `restart` / `dev` / `build` / `help` 子命令，已做端口幂等检测，避免重复启动。
+> **一键启动（Windows）**：双击根目录 `EchoAPI.bat` 即可同时拉起后端（:8080）和前端（:5173）并自动打开浏览器；支持 `status` / `stop` / `restart` / `dev` / `build` / `help` 子命令，已做端口幂等检测，避免重复启动。
 
 ## 快速开始（本地开发）
 
@@ -53,7 +53,7 @@ go version
 ### 2. 启动后端
 
 ```powershell
-cd lopezpress
+cd echo-content-api
 go mod tidy
 go run ./cmd/server        # 默认监听 :8080
 ```

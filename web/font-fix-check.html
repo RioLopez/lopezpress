@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>字号档位 CSS 修复验证</title>
+<style>
+  :root { --text:#18181b; --border:#e4e4e7; }
+  body { margin:0; padding:24px; font:15px/1.55 -apple-system,"Microsoft YaHei",sans-serif; color:var(--text); background:#fff; }
+  h1 { font-size:20px; font-weight:500; margin:0 0 4px; }
+  .sub { color:#71717a; font-size:13px; margin:0 0 20px; }
+  .cols { display:flex; gap:20px; flex-wrap:wrap; }
+  .col { flex:1 1 300px; border:1px solid var(--border); padding:16px; }
+  .col h2 { font-size:13px; font-weight:500; margin:0 0 12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .bad h2 { color:#dc2626; } .good h2 { color:#16a34a; }
+
+  .md-body { font-size:16px; line-height:1.85; font-family:inherit; }
+  .md-body h1 { font-size:1.75em; font-weight:700; margin:.6em 0 .4em; border-bottom:1px solid var(--border); padding-bottom:.3em; }
+  .md-body h2 { font-size:1.4em; font-weight:700; margin:.6em 0 .3em; }
+  .md-body h3 { font-size:1.15em; font-weight:600; margin:.5em 0 .3em; }
+  .md-body p { margin:.4em 0; }
+  .md-body strong { font-weight:600; }
+
+  .read-page--medium .md-body { font-size:16px; }
+  .broken.read-page--medium .md-body,
+  .broken.read-page--medium .md-body * { font-size:16px; }
+</style>
+</head>
+<body>
+<h1>字号档位：修复前 vs 修复后</h1>
+<p class="sub">同一段 Markdown 渲染结果，唯一差别是那条 <code>.md-body *</code> 通配符规则</p>
+
+<div class="cols">
+  <div class="col bad">
+    <h2>修复前（含 <code>.md-body *</code>）</h2>
+    <div class="broken read-page--medium">
+      <div class="md-body">
+        <h1>一级标题</h1>
+        <h2>二级标题</h2>
+        <h3>三级标题</h3>
+        <p>这是<strong>正文</strong>文字，用于对比字号。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col good">
+    <h2>修复后（只定容器字号）</h2>
+    <div class="read-page--medium">
+      <div class="md-body">
+        <h1>一级标题</h1>
+        <h2>二级标题</h2>
+        <h3>三级标题</h3>
+        <p>这是<strong>正文</strong>文字，用于对比字号。</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
