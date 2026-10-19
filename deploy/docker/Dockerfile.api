@@ -1,9 +1,8 @@
-# syntax=docker/dockerfile:1
+# lopezpress — API image: pure-Go static binary (CGO-free) on minimal Alpine.
 #
-# lopezpress — API image: pure-Go static binary on distroless.
-#
-# The backend has zero CGO (glebarez/sqlite), so we can emit a fully static,
-# stripped binary that runs on a ~2 MB distroless base with no libc. Build
+# The backend has zero CGO (glebarez/sqlite), so we emit a fully static,
+# stripped binary. Runtime uses Alpine (Docker Hub only) which also ships CA
+# certs so the optional outbound HTTPS (SM.MS upload) works. Build
 # from the REPO ROOT so the root .dockerignore keeps the context lean:
 #
 #   docker build -f deploy/docker/Dockerfile.api -t lopezpress/api ..
@@ -28,8 +27,8 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     -o /out/lopezpress ./cmd/server \
     && mkdir -p /data && chown -R 65532:65532 /data
 
-# --- runtime: distroless static, non-root ---
-FROM gcr.io/distroless/static-debian12:nonroot
+# --- runtime: minimal Alpine, non-root (uid 65532); Docker Hub only ---
+FROM alpine:3.20
 
 WORKDIR /app
 COPY --from=build --chown=65532:65532 /out/lopezpress /app/lopezpress
@@ -50,5 +49,5 @@ ENV PORT=8080 \
 EXPOSE 8080
 VOLUME ["/data"]
 
-USER nonroot
+USER 65532
 ENTRYPOINT ["/app/lopezpress"]
