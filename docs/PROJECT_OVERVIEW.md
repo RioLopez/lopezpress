@@ -1,3 +1,5 @@
+> 类别 B · 项目/内容/参考 — 产品与工程文档，AI 按需查阅，不约束流程。
+
 # lopezpress 项目全貌（接手快照 · 2026-10-13）
 
 > 本文是 **代码地图 + 当前真实状态快照**，与 `HANDOVER.md`（接手清单）、`PROGRESS.md`（轮次记录）、`docs/ARCHITECTURE.md`（架构设计）、`docs/AUDIT_REPORT.md`（安全审计）互补。

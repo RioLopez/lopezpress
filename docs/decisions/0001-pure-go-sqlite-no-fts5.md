@@ -1,3 +1,5 @@
+> 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
+
 # 纯 Go SQLite 驱动不支持 FTS5，搜索保留 LIKE
 
 > 状态：Accepted

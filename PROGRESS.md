@@ -1,7 +1,10 @@
-# Echo Content API — 阶段总结与问题记录
+> 类别 B · 项目/内容/参考 — 产品与工程文档，AI 按需查阅，不约束流程。
 
-> 更新时间：2026-09-22
+# LopezPress（原 Echo Content API）— 阶段总结与问题记录
+
+> 更新时间：2026-10-22（第 38 轮文档校准）
 > 用途：存档各轮次进度、已知风险、待解决问题，供后续接续开发参考。
+> 说明：仓库早期名为 echo-content-api，2026-10-20 第 38 轮前正式更名 LopezPress；下文历史记录中偶见的旧名指同一项目。
 
 ---
 
@@ -55,6 +58,19 @@
 | 第二十三轮（登录限流账号桶加固 · HANDOVER §7.2 收尾） | login_limiter identifier 提取 / 补单测 / 文档校正 | ✅ 已实现 | 核实账号级失败锁定当前即生效（`LoginInput.email` 承载 username-or-email、前端同字段发出）；限流器 identifier 加固为 `email` 优先、回退 `username`，防未来独立 `username` 字段登录致 key 取空；新增 `TestLoginLimiterUsernameFieldFallback`；校正 HANDOVER §7.2/§8 表、MEMORY、PROJECT_OVERVIEW 表述；`go build/vet/test ./...` 全绿 |
 | 第二十四轮（容器化部署 · Docker Compose 生产化第一步） | deploy/docker 套件 / 根 .dockerignore / systemd 版补 /uploads 反代 | ✅ 已实现 | 多阶段 `Dockerfile.api`（golang→distroless 静态、非 root、/data 卷）+ `Dockerfile.web`（node build→nginx 托管 dist）+ compose 编排 + compose 版 `nginx.conf`（upstream api:8080、SPA 回退、gzip、补 `/uploads/` 反代）+ `api.env` 模板 + README；根 `.dockerignore` 精简 context；不改业务代码。本机验证 `CGO_ENABLED=0 GOOS=linux go build`（11.2MB 静态二进制）+ `vite build` 通过；**未 docker build**（开发机无 Docker） |
 | 第二十五轮（三层角色 + 内容审核流 + root 封禁库） | 角色重构 / 审核工作台 / 封禁库 / 层级提权 | ✅ 已实现 | 见 §4.25 |
+| 第二十六轮（AI 协作标准落地） | AGENTS.md / AI_STANDARD / 提示词库 | ✅ 已实现 | 新增 `AGENTS.md` + `docs/AI_STANDARD.md` + `docs/prompts/`×5 + 外部方法论参考 |
+| 第二十七轮（P2-8 分页双机制） | 删传统分页器，统一无限滚动 | ✅ 已实现 | 修掉「上一页重复追加第 1 页」真 bug；清死 CSS |
+| 第二十八轮（内容域代码反推 + Q2） | banned 文章冻结（P1-15） | ✅ 已实现 | 作者改/删 banned 文章 403；出口收敛到封禁库 |
+| 第二十九轮（用户域代码反推 + Q6） | disabled 账号鉴权门（P1-16） | ✅ 已实现 | `Authenticate` 加 disabled 403，覆盖 WithAuth/WithOptionalAuth |
+| 第三十轮（系统域代码反推 + Q7） | 备份导入/恢复 root 接管（P0-7） | ✅ 已实现 | service 层 `IsRoot(actor)` + handler `requireRoot` 双闸 |
+| 第三十一轮（P2-2 前端去重） | `fmtDate` ×7 收敛 + locale 修复 | ✅ 已实现 | 新建 `core/format.ts`；修英文界面日期按浏览器 locale 渲染 |
+| 第三十二轮（P2-2 前端去重） | `Modal` ×5 收敛 | ✅ 已实现 | 新建 `ui/Modal.tsx`（含 `wide` 变体） |
+| 第三十三轮（跨栈契约核对） | 修 `cover` 字段漂移（P2-13） | ✅ 已实现 | `CreatePostInput.Cover` 落库；新增 `scripts/contract_check.py` |
+| 第三十四轮（P2-14 快照恢复 UI） | `GET /api/backup/snapshots` + 前端区块 | ✅ 已实现 | root-only 列表 + 恢复按钮 + 确认框 |
+| 第三十五轮（审核状态前置） | P2-12 状态前置 + P2-15 删死导出 | ✅ 已实现 | `ReviewPost` 仅 pending/rejected 可审；`banPost` 死导出删除 |
+| 第三十六轮（SM.MS 超时 + 去重） | Q11 SM.MS 请求超时真 bug + `writeError` ×16 收敛 | ✅ 已实现 | `writeInvalidBody(w)` 辅助 |
+| 第三十七轮（P2-3 limit 统一） | `parseLimit` 收敛 + 表格三态 ×6 去重 | ✅ 已实现 | 新建 `handlers/query.go` / `ui/TableState.tsx` |
+| 第三十八轮（文档校准 + 完成度核查） | README / AGENTS / HANDOVER / TODO / PROGRESS 对齐代码实际 + 全量门禁复跑 | ✅ 本机实测 | 见 §4.38 |
 
 ---
 
@@ -639,6 +655,30 @@
 - **验证**：`go build` / `go vet` / `go test ./...` ✅（全包）；`tsc --noEmit` ✅；`vite build` ✅（63 模块）。
 - **文档**：`docs/TODO.md` 勾 P2-2（fmtDate/Modal/writeInvalidBody/TableState 全收敛）+ P2-3（limit 已统一 + 其余 7 类核查结论）+ 顶部 P2 清单同步；`.workbuddy/memory/2026-10-19.md` 第 37 轮。
 
+### 第三十八轮 — 文档校准 + 完成度/真实性核查（本轮，2026-10-22）
+
+**性质**：纯文档轮，不改业务代码。目的是消除"文档声称 ≠ 代码实际"的落差，把核查证据固化进文档。
+
+**核查方法**：逐条把文档断言与代码事实对照（`go.mod` / `package.json` / `config.go` 默认值 / `router.go` 路由表 / `seedDemoData` / `api.ts` 导出清单 / `scripts/contract_check.py` 输出），并完整复跑验证门禁。不采信历史文档结论。
+
+**修正的文档错误**
+
+| 文件 | 原表述 | 实际 |
+|---|---|---|
+| README | 限流「5 rps / burst 10」 | `config.go:66-67` 默认 **20 / 50**，`.env` 与 `.env.example` 同为 20/50 |
+| README | 路由「`@preact/signals` + 状态导航，非 react-router」 | 实际用 **`wouter`**（`core/router.tsx`），signals 包零 import |
+| README | 演示账号角色 `admin` | `seedDemoData` 写入 **`RoleRoot`**（全库唯一 root） |
+| README | 「`/logout` 只是客户端信号，需吊销请引入黑名单」 | 已实现 `token_version` 吊销 + `logout-all` |
+| README | 项目结构只有 `handlers/(auth,posts)`、6 页面 | 实际 8 个 handler 文件、22 个页面、9 个公共组件 |
+| AGENTS.md / HANDOVER.md | 「后端 ~12 模块、前端 2 个 npm 包」 | `go.mod` 6 直接依赖(+10 indirect)；前端实际用 3 个，另有 4 个零 import 依赖 |
+| PROGRESS.md | 标题 `Echo Content API`；§三 总览停在第二十五轮；§七 基线停在 25 轮；小节号「六」重复 | 已更名、补齐 26–38 轮、基线重测、重编号 |
+
+**新增待办**：`docs/TODO.md` **P1-17**（root 密码无恢复路径，运维缺口，需产品拍板）、**P2-16**（4 个零 import 前端依赖待清）。同时修正 3 处勾选状态与正文不符（P2-1 已修却未勾、P2-6 未修却已勾、P2-3 标未完成但正文为部分完成）。
+
+**验证**：`go build` / `go vet` / `go test ./...` 全绿（117 个 `Test*`）；`tsc --noEmit` / `vite build` 全绿；`contract_check.py` 报方法不匹配 0 条；基线见 §七。
+
+**遗留**：工作树相对 `v0.1.0` tag 有 20+ 文件未提交（均为 10-22 文档两类制横幅改动 + 本轮校准），需用户决定何时提交。
+
 ---
 
 
@@ -667,20 +707,22 @@
 
 ---
 
-## 七、编译验证基线（第二十五轮完成后）
+## 七、编译验证基线（第 38 轮重测，2026-10-22）
 
-| 检查项 | 结果 |
+| 检查项 | 结果（本机实测，命令与退出码可复现） |
 |--------|------|
-| `tsc --noEmit` | ✅ |
-| `vite build` | ✅ 60 模块；JS 206.28 kB / gzip 63.42 kB，CSS 57.29 kB / gzip 10.76 kB |
-| `go build ./...` | ✅ |
-| `go vet ./...` | ✅ |
-| `go test ./...` | ✅ 全绿；本轮新增 `moderation_test.go` 7 个用例（pending 403 / 队列作用域 / reject 必带 note / ban 需 root / 封禁库对 admin 不可见 / send-back 出库 / 硬删） |
-| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑 |
+| `go build ./...` | ✅ exit 0 |
+| `go vet ./...` | ✅ exit 0 |
+| `go test ./...` | ✅ 全绿（handlers / services / middleware / config / models 五包，`cmd/server` 与 `router` 无测试） |
+| `npx tsc --noEmit` | ✅ exit 0 |
+| `vite build` | ✅ 63 模块；JS 209.09 kB / gzip 64.54 kB，CSS 57.64 kB / gzip 10.85 kB（3.04s） |
+| 规模基线 | 后端 48 个 `.go` / 11,294 行；前端 43 个 `.ts(x)` / 8,324 行；测试 28 个文件 / 117 个 `Test*` 函数（services 65 / handlers 24 / middleware 21 / models 4 / config 3） |
+| 契约基线 | 后端 63 条路由，前端调用 56 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
+| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；UI 实机交互未验证（后端进程会被会话回收） |
 
 ---
 
-## 六、版本化与工程底座（2026-10-20）
+## 八、版本化与工程底座（2026-10-20）
 
 用户决定第一阶段到此为止、进入真实测试/beta 阶段，并以 **`v0.1.0`** 作为起始版本号（0.x = 接口可能变更，给自己留"改主意"余地）。
 

@@ -1,3 +1,5 @@
+> 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
+
 # 编辑器草稿 localStorage TTL 30 天 + 保存后回收
 
 > 状态：Accepted

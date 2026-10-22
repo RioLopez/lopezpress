@@ -1,3 +1,5 @@
+> 类别 B · 项目/内容/参考 — 产品与工程文档，AI 按需查阅，不约束流程。
+
 # 容器化部署（Docker Compose）
 
 `deploy/docker/` 提供一套与既有 systemd 方案**并行、可选**的容器化部署，二者不互相依赖。架构与 `deploy/README.md` 的 systemd 方案一致：**Nginx 托管前端 dist 并反代 + Go 后端 + SQLite 单文件**，不改动任何业务代码。

@@ -1,3 +1,5 @@
+> 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
+
 # [决策标题]
 
 > 状态：Proposed | Accepted | Superseded by [新决策] | Deprecated

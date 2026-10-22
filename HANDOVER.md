@@ -1,9 +1,11 @@
-# Echo Content API — 交接文档（AI 接手用）
+> 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
 
-> 版本：v2.0
-> 更新时间：2026-09-24
+# LopezPress（原 Echo Content API）— 交接文档（AI 接手用）
+
+> 版本：v2.1
+> 更新时间：2026-10-22（第 38 轮文档校准）
 > 用途：**新接手的 AI / 工程师的第一份必读**。本文档覆盖项目全貌、当前实现状态、如何跑起来、关键陷阱、已知问题、未决决策，以及自测清单。
-> 配套文档：`docs/ARCHITECTURE.md`（设计稿）、`docs/AUDIT_REPORT.md`（审计与已知问题）、`PROGRESS.md`（26 轮开发全记录）、`README.md`（快速上手）、`docs/specs/*`（21 份功能规格）、`docs/decisions/*`（重大决策）。
+> 配套文档：`docs/ARCHITECTURE.md`（设计稿）、`docs/AUDIT_2026-10-15.md`（最近一次全栈深度审计）、`PROGRESS.md`（第 1–38 轮开发全记录）、`README.md`（快速上手）、`docs/specs/*`（20 份功能规格 + 模板）、`docs/decisions/*`（4 项重大决策）。
 > **AI 协作者另读**：根目录 `AGENTS.md`（速查 + 红线）与 `docs/AI_STANDARD.md`（五阶段工作流 + 验证门禁 + 十条红线）——2026-10-19 建立的协作标准，本文件 §7 的陷阱是它的红线来源。
 
 ---
@@ -11,11 +13,11 @@
 ## 0. 先读这一段（最重要）
 
 - **技术方向已定稿，不需要换框架。** 后端 Go 标准库 `net/http` + GORM + 纯 Go SQLite；前端 Preact + Vite + TS。目标机型是低配 VPS（1 vCPU / 1.5 GB / 5 GB 磁盘）。这套组合在"低资源 + 可维护"维度是最优解，不要为了"更现代"去改框架（详见 §9 决策记录）。
-- **当前代码已落地第 1–22 轮开发 + 10 项安全加固**，全部 `go build` / `go vet` / `go test` / `tsc --noEmit` / `vite build` 通过。
+- **当前代码已落地第 1–38 轮开发 + 10 项安全加固 + 7 项 P0 修复**，全部 `go build` / `go vet` / `go test` / `tsc --noEmit` / `vite build` 通过（2026-10-22 第 38 轮本机实测，基线见 `PROGRESS.md` §七）。
 - **有一个会反复咬人的陷阱**：`glebarez/sqlite` 驱动 + GORM `AutoMigrate` 在"误判需要重建表"时会走 copy-rename 路径，生成的 `INSERT` 可能漏掉 NOT NULL 列导致启动崩溃。修复方式见 §7.1，改 `internal/config/config.go` 时务必小心，**不要回退成无条件的 `AutoMigrate`**。
 - **AI 协作先读 `AGENTS.md` + `docs/AI_STANDARD.md`**：本仓库有一整套驱动 AI 干活的标准（五阶段工作流、验证门禁、十条红线、提示词模板库 `docs/prompts/`）。新接手的 AI 按它执行，用户说「继续」即触发「读上下文 → 选下一优先级 TODO → 实现 → 门禁 → 记录」循环。
 - **本地一键启动用 `LopezPress.bat`**（Windows）。它已检测端口、避免重复启动、自动开浏览器。服务器进程请用「独立窗口 / 后台任务」方式运行，否则对话会话结束会被回收（见 §3）。
-- **首启 admin 密码是随机生成的**，只在 stderr 打印一次；登录后会被强制跳到 `/change-password` 改密（除非你用 `ADMIN_INITIAL_PASSWORD` 固定）。
+- **首启账号是唯一 root（用户名 `admin`）**，密码随机生成只在 stderr 打印一次；登录后会被强制跳到 `/change-password` 改密（除非你用 `ADMIN_INITIAL_PASSWORD` 固定）。⚠️ root 密码丢失**没有 API 恢复路径**（admin 重置 root 会被 403 拦下），只能直改 DB 或重建库——见 `docs/TODO.md` P1-17。
 
 ---
 
@@ -25,7 +27,7 @@
 
 - 单二进制（Go，零 CGO）+ 单文件数据库（SQLite）= 部署即解压，无系统依赖。
 - 前端静态产物（~180 kB JS / ~48 kB CSS gzip 后 ~56 kB / ~8.8 kB），放 Nginx 任意静态目录即可。
-- 总依赖极少：后端 ~12 模块 + 前端 2 个 npm 包（`wouter` + `marked`），供应链可审计。
+- 总依赖极少：后端 `go.mod` 直接依赖 6 个（+10 indirect）、前端实际使用 3 个 npm 包（`preact` / `wouter` / `marked`；`package.json` 另有 4 个零 import 残留依赖待清），供应链可审计。
 
 ---
 

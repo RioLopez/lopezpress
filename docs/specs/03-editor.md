@@ -1,3 +1,5 @@
+> 类别 B · 项目/内容/参考 — 产品与工程文档，AI 按需查阅，不约束流程。
+
 # 编辑器（新建 `/create` · 编辑 `/edit/:id`）
 
 > 状态：**已由 `specs/19-write-editor.md` 取代**（第 21 轮）。本 spec 为早期 textarea 双面板方案，三模式 Vditor 方案见 19。

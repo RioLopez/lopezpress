@@ -1,14 +1,16 @@
-# lopezpress 待办清单（2026-10-15 三次更新）
+> 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
+
+# lopezpress 待办清单（2026-10-15 建立 · 2026-10-22 第 38 轮校准）
 
 > 来源：功能逻辑审计 + 二轮严格自查 + **2026-10-15 全栈深度审计**（均基于读实现，非猜测）。
 > 完成后把 `[ ]` 改 `[x]`。
 > **本文件是唯一权威待办清单**。首轮审计快照已归档至 `docs/archive/2026-10-14-FUNCTIONAL_AUDIT.md`（勿再当作待办）。
 >
-> **当前状态（2026-10-19 三次修复轮 + 第 27 轮后）**：
+> **当前状态（2026-10-22 第 38 轮校准，勾选状态已与正文结论逐条对齐）**：
 > - 早期 P1/P2/P3 与功能缺口全部完成（见下方各节勾选）；
-> - **P0 级 6 项已全部修复**（修复轮 1）；
-> - P1 级已修 **P1-3 / P1-4 / P1-5 / P1-6 / P1-7 / P1-8 / P1-9 / P1-10 / P1-11 / P1-12 / P1-13 / P1-14 / P1-2**（修复轮 1–3）；仅剩 P1-1 余部（roles.go helper 全量化，架构美化非缺陷，暂缓）；
-> - P2 级已修 **P2-1（死代码 9 处）/ P2-4 / P2-5 / P2-7 / P2-8 / P2-9 / P2-10 / P2-11 / P2-12（Q1 审核状态前置）/ P2-13 / P2-14 / P2-15（死导出删除）/ P2-2（重复代码抽取：fmtDate/Modal/writeInvalidBody/TableState 全收敛）/ P2-3（limit 解析已统一 + 其余 7 类核查为纯样式）**；仅剩 **P2-6（可信代理闸门，已降级评估）**；
+> - **P0 级 7 项已全部修复**（P0-1～P0-6 修复轮 1，P0-7 第 30 轮）；
+> - P1 级已修 **P1-2～P1-16**（修复轮 1–3 + 第 28/29 轮）；仅剩 **P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）+ **P1-17 新增**（root 密码无恢复路径）；
+> - P2 级仅剩 **P2-3 部分项（剩余 7 类经核查为纯样式，不做）**、**P2-6（可信代理闸门，降级评估未修）**、**P2-16 新增**（4 个零 import 的前端依赖）；
 > - 「评论」仍为唯一未做的增强方向。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
@@ -45,6 +47,10 @@
   `roles.go:35/:61` `canManageUser`/`canReviewPost` **零调用**，文件头却宣称"所有权限判断都走这里"。实际全靠手写 if-else，漏一个就是 P0-1。
   修法：用户管理 3 方法 + 审核 4 方法全部改调 helper，删手写链。
   🔶 **部分落地（2026-10-15）**：`ResetPassword` 已改调 `canManageUser`（权限层不再是全死代码，P0-1 根因消除）。`UpdateUser`/`DeleteUser`/`CreateUser`/`ReviewPost`/`BanPost` 仍用手写链——但审计 §6 已确认这些手写链**层级校验完整、行为正确**，整体重写为 helper 风险大于收益，暂缓（属架构美化，非缺陷）。
+- [ ] **P1-17 root 密码无恢复路径（第 38 轮文档核对发现，运维缺口）**
+  `config.go` seed 写入的首启账号是 `Role: RoleRoot`（README 曾误写为 admin）。P0-1 修复后 `ResetPassword` 经 `canManageUser` 拦截「admin 重置 root」，root 自身改密需提供当前密码——**root 忘记密码后没有任何 API 路径可恢复**，只能直改 DB 的 `password_hash` 或删库重建（`ADMIN_INITIAL_PASSWORD` 只在无 admin 账号时生效）。
+  建议（需产品拍板）：① 提供 CLI 子命令 `server -reset-root-password`（要求本机文件系统权限，等价于直改 DB 但更安全）；② 或允许 root 通过离线恢复码重置；③ 或接受现状并在 README / HANDOVER 显式写明运维步骤。
+  当前已在 `README.md` §演示账号 标注为已知缺口。
 - [x] **P1-2 `CreateUser` service 层不校验 actor**（`accounts.go:264`）：普通 user 亦可建号，与"service 是权威"的承诺相反。
   ✅ **已修（2026-10-15 修复轮 3）**：`CreateUser` 入口加纵深防御 `if !IsAdminOrRoot(actor) { return 403 }`——handler 已有 `requireAdmin`，service 层不再信任 handler。
 - [x] **P1-15 banned 文章未冻结（代码反推审计 Q2，第 28 轮）**：作者可 `UpdatePost`/`DeletePost` 自己已 banned 的文章（违背"banned 仅 root 管"）；作者软删后 root 的 `DeleteBannedPermanently` 因软删 scope 404，封禁数据永久残留。
@@ -114,7 +120,7 @@
 
 > 完整证据链见 `docs/AUDIT_2026-10-15.md` §3。按"先删死代码 → 再抽重复 → 最后统一写法"顺序做。
 
-- [ ] **P2-1 死代码清理（9 处，零风险）**：`requireAdminOrRoot`（0 调用）、`var db *gorm.DB`（只写不读）、`var _ = models.Category{}`（占位 import）、`ImageUploader.tsx`（整个文件无人 import）、`Sidebar.tsx` 空 catch、`ThemeMode` 死类型（与 theme.tsx 冲突）、i18n 死键 15 个（`settings.*` 7 + `imgUpload.smms*` 8）、`UpdatePost` 注释重复两遍。
+- [x] **P2-1 死代码清理（9 处，零风险）**：`requireAdminOrRoot`（0 调用）、`var db *gorm.DB`（只写不读）、`var _ = models.Category{}`（占位 import）、`ImageUploader.tsx`（整个文件无人 import）、`Sidebar.tsx` 空 catch、`ThemeMode` 死类型（与 theme.tsx 冲突）、i18n 死键 15 个（`settings.*` 7 + `imgUpload.smms*` 8）、`UpdatePost` 注释重复两遍。
   ✅ **已修（2026-10-15 修复轮 2）**：删 `requireAdminOrRoot`、`var db`（Init 保留签名）、`var _ = models.Category{}` 及多余 import、`ImageUploader.tsx` 整文件、`types.ts` 的 `ThemeMode` 死类型、i18n `smms*`/`settings.*` 15 死键、`Sidebar` 空 catch 体改纯静默注释、`UpdatePost` 重复注释（修复轮 1 已清）。`go build`/`go vet`/`tsc`/`vite build` 全绿。
 - [x] **P2-13 `CreatePostInput` 缺 `cover` 字段（跨栈契约漂移，第 33 轮）**：前端 `CreatePage` 创建文章时发 `cover`（PostEditor 封面功能），但后端 struct 无此字段——Go JSON decoder 静默丢弃未知字段，**创建时设的封面直接丢失**（仅编辑路径 `UpdatePostInput` 有 Cover）。这类漂移 `tsc`/`go build` 都发现不了，只能跨栈核对。
   ✅ **已修（2026-10-19 第 33 轮）**：`CreatePostInput` 加 `Cover string` + `CreatePost` 落库；回归 `post_cover_test.go` `TestCreatePostKeepsCover`（返回值 + DB 行双断言 + 空值不幻影）；新增 `scripts/contract_check.py`（前后端 method+path 自动核对工具，防复发）。`go build/vet/test` 全绿。
@@ -122,6 +128,7 @@
   ✅ **已修（2026-10-19 第 34 轮）**：后端新增 `GET /api/backup/snapshots`（root-only，`ListSnapshots` service + handler + router，回归 `backup_snapshots_test.go`：admin 403 / 缺目录返空 / 只列 snapshot-*.db / 大小正确）；前端 `api.ts` 加 `listSnapshots`/`restoreSnapshot`，AdminBackupPage 新增「快照恢复」区块（rootOnly：表格 + 每行恢复按钮 + 确认对话框 + 恢复后自动刷新列表）；i18n 11 个新键（zh/en，含 `admin.snapshotRestoreConfirm` 避免与回收站 `admin.restoreConfirm` 撞名——tsc 抓到的）。`go build/vet/test` + `tsc` + `vite build` 全绿；`contract_check.py` 确认 restore-snapshot 已接入（未调路由只剩 5 个合理项）。
 - [x] **P2-15 `banPost` 死导出（第 35 轮记录）**：`api.ts` 的 `banPost(id, note?)` 全前端无调用（ban 入口不在文章列表/审核页 UI 上），其 `note` 参数后端 `BanPost` 也不接收（设计上 ban 不带 note，note 属于 send-back）。
   ✅ **已修（2026-10-19 第 35 轮）**：按审计建议删死导出（`tsc`+`vite build` 全绿）。**遗留产品决策**：封禁库功能当前**无 UI 入口可发起 ban**（只能在 `/admin/banned` 对已封禁文做 send-back/删除），即封禁库"只出不进"。若需要，应在某管理页（如审核页/文章管理）加 root-only 的"封禁"按钮并复用 `POST /api/admin/ban/{id}`（届时重新导出 `banPost`）。待产品决策。
+- [ ] **P2-16 前端 4 个零 import 依赖（第 38 轮依赖核对发现）**：`web/package.json` 声明了 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string`，全仓库 `grep` 零 import；实际运行依赖只有 `preact` / `wouter` / `marked`。既增安装体积又让"极简依赖"的说法失真（`AGENTS.md` 原写"2 个 npm 包"）。修法：`npm uninstall` 这 4 个 + 复跑 `tsc`/`vite build`。
 - [x] **P2-2 重复代码抽取**：`load = useCallback` ×7、admin 表格三态 ×6、分页器 2 套实现、`writeError(400,"invalid request body")` ×15。
   🔶 **部分完成（2026-10-19 第 31+32 轮）**：
   - **fmtDate ×7 已全部收敛**（审计估值 ×7 正确：6 个 `fmtDate` + 1 个 `fmt`）——新建 `web/src/core/format.ts`（`fmtDate(iso, locale)` + `fmtDay(iso)`）；5 个 admin 页 + PersonalCenterPage 的本地定义全删；**AdminAuditPage 的 `fmt` 为有意差异化保留**（无效日期回显原值而非 "—"，审计行不隐藏源数据，已加注释），仅补 locale 一致性。**顺带修复**：原 7 处均不传 locale，英文界面日期仍按浏览器 locale 渲染（对齐 ListPage localeTag 模式）。
@@ -138,7 +145,7 @@
   ✅ **已修（2026-10-15 修复轮 3）**：4 处全部接 i18n（新增 `auth.usernamePlaceholder/passwordPlaceholder/showPwd/hidePwd`、`editor.dragDivider`、`admin.restoreConfirm` 键，zh+en）；LoginPage 不再泄露默认口令提示。
 - [x] **P2-5 `'draft'` CSS 类借用**：`post-status-draft` 已不是合法 PostStatus（3 处使用）。
   ✅ **已修（2026-10-15 修复轮 3）**：删 `index.css` 死类 `.post-status-draft`/`.post-status-scheduled`；`tsc`+`vite build` ✅。
-- [x] **P2-6 `clientIP` 信任 XFF**：审计 IP 可伪造；生产经 Nginx 覆盖可缓解，建议加可信代理闸门。
+- [ ] **P2-6 `clientIP` 信任 XFF**：审计 IP 可伪造；生产经 Nginx 覆盖可缓解，建议加可信代理闸门。
   ⏳ **未修（降级评估）**：单实例直裸部署场景(本机/dev)无代理,XFF 本就来自客户端;生产部署走 Nginx 时由 Nginx 覆盖 XFF(见 deploy/nginx.conf),可信代理闸门需新增 `TRUSTED_PROXIES` 配置+中间件改造,收益随场景而变,列为 P2 待办。
 - [x] **P2-7 `?page=abc` 静默落入 legacy 分支**：`posts.go:70-78` `Atoi` 错误被忽略 → 响应结构与请求意图相反。
   ✅ **已修（2026-10-15 修复轮 3）**：`ListPosts` 显式解析 `page/size/category`，任一显式提供但非数字 → 400；补回归 `TestListPostsRejectsBadPageParam`。
