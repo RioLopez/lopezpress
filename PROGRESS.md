@@ -753,6 +753,6 @@
 - 补 `.gitignore`：`logs/` `*.log` `backend.log` `web/uploads/` `.workbuddy/`。
 - 首次提交 `8458e36`（170 文件，无真实密钥 / 无构建产物）；打 annotated tag **`v0.1.0`**（msg: stage 1 complete, enter testing, 0.x APIs may change）。
 - 验证：`git ls-files --eol deploy/*.sh` = `i/lf w/lf`；工作树 clean；两个 `*.env` 部署模板（仅 `CHANGE_ME` 占位符）随库提交，真实密钥走运行时注入或被忽略的 `.env`。
-- 无远程，未 push；后续 push 需先 `git remote add origin <url>` 再 `git push --tags`。
+- **远程已配置**（第 39 轮核实，本条此前写的"无远程"已过期）：`origin` = `https://github.com/RioLopez/lopezpress.git`（私有仓库），本地 `main` 追踪 `origin/main`，远程 HEAD 与本地一致（`17d7760`）。本机 `git fetch/push` 走 schannel 报 `CRYPT_E_REVOCATION_OFFLINE`、走 openssl 又遇 `credential.helper=manager` 链路失效，需用 GCM 里存的令牌临时拼 `http.extraheader` 才能联网；`api.github.com` 直连可用，`github.com:443` 的 git TLS 被网络阻断。**提交仍在本地，未 push。**
 
 **版本号策略**：beta 阶段 `0.x.y`（如 0.1.0 → 0.2.0 …）；临近生产升 `1.0.0-beta.N` → `1.0.0-rc.N` → `1.0.0`。每次发版打 `vX.Y.Z` tag，发版前跑全量验证门禁（go build/vet/test + tsc + vite build）。
