@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,6 +21,12 @@ import (
 
 // main entry point.
 func main() {
+	// Offline recovery flag (spec #22 / TODO P1-17). Parsed before anything
+	// else so a reset run never starts the HTTP server.
+	resetRoot := flag.Bool("reset-root-password", false,
+		"rotate the unique root account's password, print it once to stderr, and exit (offline recovery)")
+	flag.Parse()
+
 	loadDotEnv()
 	cfg := config.Load()
 
@@ -26,6 +34,10 @@ func main() {
 	// opening the database, so a bad production setup fails fast.
 	if err := cfg.ValidateSecurity(); err != nil {
 		log.Fatalf("security config invalid: %v", err)
+	}
+
+	if *resetRoot {
+		os.Exit(runResetRootPassword(cfg))
 	}
 
 	db, seededAdminPwd, err := config.InitDB(cfg)
@@ -39,8 +51,8 @@ func main() {
 	if seededAdminPwd != "" {
 		const banner = `
 ==================================================================
-  FIRST BOOT — a new admin account was created.
-  Username: admin
+  FIRST BOOT — the root account was created.
+  Username: admin   (role: root, the only super-admin)
   Password: %s
 ==================================================================
 
@@ -50,6 +62,8 @@ func main() {
   - For production: you MUST change this password immediately.
     (Set the ADMIN_INITIAL_PASSWORD env var to pin a known value
      on first boot if you prefer.)
+  - Forgotten later? Run: lopezpress -reset-root-password
+    (admin cannot reset root by design; see spec #22)
 ==================================================================
 `
 		fmt.Fprintf(os.Stderr, banner, seededAdminPwd)
@@ -104,6 +118,64 @@ func main() {
 		log.Fatalf("forced shutdown: %v", err)
 	}
 	log.Println("server stopped")
+}
+
+// runResetRootPassword implements the `-reset-root-password` flag (spec #22).
+//
+// It exists because the HTTP API intentionally has no path back into root: an
+// admin may not reset root (P0-1 fix) and root's own password change requires
+// the current password, so a forgotten root password used to mean "edit the
+// database by hand or lose the site". This makes that operation correct
+// (bcrypt, forced rotation, session revocation) for whoever already has
+// filesystem access — which is the same trust boundary as editing the DB.
+//
+// Returns the process exit code.
+func runResetRootPassword(cfg *config.Config) int {
+	// Refuse to touch a missing database file. InitDB would happily create and
+	// seed a brand-new one, so a typo in DB_PATH would silently "succeed" on the
+	// wrong database while the real site stays locked out.
+	if _, err := os.Stat(cfg.DBPath); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"refusing to reset: database %q is not readable (%v)\n"+
+				"hint: run from the project root so .env is loaded, or set DB_PATH explicitly.\n",
+			cfg.DBPath, err)
+		return 1
+	}
+
+	db, seededPwd, err := config.InitDB(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open database %q: %v\n", cfg.DBPath, err)
+		return 1
+	}
+
+	password := seededPwd
+	if password == "" {
+		password, err = config.ResetRootPasswordForCLI(db)
+		if err != nil {
+			if errors.Is(err, config.ErrNoRootAccount) {
+				fmt.Fprintln(os.Stderr,
+					"refusing to reset: no root account in this database; restore a backup instead.")
+			} else {
+				fmt.Fprintf(os.Stderr, "failed to reset root password: %v\n", err)
+			}
+			return 1
+		}
+	}
+
+	const banner = `
+==================================================================
+  ROOT PASSWORD RESET
+  Username: admin   (role: root)
+  Password: %s
+==================================================================
+
+  Shown ONCE, never written to a log file.
+  - Every JWT issued before this reset is now invalid.
+  - The next login is forced to /change-password.
+==================================================================
+`
+	fmt.Fprintf(os.Stderr, banner, password)
+	return 0
 }
 
 // loadDotEnv reads a .env file in the current directory, if present, and

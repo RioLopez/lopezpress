@@ -27,6 +27,7 @@
 **运维**
 - JSON 备份导出 / 导入（含 dry-run 与导入前自动快照）、快照列表与恢复（root-only）、回收站
 - SMTP 邮件通知（登录失败 / 改密 / 异地登录，手写零依赖客户端）
+- root 密码离线恢复：`lopezpress -reset-root-password`（随机新密码 + 强制改密 + 吊销旧会话，spec 22）
 - 首启自动建表 + 写入演示数据（root 账号 `admin` + 3 篇示例文章 + 3 分类 + 5 标签）
 
 ## 项目结构
@@ -126,7 +127,15 @@ $env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有（
 >
 > ⚠️ **首启账号是 root，不是 admin**（`config.go` seed 写入 `Role: RoleRoot`）。因此：
 > - `POST /api/users/{id}/reset-password` **无法重置 root 密码**（admin 重置 root 会被 `canManageUser` 403 拦下，这是 P0-1 的修复结果）；
-> - root 密码一旦丢失**没有 API 恢复路径**，只能直改数据库（`password_hash`）或用 `ADMIN_INITIAL_PASSWORD` 重建库。这是当前已知运维缺口。
+> - root 忘记密码走**离线恢复**（HTTP 无路径，刻意如此）：
+>
+> ```bat
+> LopezPress.bat stop
+> lopezpress.exe -reset-root-password   :: 生成新随机密码并打印一次，同时吊销 root 所有旧会话
+> LopezPress.bat
+> ```
+>
+> 详见 `docs/specs/22-root-password-recovery.md`。
 
 ## 验证
 
@@ -162,7 +171,7 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 - `createContext` 来自顶层 `preact`；`useContext/useEffect/useState/useRef` 来自 `preact/hooks`
 - 子类型用 `ComponentChildren`（Preact 无 `Child` 类型）
 - token 存 `localStorage`，启动时用 `GET /api/auth/me` 重新校验有效性
-- 实际在用的运行时依赖只有 `preact` / `wouter` / `marked`；`package.json` 中 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string` **全仓库零 import（待清理）**
+- 运行时依赖只有 `preact` / `wouter` / `marked` 三个（第 39 轮已清掉 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string` 四个零 import 残留）
 
 ## 文档导航
 
