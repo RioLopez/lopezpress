@@ -51,6 +51,7 @@ go vet ./...            # 静态检查
 go test ./...           # 单测
 cd web; npx tsc --noEmit   # 前端类型
 npm run build           # 前端生产构建
+python scripts/doc_check.py   # 改过文档时必须跑:母文档索引/份数/横幅是否仍一致
 ```
 
 > 本机 Go 路径:`C:\Users\LopezPC\go-sdk\go\bin`(旧记录 `C:\Users\Lopez\go-install\go\bin` 已失效)。
