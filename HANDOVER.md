@@ -17,7 +17,7 @@
 - **有一个会反复咬人的陷阱**：`glebarez/sqlite` 驱动 + GORM `AutoMigrate` 在"误判需要重建表"时会走 copy-rename 路径，生成的 `INSERT` 可能漏掉 NOT NULL 列导致启动崩溃。修复方式见 §7.1，改 `internal/config/config.go` 时务必小心，**不要回退成无条件的 `AutoMigrate`**。
 - **AI 协作先读 `AGENTS.md` + `docs/AI_STANDARD.md`**：本仓库有一整套驱动 AI 干活的标准（五阶段工作流、验证门禁、十条红线、提示词模板库 `docs/prompts/`）。新接手的 AI 按它执行，用户说「继续」即触发「读上下文 → 选下一优先级 TODO → 实现 → 门禁 → 记录」循环。
 - **本地一键启动用 `LopezPress.bat`**（Windows）。它已检测端口、避免重复启动、自动开浏览器。服务器进程请用「独立窗口 / 后台任务」方式运行，否则对话会话结束会被回收（见 §3）。
-- **首启账号是唯一 root（用户名 `admin`）**，密码随机生成只在 stderr 打印一次；登录后会被强制跳到 `/change-password` 改密（除非你用 `ADMIN_INITIAL_PASSWORD` 固定）。⚠️ root 密码丢失**没有 API 恢复路径**（admin 重置 root 会被 403 拦下），只能直改 DB 或重建库——见 `docs/TODO.md` P1-17。
+- **首启账号是唯一 root（用户名 `admin`）**，密码随机生成只在 stderr 打印一次；登录后会被强制跳到 `/change-password` 改密（除非你用 `ADMIN_INITIAL_PASSWORD` 固定）。⚠️ root 密码丢失**没有 HTTP 恢复路径**（admin 重置 root 会被 403 拦下，刻意如此），改走离线命令 `lopezpress -reset-root-password`（随机新密码 + 强制改密 + 吊销旧会话，见 `docs/specs/22-root-password-recovery.md`）。
 
 ---
 
@@ -27,7 +27,7 @@
 
 - 单二进制（Go，零 CGO）+ 单文件数据库（SQLite）= 部署即解压，无系统依赖。
 - 前端静态产物（~180 kB JS / ~48 kB CSS gzip 后 ~56 kB / ~8.8 kB），放 Nginx 任意静态目录即可。
-- 总依赖极少：后端 `go.mod` 直接依赖 6 个（+10 indirect）、前端实际使用 3 个 npm 包（`preact` / `wouter` / `marked`；`package.json` 另有 4 个零 import 残留依赖待清），供应链可审计。
+- 总依赖极少：后端 `go.mod` 直接依赖 6 个（+10 indirect）、前端 3 个 npm 包（`preact` / `wouter` / `marked`），供应链可审计。
 
 ---
 

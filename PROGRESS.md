@@ -71,6 +71,7 @@
 | 第三十六轮（SM.MS 超时 + 去重） | Q11 SM.MS 请求超时真 bug + `writeError` ×16 收敛 | ✅ 已实现 | `writeInvalidBody(w)` 辅助 |
 | 第三十七轮（P2-3 limit 统一） | `parseLimit` 收敛 + 表格三态 ×6 去重 | ✅ 已实现 | 新建 `handlers/query.go` / `ui/TableState.tsx` |
 | 第三十八轮（文档校准 + 完成度核查） | README / AGENTS / HANDOVER / TODO / PROGRESS 对齐代码实际 + 全量门禁复跑 | ✅ 本机实测 | 见 §4.38 |
+| 第三十九轮（修 P1-17 + P2-16） | root 密码离线恢复 CLI / 清 4 个无用前端依赖 | ✅ 本机实测 | 见 §4.39 |
 
 ---
 
@@ -679,6 +680,25 @@
 
 **遗留**：工作树相对 `v0.1.0` tag 有 20+ 文件未提交（均为 10-22 文档两类制横幅改动 + 本轮校准），需用户决定何时提交。
 
+### 第三十九轮 — 修 P1-17（root 密码离线恢复）+ P2-16（无用前端依赖）
+
+**背景**：第 38 轮文档核对发现两个真实缺口——root 忘密码无路可走（P1-17）、前端 4 个包零 import（P2-16）。本轮按 T2 流程先写 spec 再实现。
+
+**P1-17 · root 密码离线恢复（新增 spec `22-root-password-recovery.md`）**
+- **为什么不做 HTTP 端点**：那等于开一条远程接管通道，直接违背 R2「root 不可经任何 API 创建/提升」。恢复动作只能落在"已经能读 DB 文件"这个既有信任边界上。
+- `internal/config/recover.go`：`ResetRootPasswordForCLI(db)` 查唯一 root（`created_at ASC` 兜底多 root 脏数据）→ 生成 22 字符随机密码 → **一条 UPDATE 同时完成三件事**：换 `password_hash`、置 `must_change_password=true`、`token_version+1`（吊销旧会话——密码丢失常伴随会话被他人持有，恢复即清场）。
+- `cmd/server/main.go`：新增 `-reset-root-password` 标志，在**启动 HTTP 之前**拦截并 `os.Exit`；先 `os.Stat(cfg.DBPath)` 拒绝不存在的库（否则 `InitDB` 会静默 seed 出一个假站点并在错误路径上报"重置成功"）。首启 banner 措辞从 "a new admin account" 改为 "the root account（role: root）"，与 seed 实际写入的 `RoleRoot` 一致，并提示该恢复命令。
+- **回归** `internal/config/recover_test.go`（3 用例）：轮换成功（新密码 verify、旧密码失效、强制改密、`token_version` 3→4、角色与禁用状态不变）/ 只动 root（普通用户 hash 与 `token_version` 不受影响）/ 无 root 时返回 `ErrNoRootAccount` 且**不凭空造出 root 行**。
+- **端到端实测**（临时库 `data/rc38.db`、端口 18081，跑完即删）：① 对不存在的库执行 → 拒绝、退出码 1、文件未被创建；② 首启 seed 拿旧密码 → 执行恢复 → 拿到新密码；③ 旧密码登录 **401**、新密码登录 **200** 且响应 `must_change_password:true`、`role:"root"`、JWT 内 `ver:1`（佐证 `token_version` 已递增）。
+
+**P2-16 · 清理无用依赖**
+- `npm uninstall @preact/signals @preact/signals-core preact-router preact-render-to-string`，`web/package.json` 依赖收敛为 `marked` / `preact` / `wouter` 三个（与文档承诺一致）。
+- 反证：`tsc --noEmit` + `vite build` 全绿，产物仍是 **63 模块 / JS 209.09 kB / gzip 64.54 kB**，与清理前逐字节相同——说明这些包从未进入构建。
+
+**验证**：`go build` / `go vet` / `go test -count=1 ./...` 全绿（config 包 3 新用例通过，测试总数 117→120）；`tsc --noEmit` / `vite build` 全绿。
+
+**文档**：`docs/TODO.md` 勾 P1-17/P2-16 + 顶部状态同步；`README.md` 演示账号告警改为 CLI 恢复步骤并补进「运维」功能；`HANDOVER.md` §0 同步；`AGENTS.md` specs 区间 01–21→01–22；新增 spec 22。
+
 ---
 
 
@@ -707,16 +727,17 @@
 
 ---
 
-## 七、编译验证基线（第 38 轮重测，2026-10-22）
+## 七、编译验证基线（第 39 轮重测，2026-10-22）
 
 | 检查项 | 结果（本机实测，命令与退出码可复现） |
 |--------|------|
 | `go build ./...` | ✅ exit 0 |
 | `go vet ./...` | ✅ exit 0 |
-| `go test ./...` | ✅ 全绿（handlers / services / middleware / config / models 五包，`cmd/server` 与 `router` 无测试） |
+| `go test -count=1 ./...` | ✅ 全绿（handlers 8.7s / services 8.2s / config 1.7s / middleware 1.4s / models 1.3s；`cmd/server` 与 `router` 无测试） |
 | `npx tsc --noEmit` | ✅ exit 0 |
-| `vite build` | ✅ 63 模块；JS 209.09 kB / gzip 64.54 kB，CSS 57.64 kB / gzip 10.85 kB（3.04s） |
-| 规模基线 | 后端 48 个 `.go` / 11,294 行；前端 43 个 `.ts(x)` / 8,324 行；测试 28 个文件 / 117 个 `Test*` 函数（services 65 / handlers 24 / middleware 21 / models 4 / config 3） |
+| `vite build` | ✅ 63 模块；JS 209.09 kB / gzip 64.54 kB，CSS 57.64 kB / gzip 10.85 kB（2.73s） |
+| 规模基线 | 后端 48 个 `.go`（含新增 `config/recover.go`）/ 约 11.4k 行；前端 43 个 `.ts(x)` / 8,324 行；测试 29 个文件 / 120 个 `Test*` 函数（services 65 / handlers 24 / middleware 21 / config 6 / models 4） |
+| 依赖基线 | 后端 6 个直接依赖；前端 3 个（`preact` / `wouter` / `marked`） |
 | 契约基线 | 后端 63 条路由，前端调用 56 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
 | 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；UI 实机交互未验证（后端进程会被会话回收） |
 

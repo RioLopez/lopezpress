@@ -17,7 +17,7 @@
 | 约束 | 说明 |
 |------|------|
 | **不换框架** | 后端 Go `net/http` + GORM + `glebarez/sqlite`(零 CGO);前端 Preact + Vite + TS。没有性能/功能瓶颈证据时,不为了"更现代"改栈 |
-| **不加重依赖** | 后端 `go.mod` 直接依赖 6 个（sqlite 驱动 / jwt / uuid / x-crypto / x-time / gorm，另有 10 个 indirect）；前端实际使用 3 个 npm 包(`preact` + `wouter` + `marked`)，`package.json` 里另有 4 个零 import 的残留依赖（`@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string`，见 `docs/TODO.md` P2-16）。加依赖前先问"能不能手写/标准库解决" |
+| **不加重依赖** | 后端 `go.mod` 直接依赖 6 个（sqlite 驱动 / jwt / uuid / x-crypto / x-time / gorm，另有 10 个 indirect）；前端 3 个 npm 包(`preact` + `wouter` + `marked`)。加依赖前先问"能不能手写/标准库解决" |
 | **低资源优先** | SQLite 连接池 4/2、限流内存态、无 Redis、无后台常驻任务。任何改动都要过"1 vCPU / 1 GB 可用内存"这关 |
 | **root 唯一且不可经 API 创建/提升** | 角色 `root/admin/user`;root 全库唯一,仅首启 seed + 迁移 `0003_root_migration` 产生 |
 | **可见性判定只在 service 层** | `canSeePost`(`internal/services`)是文章五态 `published/private/pending/rejected/banned` 的唯一权威,handler/router 不写可见性 if |
@@ -92,7 +92,7 @@ npm run build           # 前端生产构建
 |---|---|
 | `README.md` / `PROGRESS.md` / `api.md` | 上手 / 轮次史 / API 参考 |
 | `docs/ARCHITECTURE.md` / `docs/PROJECT_OVERVIEW.md` | 架构设计 / 代码地图速查 |
-| `docs/specs/`(01–21) | 页面功能规格(EARS 验收语法) |
+| `docs/specs/`(01–22) | 页面功能规格(EARS 验收语法) |
 | `docs/DESIGN_SYSTEM.md` | 全站 UI 标准 |
 | `docs/BUSINESS_LOGIC.md` | 业务逻辑反向梳理 |
 | `docs/AUDIT_REPORT.md` / `docs/AUDIT_2026-10-15.md` / `docs/archive/` | 安全/功能审计 |

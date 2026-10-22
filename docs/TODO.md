@@ -6,11 +6,11 @@
 > 完成后把 `[ ]` 改 `[x]`。
 > **本文件是唯一权威待办清单**。首轮审计快照已归档至 `docs/archive/2026-10-14-FUNCTIONAL_AUDIT.md`（勿再当作待办）。
 >
-> **当前状态（2026-10-22 第 38 轮校准，勾选状态已与正文结论逐条对齐）**：
+> **当前状态（2026-10-22 第 39 轮后，勾选状态与正文结论逐条对齐）**：
 > - 早期 P1/P2/P3 与功能缺口全部完成（见下方各节勾选）；
 > - **P0 级 7 项已全部修复**（P0-1～P0-6 修复轮 1，P0-7 第 30 轮）；
-> - P1 级已修 **P1-2～P1-16**（修复轮 1–3 + 第 28/29 轮）；仅剩 **P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）+ **P1-17 新增**（root 密码无恢复路径）；
-> - P2 级仅剩 **P2-3 部分项（剩余 7 类经核查为纯样式，不做）**、**P2-6（可信代理闸门，降级评估未修）**、**P2-16 新增**（4 个零 import 的前端依赖）；
+> - **P1 级仅剩 P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）；P1-17（root 密码恢复）第 39 轮已修；P1-15/P1-16 第 28/29 轮已修；
+> - P2 级仅剩 **P2-3 剩余 7 类（经核查为纯样式，不做）** 与 **P2-6（可信代理闸门，降级评估未修）**；P2-16（无用依赖）第 39 轮已修；
 > - 「评论」仍为唯一未做的增强方向。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
@@ -47,10 +47,9 @@
   `roles.go:35/:61` `canManageUser`/`canReviewPost` **零调用**，文件头却宣称"所有权限判断都走这里"。实际全靠手写 if-else，漏一个就是 P0-1。
   修法：用户管理 3 方法 + 审核 4 方法全部改调 helper，删手写链。
   🔶 **部分落地（2026-10-15）**：`ResetPassword` 已改调 `canManageUser`（权限层不再是全死代码，P0-1 根因消除）。`UpdateUser`/`DeleteUser`/`CreateUser`/`ReviewPost`/`BanPost` 仍用手写链——但审计 §6 已确认这些手写链**层级校验完整、行为正确**，整体重写为 helper 风险大于收益，暂缓（属架构美化，非缺陷）。
-- [ ] **P1-17 root 密码无恢复路径（第 38 轮文档核对发现，运维缺口）**
+- [x] **P1-17 root 密码无恢复路径（第 38 轮文档核对发现，运维缺口）**
   `config.go` seed 写入的首启账号是 `Role: RoleRoot`（README 曾误写为 admin）。P0-1 修复后 `ResetPassword` 经 `canManageUser` 拦截「admin 重置 root」，root 自身改密需提供当前密码——**root 忘记密码后没有任何 API 路径可恢复**，只能直改 DB 的 `password_hash` 或删库重建（`ADMIN_INITIAL_PASSWORD` 只在无 admin 账号时生效）。
-  建议（需产品拍板）：① 提供 CLI 子命令 `server -reset-root-password`（要求本机文件系统权限，等价于直改 DB 但更安全）；② 或允许 root 通过离线恢复码重置；③ 或接受现状并在 README / HANDOVER 显式写明运维步骤。
-  当前已在 `README.md` §演示账号 标注为已知缺口。
+  ✅ **已修（2026-10-22 第 39 轮）**：新增离线恢复入口 `lopezpress -reset-root-password`（spec `docs/specs/22-root-password-recovery.md`）。`internal/config/recover.go` 的 `ResetRootPasswordForCLI` 查唯一 root → 生成 22 字符随机密码 → 单条 UPDATE 同时改 `password_hash` / 置 `must_change_password` / `token_version+1`（吊销既有会话）；`cmd/server/main.go` 用 `-reset-root-password` 标志在**启动 HTTP 之前**拦截，先 `os.Stat(DBPath)` 拒绝不存在的库（否则 InitDB 会静默 seed 出一个假站点）。刻意不做 HTTP 端点（= 远程接管通道，违背 R2）。回归 `internal/config/recover_test.go` 3 用例（轮换+吊销+强制改密+角色不变 / 只动 root / 无 root 报错且不凭空造 root）；端到端实测：旧密码 401、新密码 200 且 `must_change_password:true`、JWT `ver:1`。
 - [x] **P1-2 `CreateUser` service 层不校验 actor**（`accounts.go:264`）：普通 user 亦可建号，与"service 是权威"的承诺相反。
   ✅ **已修（2026-10-15 修复轮 3）**：`CreateUser` 入口加纵深防御 `if !IsAdminOrRoot(actor) { return 403 }`——handler 已有 `requireAdmin`，service 层不再信任 handler。
 - [x] **P1-15 banned 文章未冻结（代码反推审计 Q2，第 28 轮）**：作者可 `UpdatePost`/`DeletePost` 自己已 banned 的文章（违背"banned 仅 root 管"）；作者软删后 root 的 `DeleteBannedPermanently` 因软删 scope 404，封禁数据永久残留。
@@ -128,7 +127,8 @@
   ✅ **已修（2026-10-19 第 34 轮）**：后端新增 `GET /api/backup/snapshots`（root-only，`ListSnapshots` service + handler + router，回归 `backup_snapshots_test.go`：admin 403 / 缺目录返空 / 只列 snapshot-*.db / 大小正确）；前端 `api.ts` 加 `listSnapshots`/`restoreSnapshot`，AdminBackupPage 新增「快照恢复」区块（rootOnly：表格 + 每行恢复按钮 + 确认对话框 + 恢复后自动刷新列表）；i18n 11 个新键（zh/en，含 `admin.snapshotRestoreConfirm` 避免与回收站 `admin.restoreConfirm` 撞名——tsc 抓到的）。`go build/vet/test` + `tsc` + `vite build` 全绿；`contract_check.py` 确认 restore-snapshot 已接入（未调路由只剩 5 个合理项）。
 - [x] **P2-15 `banPost` 死导出（第 35 轮记录）**：`api.ts` 的 `banPost(id, note?)` 全前端无调用（ban 入口不在文章列表/审核页 UI 上），其 `note` 参数后端 `BanPost` 也不接收（设计上 ban 不带 note，note 属于 send-back）。
   ✅ **已修（2026-10-19 第 35 轮）**：按审计建议删死导出（`tsc`+`vite build` 全绿）。**遗留产品决策**：封禁库功能当前**无 UI 入口可发起 ban**（只能在 `/admin/banned` 对已封禁文做 send-back/删除），即封禁库"只出不进"。若需要，应在某管理页（如审核页/文章管理）加 root-only 的"封禁"按钮并复用 `POST /api/admin/ban/{id}`（届时重新导出 `banPost`）。待产品决策。
-- [ ] **P2-16 前端 4 个零 import 依赖（第 38 轮依赖核对发现）**：`web/package.json` 声明了 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string`，全仓库 `grep` 零 import；实际运行依赖只有 `preact` / `wouter` / `marked`。既增安装体积又让"极简依赖"的说法失真（`AGENTS.md` 原写"2 个 npm 包"）。修法：`npm uninstall` 这 4 个 + 复跑 `tsc`/`vite build`。
+- [x] **P2-16 前端 4 个零 import 依赖（第 38 轮依赖核对发现）**：`web/package.json` 声明了 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string`，全仓库 `grep` 零 import；实际运行依赖只有 `preact` / `wouter` / `marked`。既增安装体积又让"极简依赖"的说法失真（`AGENTS.md` 原写"2 个 npm 包"）。修法：`npm uninstall` 这 4 个 + 复跑 `tsc`/`vite build`。
+  ✅ **已修（2026-10-22 第 39 轮）**：`npm uninstall` 移除 4 个（连 `@preact/signals` 带入的间接包共清掉 3 个 node_modules 目录），`package.json` 依赖收敛为 `marked` / `preact` / `wouter` 三个；`tsc --noEmit` + `vite build` 全绿，产物大小 63 模块 / JS 209.09 kB 与清理前**完全一致**（反证这些包确实没进构建）。
 - [x] **P2-2 重复代码抽取**：`load = useCallback` ×7、admin 表格三态 ×6、分页器 2 套实现、`writeError(400,"invalid request body")` ×15。
   🔶 **部分完成（2026-10-19 第 31+32 轮）**：
   - **fmtDate ×7 已全部收敛**（审计估值 ×7 正确：6 个 `fmtDate` + 1 个 `fmt`）——新建 `web/src/core/format.ts`（`fmtDate(iso, locale)` + `fmtDay(iso)`）；5 个 admin 页 + PersonalCenterPage 的本地定义全删；**AdminAuditPage 的 `fmt` 为有意差异化保留**（无效日期回显原值而非 "—"，审计行不隐藏源数据，已加注释），仅补 locale 一致性。**顺带修复**：原 7 处均不传 locale，英文界面日期仍按浏览器 locale 渲染（对齐 ListPage localeTag 模式）。
