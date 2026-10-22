@@ -179,6 +179,7 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 
 | 想了解 | 看这里 |
 | --- | --- |
+| **总索引：有哪些文档、去哪找** | **[`MASTER.md`](MASTER.md)**（母文档，一切从这里开始） |
 | AI 协作入口（红线 / 门禁 / 文档两类制） | [`AGENTS.md`](AGENTS.md) |
 | AI 工作流程标准（T0–T3 分级 / 五阶段 / 十条红线） | [`docs/AI_STANDARD.md`](docs/AI_STANDARD.md) |
 | 接手交接（现状 / 关键陷阱 / 未决决策） | [`HANDOVER.md`](HANDOVER.md) |
