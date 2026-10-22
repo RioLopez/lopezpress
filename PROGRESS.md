@@ -72,6 +72,8 @@
 | 第三十七轮（P2-3 limit 统一） | `parseLimit` 收敛 + 表格三态 ×6 去重 | ✅ 已实现 | 新建 `handlers/query.go` / `ui/TableState.tsx` |
 | 第三十八轮（文档校准 + 完成度核查） | README / AGENTS / HANDOVER / TODO / PROGRESS 对齐代码实际 + 全量门禁复跑 | ✅ 本机实测 | 见 §4.38 |
 | 第三十九轮（修 P1-17 + P2-16） | root 密码离线恢复 CLI / 清 4 个无用前端依赖 | ✅ 本机实测 | 见 §4.39 |
+| 第四十轮（首次推送 + 凭据台账） | github-auto-upload 技能推远程 / 建立 CREDENTIALS.md | ✅ 已推上 GitHub | 见 §4.40 |
+| 第四十一轮（母文档 `MASTER.md`） | 文档总索引 + 自驱协议 + 事实基线 | ✅ 已推上 GitHub | 见 §4.41 |
 
 ---
 
@@ -698,6 +700,20 @@
 **验证**：`go build` / `go vet` / `go test -count=1 ./...` 全绿（config 包 3 新用例通过，测试总数 117→120）；`tsc --noEmit` / `vite build` 全绿。
 
 **文档**：`docs/TODO.md` 勾 P1-17/P2-16 + 顶部状态同步；`README.md` 演示账号告警改为 CLI 恢复步骤并补进「运维」功能；`HANDOVER.md` §0 同步；`AGENTS.md` specs 区间 01–21→01–22；新增 spec 22。
+
+### 第四十轮 — 首次推送到 GitHub + 凭据台账
+
+- **推送**：用 `github-auto-upload` 技能，`doctor` 报 READY（token 属主 `RioLopez`），`sync` 因本机 `git push` 的 TLS 被墙而自动 fallback 到 **Git Data API**（`mode: api`）。push 了第 38–41 轮全部提交，远程 `main` 与本地一致，仓库确认 `private: true`。
+- **技能实测坑（已记录）**：① `sync --dry-run` 实际上会真推，不能当只读预演；② `git fetch/push` 直连报 schannel `CRYPT_E_REVOCATION_OFFLINE`，换 openssl 报 `SSL_read: unexpected eof`；③ `credential.helper=manager` 链路失效（`git credential fill` 读不到凭据）。
+- **凭据台账**：新建 `~/.workbuddy/CREDENTIALS.md`（**仓库外**，避免被 commit 泄露），含 GitHub token、技能用法与坑、本机工具链路径、应用凭据占位表。
+- 未改业务代码，跳过代码门禁。
+
+### 第四十一轮 — 母文档 `MASTER.md`（本文件体系的入口）
+
+- **动机**：用户要求「一个母文档，说清创建了什么文档、每个有什么用什么功能，以后只让我去母文档找」。
+- **产出** `MASTER.md`（仓库根）：§2「我想干 X 该读哪份」定位表；§3 全量文档总表（入口族 / AI 约束族 / 项目事实族 / 规格决策 / 审计 / 部署 / 记忆层，共 54 份，标注 A/B 类与"何时读"）；§4 我建过哪些资产、各自解决什么问题；§5 仓库外资产（凭据台账等）；§6 自驱协议（触发词→动作、T0–T3 分级、完成定义、记录去向、9 条硬红线、单对话 ≤30 轮）；§7 事实基线数字；§8 维护规则。
+- **接线**：`AGENTS.md` 抬头改为「先读 MASTER」；`README.md` 文档导航首行指向 MASTER；`docs/README.md` 抬头声明总入口在根目录。
+- 纯文档轮，跳过代码门禁（基线未变，见 §七）。
 
 ---
 
