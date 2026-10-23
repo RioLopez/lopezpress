@@ -3,7 +3,7 @@ import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
 import { getAuthor, errStatus } from '../core/api'
 import { useNav } from '../core/router'
-import type { AuthorView } from '../core/types'
+import { useQuery } from '../core/useQuery'
 
 // Public author profile (spec 15): display name, bio, avatar, and a list of
 // the author's published posts. Reachable at /u/:username.
@@ -11,21 +11,20 @@ export function AuthorPage({ username }: { username: string }) {
   const { t, locale } = useI18n()
   const { pushToast } = useApp()
   const [, navigate] = useNav()
-  const [data, setData] = useState<AuthorView | null>(null)
-  const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
+  // Reset the not-found flag whenever the username changes; useQuery's fetch
+  // only sets it on a 404, so a stale flag from a previous author must not leak.
   useEffect(() => {
-    setLoading(true)
     setNotFound(false)
-    getAuthor(username)
-      .then(setData)
-      .catch((e) => {
-        if (errStatus(e) === 404) setNotFound(true)
-        else pushToast('error', t('admin.failed'))
-      })
-      .finally(() => setLoading(false))
-  }, [username, pushToast, t])
+  }, [username])
+
+  const { data, loading } = useQuery(() => getAuthor(username), [username], {
+    onError: (e) => {
+      if (errStatus(e) === 404) setNotFound(true)
+      else pushToast('error', t('admin.failed'))
+    },
+  })
 
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
 

@@ -1,14 +1,15 @@
-import { useEffect, useState, useCallback } from 'preact/hooks'
+import { useState, useCallback } from 'preact/hooks'
 import { useDebounce } from '../core/debounce'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPostsPaged, deletePost, listCategories, errMessage, errStatus } from '../core/api'
-import type { PostPage, PostStatus, Category } from '../core/types'
+import type { PostStatus } from '../core/types'
 import { renderMD, stripHTML, highlight } from '../core/md'
 import { Sidebar } from '../ui/Sidebar'
 import { Pagination } from '../ui/Pagination'
 import { useNav } from '../core/router'
+import { useQuery } from '../core/useQuery'
 
 // Spec 24: classic pagination. The page number lives in the URL (?page=N) and
 // the page SIZE is decided by the server from site_config.page_size — the
@@ -56,12 +57,36 @@ export function ListPage() {
   const activeCategory = url.category
   const activeTag = url.tag
 
-  const [pageData, setPageData] = useState<PostPage | null>(null)
-  const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<PostStatus | ''>('')
   const [search, setSearch] = useState('')
-  const [categories, setCategories] = useState<Category[]>([])
   const debouncedSearch = useDebounce(search, 300)
+
+  const { data: pageData, loading, reload } = useQuery(
+    () =>
+      listPostsPaged({
+        status: status || undefined,
+        q: debouncedSearch || undefined,
+        page,
+        // No `size`: the server applies site_config.page_size (spec 24).
+        // Explicit null check: a valid category id could be falsy (0),
+        // which `||` would silently drop and disable the filter.
+        category: activeCategory == null ? undefined : activeCategory,
+        tag: activeTag == null ? undefined : activeTag,
+      }),
+    [page, status, debouncedSearch, activeCategory, activeTag],
+    {
+      onError: (e) => {
+        if (errStatus(e) === 401) {
+          navigate('/login')
+          return
+        }
+        pushToast('error', t('post.loadFailed'))
+      },
+    },
+  )
+
+  const { data: categoriesData } = useQuery(() => listCategories(), [])
+  const categories = categoriesData ?? []
 
   // Single navigation helper: every filter change goes through it so the page
   // number is always reset deliberately (spec 24 AC-3.1) instead of by an
@@ -79,52 +104,12 @@ export function ListPage() {
     [navigate, activeCategory, activeTag],
   )
 
-  const load = useCallback(
-    async (q: number, s: PostStatus | '', srch: string, cat: number | null, tag: string | null) => {
-      setLoading(true)
-      try {
-        const res = await listPostsPaged({
-          status: s || undefined,
-          q: srch || undefined,
-          page: q,
-          // No `size`: the server applies site_config.page_size (spec 24).
-          // Explicit null check: a valid category id could be falsy (0),
-          // which `||` would silently drop and disable the filter.
-          category: cat == null ? undefined : cat,
-          tag: tag == null ? undefined : tag,
-        })
-        setPageData(res)
-      } catch (e) {
-        if (errStatus(e) === 401) {
-          navigate('/login')
-          return
-        }
-        pushToast('error', t('post.loadFailed'))
-      } finally {
-        setLoading(false)
-      }
-    },
-    [pushToast, t, navigate],
-  )
-
-  const loadCategories = useCallback(() => {
-    listCategories().then(setCategories).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    loadCategories()
-  }, [loadCategories])
-
-  useEffect(() => {
-    load(page, status, debouncedSearch, activeCategory, activeTag)
-  }, [page, status, debouncedSearch, activeCategory, activeTag, load])
-
   const remove = async (id: string) => {
     if (!(await confirmDialog(t('list.deleteConfirm')))) return
     try {
       await deletePost(id)
       pushToast('success', t('post.deleted'))
-      await load(page, status, debouncedSearch, activeCategory, activeTag)
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('post.deleteConfirm')))
     }

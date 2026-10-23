@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
 import { listTagsWithCount, deleteTag, updateTag, errMessage } from '../core/api'
 import type { TagWithCount } from '../core/types'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 // Spec 25: rename in place, filter locally, and make the count a link into the
 // public list's ?tag= filter. The filter is client-side on purpose — a blog has
@@ -14,23 +15,14 @@ export function AdminTagsPage() {
   const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
-  const [tags, setTags] = useState<TagWithCount[]>([])
-  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listTagsWithCount()
-      .then(setTags)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, loading, reload } = useQuery(() => listTagsWithCount(), [], {
+    onError: () => pushToast('error', t('admin.failed')),
+  })
+  const tags = data ?? []
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase()
@@ -50,7 +42,7 @@ export function AdminTagsPage() {
       setEditingId(null)
       setEditName('')
       pushToast('success', t('admin.saved'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     }
@@ -61,7 +53,7 @@ export function AdminTagsPage() {
     try {
       await deleteTag(tag.id)
       pushToast('success', t('admin.deleted'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     }

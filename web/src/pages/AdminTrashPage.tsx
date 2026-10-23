@@ -1,30 +1,22 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listTrash, restoreTrash, emptyTrash, errMessage } from '../core/api'
 import type { TrashPost } from '../core/types'
 import { fmtDate } from '../core/format'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 export function AdminTrashPage() {
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
-  const [items, setItems] = useState<TrashPost[]>([])
-  const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [emptying, setEmptying] = useState(false)
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listTrash()
-      .then(setItems)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, loading, reload } = useQuery(() => listTrash(), [], {
+    onError: () => pushToast('error', t('admin.failed')),
+  })
+  const items = data ?? []
 
   const restore = async (p: TrashPost) => {
     if (!(await confirmDialog(t('admin.restoreConfirm', { title: p.title })))) return
@@ -32,7 +24,7 @@ export function AdminTrashPage() {
     try {
       await restoreTrash(p.id)
       pushToast('success', t('admin.restored'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
@@ -46,7 +38,7 @@ export function AdminTrashPage() {
     try {
       const r = await emptyTrash()
       pushToast('success', t('admin.emptyTrashDone', { n: String(r.deleted) }))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {

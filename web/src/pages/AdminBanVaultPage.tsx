@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listBanned, sendBackBanned, deleteBanned, errMessage } from '../core/api'
@@ -6,6 +6,7 @@ import type { Post } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 // Ban vault (spec 24): the root-only view of every banned post. The author
 // (and every admin) cannot see these posts anywhere else in the app, so this
@@ -14,25 +15,16 @@ import { TableState } from '../ui/TableState'
 export function AdminBanVaultPage() {
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
-  const [items, setItems] = useState<Post[]>([])
-  const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   // The send-back modal: which post we are returning and the note text.
   const [sendBackTarget, setSendBackTarget] = useState<Post | null>(null)
   const [note, setNote] = useState('')
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listBanned()
-      .then(setItems)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, loading, reload } = useQuery(() => listBanned(), [], {
+    onError: () => pushToast('error', t('admin.failed')),
+  })
+  const items = data ?? []
 
   const submitSendBack = async () => {
     if (!sendBackTarget) return
@@ -48,7 +40,7 @@ export function AdminBanVaultPage() {
       pushToast('success', t('admin.sendBackDone'))
       setSendBackTarget(null)
       setNote('')
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
@@ -62,7 +54,7 @@ export function AdminBanVaultPage() {
     try {
       await deleteBanned(p.id)
       pushToast('success', t('admin.deleted'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {

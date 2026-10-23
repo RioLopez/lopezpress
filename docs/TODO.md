@@ -85,6 +85,10 @@
   验收：`npm test` 22/22、`tsc --noEmit`、`vite build`（产物 230.30kB，`.test.ts` 不进产物）全绿，arch_check/contract_check/doc_check 全过。
   **坑 1**：`extractTOC(src: string | null | undefined)` 参数不带 `?`，是必填形参（类型允许 undefined 但不允许省略），测试须传 `undefined` 而非 `extractTOC()`。
   **坑 2**：本机 WorkBuddy 沙箱经 `NODE_OPTIONS` 注入 fs shim，拦截 vitest 写 `%TEMP%` 的 vite-node ssr 缓存（EPERM，随机漏跑一个测试文件）——验证时用 `NODE_OPTIONS= npm test` 清空注入；用户在真实终端跑 `npm test` 无此问题。
+- [x] **useQuery 铺开收尾（AR-6 后续增量）** ✅ 2026-10-23 第 63 轮完成
+  9 页手写三态机 → `useQuery`：6 管理页（BanVault/Categories/Dashboard/Review/Tags/Trash，同构批量）+ 3 读者页（Archive 分页+error / Author notFound / List 多参数 URL 驱动）。
+  **ReadPage 保留手写**：其加载是「主请求 getPost + 并行 nav/related + fire-and-forget reportView 上报 + 失败 navigate('/')」，`useQuery` 单请求模型不匹配，强行拆分会更复杂（side effects 需额外 useEffect 监听 data）。
+  验收：`tsc --noEmit` + `vite build`（229.81kB）+ vitest 22/22 + arch_check/contract_check/doc_check 全绿；grep 确认无遗留 `load()`/`setLoading` 三态机代码。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
 

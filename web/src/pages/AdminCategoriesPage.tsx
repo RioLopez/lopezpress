@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
 import { listCategoriesWithCount, createCategory, updateCategory, deleteCategory, applyPresetCategories, errMessage } from '../core/api'
 import type { CategoryWithCount } from '../core/types'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 // Spec 27: categories are a TWO-level tree (parent -> child, never deeper).
 // The table renders parents first, then their children indented underneath,
@@ -50,8 +51,6 @@ export function AdminCategoriesPage() {
   const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
-  const [cats, setCats] = useState<CategoryWithCount[]>([])
-  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [newName, setNewName] = useState('')
   const [newParent, setNewParent] = useState<number | ''>('')
@@ -61,17 +60,10 @@ export function AdminCategoriesPage() {
   const [editName, setEditName] = useState('')
   const [editParent, setEditParent] = useState<number | ''>('')
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listCategoriesWithCount()
-      .then(setCats)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, loading, reload } = useQuery(() => listCategoriesWithCount(), [], {
+    onError: () => pushToast('error', t('admin.failed')),
+  })
+  const cats = data ?? []
 
   const rows = useMemo(() => buildRows(cats, filter), [cats, filter])
   // Only top-level categories can be chosen as a parent (two-level rule).
@@ -89,7 +81,7 @@ export function AdminCategoriesPage() {
       setNewName('')
       setNewParent('')
       pushToast('success', t('admin.saved'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
@@ -115,7 +107,7 @@ export function AdminCategoriesPage() {
       setEditName('')
       setEditParent('')
       pushToast('success', t('admin.saved'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     }
@@ -126,7 +118,7 @@ export function AdminCategoriesPage() {
     try {
       await deleteCategory(c.id)
       pushToast('success', t('admin.deleted'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     }
@@ -137,7 +129,7 @@ export function AdminCategoriesPage() {
     try {
       const res = await applyPresetCategories()
       pushToast('success', t('admin.presetApplied', { created: String(res.created), reparented: String(res.reparented) }))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {

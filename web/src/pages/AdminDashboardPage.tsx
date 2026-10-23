@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
 import { getDashboard, errMessage } from '../core/api'
 import { useNav } from '../core/router'
-import type { DashboardData, DayViews } from '../core/types'
+import type { DayViews } from '../core/types'
 import { fmtDate } from '../core/format'
+import { useQuery } from '../core/useQuery'
 
 // Spec 33: a 30-bar view chart drawn as inline SVG.
 //
@@ -45,17 +45,11 @@ function ViewsChart({ data, locale }: { data: DayViews[]; locale: string }) {
 export function AdminDashboardPage() {
   const { t, locale } = useI18n()
   const { pushToast } = useApp()
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [, navigate] = useNav()
 
-  useEffect(() => {
-    setLoading(true)
-    getDashboard()
-      .then(setData)
-      .catch((e) => pushToast('error', errMessage(e, t('admin.failed'))))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
+  const { data, loading } = useQuery(() => getDashboard(), [], {
+    onError: (e) => pushToast('error', errMessage(e, t('admin.failed'))),
+  })
 
 
   return (
