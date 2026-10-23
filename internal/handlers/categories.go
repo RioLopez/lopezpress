@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"lopezpress/internal/services"
 )
@@ -63,7 +62,11 @@ func CreateCategory(w http.ResponseWriter, r *http.Request) {
 // UpdateCategory renames a category.
 // PUT /api/categories/{id} (auth, admin)
 func UpdateCategory(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r, "id", "category id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	var in services.UpdateCategoryInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -80,7 +83,11 @@ func UpdateCategory(w http.ResponseWriter, r *http.Request) {
 // DeleteCategory removes a category and detaches posts.
 // DELETE /api/categories/{id} (auth, admin)
 func DeleteCategory(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r, "id", "category id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := svc.DeleteCategory(r.Context(), id); err != nil {
 		writeServiceError(w, err)
 		return
@@ -116,7 +123,11 @@ func ListTagsWithCount(w http.ResponseWriter, r *http.Request) {
 // Renaming rather than delete+create keeps every post_tags association, which
 // is why this endpoint exists (spec 25).
 func UpdateTag(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r, "id", "tag id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	var in services.UpdateTagInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -133,7 +144,11 @@ func UpdateTag(w http.ResponseWriter, r *http.Request) {
 // DeleteTag removes a tag and all its associations.
 // DELETE /api/tags/{id} (auth, admin)
 func DeleteTag(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r, "id", "tag id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := svc.DeleteTag(r.Context(), id); err != nil {
 		writeServiceError(w, err)
 		return

@@ -90,6 +90,13 @@
   9 页手写三态机 → `useQuery`：6 管理页（BanVault/Categories/Dashboard/Review/Tags/Trash，同构批量）+ 3 读者页（Archive 分页+error / Author notFound / List 多参数 URL 驱动）。
   **ReadPage 保留手写**：其加载是「主请求 getPost + 并行 nav/related + fire-and-forget reportView 上报 + 失败 navigate('/')」，`useQuery` 单请求模型不匹配，强行拆分会更复杂（side effects 需额外 useEffect 监听 data）。
   验收：`tsc --noEmit` + `vite build`（229.81kB）+ vitest 22/22 + arch_check/contract_check/doc_check 全绿；grep 确认无遗留 `load()`/`setLoading` 三态机代码。
+- [x] **B7 查询参数解析统一（3 套 → 1 套）** ✅ 2026-10-23 第 67 轮完成
+  `handlers/query.go` 新增 `parseInts(q, label, keys...)`（批量解析可选查询整数，任一显式非数字 → 400）与 `parseID(r, name, label)`（路径参数，非法 → 400），替代 `ListPosts`/`ListArchivePaged` 手写 `strconv.Atoi` + `RestoreRevision`/`categories.go` 的手写 `ParseInt`。
+  **顺带修 4 处静默吞错**：`categories.go` 的 `UpdateCategory`/`DeleteCategory`/`UpdateTag`/`DeleteTag` 原 `id, _ := strconv.ParseInt` 把非法 id 吞成 0 再查库 not found，现改 `parseID` 直接 400。
+  `parseLimit`（宽松 clamp）保留，与严格语义区分。新增 `TestParseInts`/`TestParseID`。grep 确认 handlers 内 `strconv.Atoi`/`ParseInt` 只剩 `query.go` 3 处辅助函数。
+  **门禁反证**：第一版用单参数 `parseIntStrict` 写了三段重复错误处理，把 `ListPosts` 撑到 64 行触发 R2.funcs 16→17 拦截，重构为 `parseInts` 批量（单次检查）后回落 16。
+- [x] **B6 错误构造三套 — 核否为过时误报** ✅ 2026-10-23 第 67 轮核对（无需改）
+  档案原称「裸 `fmt.Errorf` 会把内部措辞直落 500 暴露给前端」。当前代码已不成立：`service.go:MsgOf` 对非 `ServiceError` 错误统一返回 `"internal server error"`（不泄漏）；`imghost.go:79` "smms upload failed" 被 `media.go` 静默吞掉走本地兜底；`auth.go:213` "invalid token signature" 被 `Authenticate` 的 401 兜住。剩余裸 `fmt.Errorf` 全是正确的内部 wrap（`%w`），非缺陷。**不做。**
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
 
