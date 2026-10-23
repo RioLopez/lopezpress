@@ -415,6 +415,8 @@ html, body {
 .post-status-pending { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
 .post-status-rejected { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .post-status-banned { background: color-mix(in srgb, #6b7280 18%, transparent); color: #6b7280; }
+/* Legacy draft rows (no longer produced, but old DBs may carry them). */
+.post-status-draft { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .field--schedule { margin-top: 10px; }
 .field-hint--warn { color: var(--danger); }
 
@@ -1037,7 +1039,7 @@ tr.row-selected { transition: background .12s; }
 .admin-hamburger { display: none; font-size: 18px; }
 .admin-topbar-crumb { font-size: 14px; font-weight: 600; }
 .admin-topbar-util { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.admin-main { flex: 1; padding: 28px 24px; width: 100%; max-width: 1100px; margin: 0 auto; }
+.admin-main { flex: 1; padding: 28px 24px; width: 100%; max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; }
 
 /* Dashboard (spec 06) -------------------------------------------------- */
 .dash-cards { display: flex; gap: 16px; margin: 18px 0 26px; flex-wrap: wrap; }

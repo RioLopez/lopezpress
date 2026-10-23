@@ -28,6 +28,7 @@ export type ReaderTexts = {
     allCategories: string
     categoryLabel: string
     tagLabel: string
+    allTags: string
     pinned: string
     views: string
     loadingMore: string
@@ -125,6 +126,7 @@ export const readerZh: ReaderTexts = {
     allCategories: '全部分类',
     categoryLabel: '分类',
     tagLabel: '标签',
+    allTags: '全部标签',
     pinned: '置顶',
     views: '浏览',
     loadingMore: '加载中…',
@@ -219,6 +221,7 @@ export const readerEn: ReaderTexts = {
     allCategories: 'All categories',
     categoryLabel: 'Category',
     tagLabel: 'Tag',
+    allTags: 'All tags',
     pinned: 'Pinned',
     views: 'views',
     loadingMore: 'Loading…',
