@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listBanned, sendBackBanned, deleteBanned, errMessage } from '../core/api'
@@ -13,7 +12,6 @@ import { TableState } from '../ui/TableState'
 // page is the single place they can be managed. Two actions are available:
 // send the post back to its author with a note, or delete it permanently.
 export function AdminBanVaultPage() {
-  const { user, hasToken } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
   const [items, setItems] = useState<Post[]>([])
@@ -33,13 +31,8 @@ export function AdminBanVaultPage() {
   }, [pushToast, t])
 
   useEffect(() => {
-    if (user?.role === 'root') load()
-  }, [user, load])
-
-  // Root-only page: admins (and everyone else) get the generic denial.
-  if (!hasToken || user?.role !== 'root') {
-    return <div class="admin-page"><p class="muted">{t('admin.rootOnly')}</p></div>
-  }
+    load()
+  }, [load])
 
   const submitSendBack = async () => {
     if (!sendBackTarget) return

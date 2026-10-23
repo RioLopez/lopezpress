@@ -6,6 +6,7 @@ import { useTheme } from '../core/theme'
 import { useNav } from '../core/router'
 import { useSite } from '../core/site'
 import type { Locale } from '../core/i18n'
+import { isRoot, isAdminOnly } from '../core/roles'
 import { Footer } from './Footer'
 
 interface NavItem {
@@ -54,11 +55,11 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
     setDrawerOpen(false)
   }
 
-  const isRoot = user?.role === 'root'
+  const isRootUser = isRoot(user?.role)
 
   // Group nav items by their `group` key, preserving order. Root-only items
   // (the ban vault) are hidden from plain admins.
-  const visibleNav = NAV.filter((n) => (n.rootOnly ? isRoot : true))
+  const visibleNav = NAV.filter((n) => (n.rootOnly ? isRootUser : true))
   const groups: { key: string; label: string; items: NavItem[] }[] = []
   for (const item of visibleNav) {
     const key = item.group || ''
@@ -112,8 +113,8 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
             )}
             <div class="admin-account-meta">
               <span class="admin-account-name">{accountName}</span>
-              {user?.role === 'admin' && <span class="badge-admin">admin</span>}
-              {user?.role === 'root' && <span class="badge-root">root</span>}
+              {isAdminOnly(user?.role) && <span class="badge-admin">admin</span>}
+              {isRoot(user?.role) && <span class="badge-root">root</span>}
             </div>
           </div>
           <div class="admin-account-actions">
@@ -136,7 +137,7 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
           >
             ☰
           </button>
-          <div class="admin-topbar-crumb">{currentCrumb(path, t, isRoot)}</div>
+          <div class="admin-topbar-crumb">{currentCrumb(path, t, isRootUser)}</div>
           <div class="admin-topbar-util">
             <button class="btn btn-ghost btn-sm icon-btn" title="Theme" onClick={cycle}>
               {themeLabel}

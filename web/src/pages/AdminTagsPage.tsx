@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
@@ -12,7 +11,6 @@ import { TableState } from '../ui/TableState'
 // tens of tags, not thousands, so a backend search endpoint would be dead
 // weight on a 1 GB VPS.
 export function AdminTagsPage() {
-  const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
@@ -31,18 +29,14 @@ export function AdminTagsPage() {
   }, [pushToast, t])
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'root') load()
-  }, [user, load])
+    load()
+  }, [load])
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase()
     if (!q) return tags
     return tags.filter((tg) => tg.name.toLowerCase().includes(q))
   }, [tags, filter])
-
-  if (user?.role !== 'admin' && user?.role !== 'root') {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
 
   const startEdit = (tg: TagWithCount) => {
     setEditingId(tg.id)

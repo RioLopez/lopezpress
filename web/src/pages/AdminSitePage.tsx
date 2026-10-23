@@ -4,12 +4,13 @@ import { useApp } from '../core/app'
 import { getAdminSiteConfig, updateSiteConfig, uploadImage, sendTestMail, errMessage } from '../core/api'
 import { useSite } from '../core/site'
 import { useAuth } from '../core/auth'
+import { isRoot } from '../core/roles'
 import type { SiteConfigFull, FriendLink } from '../core/types'
 
 export function AdminSitePage() {
   const { t } = useI18n()
   const { user } = useAuth()
-  const isRoot = user?.role === 'root'
+  const isRootUser = isRoot(user?.role)
   const { pushToast } = useApp()
   const { reload } = useSite()
   const [cfg, setCfg] = useState<SiteConfigFull | null>(null)
@@ -245,7 +246,7 @@ export function AdminSitePage() {
       {/* Spec 34: root-only backup policy. Hidden from plain admins because the
           server ignores their value anyway — showing a switch that does not
           work is worse than not showing it. */}
-      {isRoot && (
+      {isRootUser && (
         <section class="settings-section">
           <h3>{t('admin.autoBackupTitle')}</h3>
           <label class="toggle">

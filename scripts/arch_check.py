@@ -21,7 +21,7 @@ Rules implemented (R6/R7 land in later stages, see the review):
     R4  auth       handlers declare no require* checks (route table owns roles)
     R5  audit      handlers write no audit records (use cases own them)
     R7  migration  column migrations live in the registry, not clone funcs
-    R8  frontend   exactly one fetch outlet in web/src/core/api.ts
+    R8  frontend   exactly one fetch outlet in web/src/core/http.ts
     R9  comments   no duplicated lines inside one doc comment
     R10 audit      action_log rows are written only by services/audit.go
 
@@ -350,7 +350,7 @@ LABELS = {
     "R4": "require* calls in handlers",
     "R5": "recordAudit calls in handlers",
     "R7": "add*Column clone functions in config pkg",
-    "R8": "fetch() outside core/api.ts",
+    "R8": "fetch() outside core/http.ts",
     "R9": "duplicated comment lines",
     "R10": "ActionLog writers outside services/audit.go",
 }

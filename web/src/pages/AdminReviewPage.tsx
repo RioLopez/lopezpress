@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPending, reviewPost, errMessage } from '../core/api'
@@ -13,7 +12,6 @@ import { TableState } from '../ui/TableState'
 // backend already scopes the queue to the caller's tier, so this page simply
 // renders whatever comes back and offers the two decisions.
 export function AdminReviewPage() {
-  const { user, hasToken } = useAuth()
   const { pushToast } = useApp()
   const { t, locale } = useI18n()
   const [items, setItems] = useState<Post[]>([])
@@ -33,12 +31,8 @@ export function AdminReviewPage() {
   }, [pushToast, t])
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'root') load()
-  }, [user, load])
-
-  if (!hasToken || (user?.role !== 'admin' && user?.role !== 'root')) {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
+    load()
+  }, [load])
 
   const approve = async (p: Post) => {
     setBusyId(p.id)

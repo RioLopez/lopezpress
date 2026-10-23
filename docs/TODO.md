@@ -74,7 +74,8 @@
   新增 `core/http.ts`（唯一网络出口，单 `fetch` 调用）：`ApiError` + `request`/`upload`/`download` 三基元 + `errMessage`/`errStatus` 两个错误提取助手（全库仅此 2 处 `instanceof ApiError`）。`api.ts` 改成纯类型化 facade，删内部 3 处裸 fetch（`importMarkdown`/`downloadBackup`/`uploadImage` 改走 `upload`/`download`），re-export `ApiError`/`setTokenGetter`/`setOnUnauthorized`/`errMessage`/`errStatus` 保持 `auth.tsx` 与页面兼容。新增 `core/useQuery.ts`（`useQuery(fn, deps) → {data,loading,error,reload,setData}` + `useMutation`，零依赖、含竞态防护）。
   结果：**R8 3→0**（`fetch` 只剩 `http.ts` 一处）、`instanceof ApiError` 54→2、`tsc --noEmit` + `vite build` 全绿（产物 233.35→231.99 kB）。顺带修 `contract_check.py`（解析 `upload()`/`download()` 两个新基元，3 个端点恢复识别，「方法不匹配」维持 0）。
   **旗舰页示范**：`PersonalCenterPage` 623→**52 行**——三个区块拆到 `pages/personal/{MyHomepage,ContentManage,SecurityCenter}.tsx`（共享 `Pager`+`PAGE_SIZE`），列表三态机换成 `useQuery`（乐观更新用暴露的 `setData`）。**其余页面（AdminUsers 525 / AdminPosts 353 等）的 `useQuery` 铺开是下一增量**（`load` 回调+刷新、toast-on-error 形态与旗舰页略异，逐个冒烟）。
-- [ ] **AR-7 i18n 与守卫收敛**：`i18n.tsx` 1,775 行按域拆；`t()` 未命中加 dev 警告；删 5 处重复 admin 守卫；统一 `confirmDialog`（`window.confirm` 只剩 0 处）。
+- [x] **AR-7 i18n 与守卫收敛** ✅ 2026-10-23 第 62 轮完成
+  `i18n.tsx` 1,775 行 → **113 行**入口 + `core/locales/{nav,auth,center,reader,editor,admin,site,common}.ts` 8 个域文件（机械拆，`type Texts` 交叉组合，键值零改动）；`t()` 未命中在 dev `console.warn`、prod 回退英文（不再原样回显 key）。新建 `core/roles.ts`（`isAdmin`/`isRoot`/`isAdminOnly` 三个 helper，对应后端 `services/roles.go`）。守卫收敛到路由表：`AdminGuarded` 增加 `roles` 参数（默认 `['admin','root']`），`/admin/banned` 在路由层声明 `roles={['root']}`；删 7 个 admin 页面（Categories/Posts/Review/Tags/Trash/Users/Backup）+ BanVault 各自的重复 `user?.role !== 'admin' && ...` 守卫。**`role ===` 字面量 25→3**（仅 roles.ts 实现）+ 4 处注释；`window.confirm` 仅剩 `app.tsx` 的 `confirmDialog` 底层实现（页面 0 处）。验收：`tsc --noEmit` + `vite build`（产物 230.30kB）全绿，arch_check/contract_check/doc_check 全过。
 - [ ] **AR-8 前端最小测试**：vitest 覆盖 `format` / `md` 清洗 / `api` 错误映射三个纯函数模块（1 个 devDependency，不进产物）。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）

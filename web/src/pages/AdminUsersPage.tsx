@@ -8,9 +8,10 @@ import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
+import { isRoot, isAdminOnly } from '../core/roles'
 
 export function AdminUsersPage() {
-  const { user, hasToken } = useAuth()
+  const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -24,11 +25,10 @@ export function AdminUsersPage() {
   const [logs, setLogs] = useState<LoginLog[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'root'
   const { data, loading, reload } = useQuery(
     () => listUsers(),
     [],
-    { enabled: isAdmin, onError: () => pushToast('error', t('admin.failed')) },
+    { onError: () => pushToast('error', t('admin.failed')) },
   )
   const users = data ?? []
 
@@ -60,12 +60,8 @@ export function AdminUsersPage() {
     setSelected(on ? new Set(users.map((u) => u.id)) : new Set())
   }
 
-  if (!hasToken || (user?.role !== 'admin' && user?.role !== 'root')) {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
-
   const me = user!
-  const isRoot = me.role === 'root'
+  const isRootUser = isRoot(me.role)
 
   // Role-gated management: root can manage admin (and sees the root badge),
   // admin can manage plain users. Each row's actions are locked down by the
@@ -73,8 +69,8 @@ export function AdminUsersPage() {
   // protection mirrors the backend, which 403s on self-modification).
   const canManage = (u: UserWithDisabled) => {
     if (u.id === me.id) return false
-    if (u.role === 'root') return isRoot
-    if (u.role === 'admin') return isRoot // only root may manage admins
+    if (isRoot(u.role)) return isRootUser // only root may manage roots
+    if (isAdminOnly(u.role)) return isRootUser // only root may manage admins
     return true // plain users: any admin-or-root
   }
 
@@ -246,7 +242,7 @@ export function AdminUsersPage() {
                   </div>
                 </td>
                 <td>
-                  {u.role === 'root' ? (
+                  {isRoot(u.role) ? (
                     <span class="badge-root">root</span>
                   ) : (
                     <select
@@ -256,8 +252,8 @@ export function AdminUsersPage() {
                       onChange={(e) => changeRole(u, (e.target as HTMLSelectElement).value)}
                     >
                       <option value="user">{t('admin.roleUser')}</option>
-                      {isRoot && <option value="admin">{t('admin.roleAdmin')}</option>}
-                      {u.role === 'admin' && !isRoot && <option value="admin">{t('admin.roleAdmin')}</option>}
+                      {isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
+                      {isAdminOnly(u.role) && !isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
                     </select>
                   )}
                 </td>
@@ -337,7 +333,7 @@ function CreateUserModal({
   const { pushToast } = useApp()
   const { t } = useI18n()
   const { user } = useAuth()
-  const isRoot = user?.role === 'root'
+  const isRootUser = isRoot(user?.role)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -399,7 +395,7 @@ function CreateUserModal({
         <select value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
           <option value="user">{t('admin.roleUser')}</option>
           {/* Only root may provision admins; admins create plain users. */}
-          {isRoot && <option value="admin">{t('admin.roleAdmin')}</option>}
+          {isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
         </select>
       </div>
     </Modal>
@@ -415,7 +411,7 @@ function ResetPasswordModal({
   onClose: () => void
   onDone: () => void
 }) {
-  const { pushToast } = useApp()
+  const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -425,7 +421,7 @@ function ResetPasswordModal({
       pushToast('error', t('auth.passwordTooShort'))
       return
     }
-    if (!(await window.confirm(t('admin.resetPwdConfirm', { t: user.username })))) return
+    if (!(await confirmDialog(t('admin.resetPwdConfirm', { t: user.username })))) return
     setBusy(true)
     try {
       await resetPassword(user.id, password)

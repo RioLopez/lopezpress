@@ -6,6 +6,7 @@ import { useTheme } from '../core/theme'
 import { AppLink, useNav } from '../core/router'
 import { useSite } from '../core/site'
 import type { Locale } from '../core/i18n'
+import { isAdmin } from '../core/roles'
 import { Footer } from './Footer'
 import { UserMenu, LoginRegisterEntry } from './UserMenu'
 
@@ -29,7 +30,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const langLabel = locale === 'zh' ? '中' : 'EN'
   const toggleLang = () => setLocale((locale === 'zh' ? 'en' : 'zh') as Locale)
 
-  const isAdminUser = user?.role === 'admin' || user?.role === 'root'
+  const isAdminUser = isAdmin(user?.role)
   const isEditorRoute = path === '/create' || path.startsWith('/edit/')
   const isActive = (p: string) =>
     p === '/' ? path === '/' || path === '' : path === p

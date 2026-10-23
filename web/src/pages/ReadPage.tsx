@@ -4,6 +4,7 @@ import { useI18n } from '../core/i18n'
 import { getPost, deletePost, getPostPrevNext, getRelatedPosts, reportView, errMessage, errStatus } from '../core/api'
 import type { Post, PostNav, FontSize } from '../core/types'
 import { useAuth } from '../core/auth'
+import { isAdmin } from '../core/roles'
 import { renderMD, wordCount, extractTOC } from '../core/md'
 import { useNav } from '../core/router'
 
@@ -202,7 +203,7 @@ export function ReadPage({ id }: { id: string }) {
   if (loading) return <div class="read-page"><p class="muted">{t('common.loading')}</p></div>
   if (!post) return <div class="read-page"><p class="muted">{t('post.notFound')}</p></div>
 
-  const canEdit = user && (user.id === post.author_id || user.role === 'admin' || user.role === 'root')
+  const canEdit = user && (user.id === post.author_id || isAdmin(user.role))
   const canDelete = canEdit
 
   const remove = async () => {
