@@ -3,6 +3,43 @@
    - Square / rectangular, no rounded corners, no shadows, hairline borders
    - Light + dark via [data-theme] on <html>
    - One brand color, neutral palette, generous whitespace
+   =========================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │  NAVIGATION INDEX —— 改样式先看这里，勿通读全文件                            │
+   └─────────────────────────────────────────────────────────────────────────┘
+   本文件按「时间分层」追加（不是按域组织），同一域样式散落多处；且有 3 个
+   「override 覆盖层」追加在末尾，靠顺序覆盖旧规则。**禁止按域拆分成多文件**
+   （会破坏覆盖顺序）。改某域样式时，用 `grep -n "标题关键字" index.css` 定位
+   到下面的 section 标题（标题是唯一锚点，行号会随增删漂移，故不写死）。
+
+   ┌─ 域 ─────────────┬─ 用 grep 搜索的关键字（section 标题）─────────────────┐
+   │ 全局 token/reset │ `:root {`（3 处） / `[data-theme` / `* { box-sizing`  │
+   │ Layout 布局      │ `Layout -----` / `Site-wide footer`                  │
+   │ Buttons 按钮     │ `Buttons -----` / `Buttons: rounded`                 │
+   │ Auth 登录注册    │ `Auth card ---`                                       │
+   │ List 列表+侧栏   │ `List page ---` / `Sidebar (right` / `Tag cloud`     │
+   │                  │ `Recent posts` / `Post tag chips` / `Spec 28`        │
+   │ Read 阅读页      │ `Read page ---` / `back-to-top` / `image lightbox`   │
+   │                  │ `badges row` / `prev/next nav` / `Spec 35`           │
+   │ MD 正文渲染      │ `MD body (rendered`（选择器出现 32 次，勿拆）          │
+   │ Editor 编辑器    │ `Editor wrap` / `Image uploader` / `Row 1` / `Vditor`│
+   │                  │ `Pure-source` / `Custom (dependency-free)`           │
+   │ Admin 后台       │ `Admin pages ---` / `Admin layout: left` / `Modals`  │
+   │                  │ `Spec 26` / `Spec 27`                                │
+   │ Dashboard 仪表盘 │ `Dashboard (spec 06)` / `Spec 33`                    │
+   │ Settings 设置    │ `Settings page` / `Site settings` / `Toggle (check`  │
+   │ Personal 个人中心│ `Personal center` / `Profile banner` / `Article list`│
+   │                  │ `Status badges` / `Security center` / `Image libr`   │
+   │ Other 杂项       │ `Empty state` / `Not found` / `Toasts` / `Utilities` │
+   │                  │ `Archive page` / `Pagination` / `Author page`        │
+   └──────────────────┴──────────────────────────────────────────────────────┘
+
+   【Override 覆盖层】务必保留在末尾（靠顺序覆盖旧规则），改覆盖样式时定位：
+     `Modern design system`   (2026-10-14)  圆角/阴影/hover lift
+     `Responsive system`      (2026-10-14)  统一断点标准
+     `v1.1`                   (2026-10-14)  赭石配色 + 衬线标题 + 目录式列表
+   断点标准：手机<640 / 平板 640-1023 / 笔记本 1024-1439 / 桌面≥1440。
    ========================================================================= */
 
 :root {
