@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPending, reviewPost, errMessage } from '../core/api'
@@ -6,6 +6,7 @@ import type { Post } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 // Content review workbench (spec 24). Every post authored by a plain user is
 // reviewed by an admin; a post authored by an admin is reviewed by root. The
@@ -14,32 +15,23 @@ import { TableState } from '../ui/TableState'
 export function AdminReviewPage() {
   const { pushToast } = useApp()
   const { t, locale } = useI18n()
-  const [items, setItems] = useState<Post[]>([])
-  const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   // The rejection modal: which post we are rejecting and the note text.
   const [rejectTarget, setRejectTarget] = useState<Post | null>(null)
   const [note, setNote] = useState('')
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listPending()
-      .then(setItems)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, loading, reload } = useQuery(() => listPending(), [], {
+    onError: () => pushToast('error', t('admin.failed')),
+  })
+  const items = data ?? []
 
   const approve = async (p: Post) => {
     setBusyId(p.id)
     try {
       await reviewPost(p.id, { decision: 'approve' })
       pushToast('success', t('admin.reviewApproved'))
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
@@ -61,7 +53,7 @@ export function AdminReviewPage() {
       pushToast('success', t('admin.reviewRejected'))
       setRejectTarget(null)
       setNote('')
-      load()
+      await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
     } finally {

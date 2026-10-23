@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
 import { listArchivePaged, errStatus } from '../core/api'
-import type { Post, PostPage } from '../core/types'
+import type { Post } from '../core/types'
 import { Pagination } from '../ui/Pagination'
+import { useQuery } from '../core/useQuery'
 
 // Spec 28: the archive is paginated now. Before this it fetched EVERY
 // published post in one response (body stripped, but three relations
@@ -27,35 +28,21 @@ export function ArchivePage() {
   const { pushToast } = useApp()
   const { t, locale } = useI18n()
   const [, navigate] = useNav()
-  const [data, setData] = useState<PostPage | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
   const [page, setPage] = useState(1)
 
-  const load = useCallback(
-    (q: number) => {
-      setLoading(true)
-      listArchivePaged({ page: q, size: ARCHIVE_PAGE_SIZE })
-        .then((res) => {
-          setData(res)
-          setError(false)
-        })
-        .catch((e) => {
-          if (errStatus(e) === 401) {
-            navigate('/login')
-            return
-          }
-          setError(true)
-          pushToast('error', t('post.loadFailed'))
-        })
-        .finally(() => setLoading(false))
+  const { data, loading, error } = useQuery(
+    () => listArchivePaged({ page, size: ARCHIVE_PAGE_SIZE }),
+    [page],
+    {
+      onError: (e) => {
+        if (errStatus(e) === 401) {
+          navigate('/login')
+          return
+        }
+        pushToast('error', t('post.loadFailed'))
+      },
     },
-    [pushToast, t, navigate],
   )
-
-  useEffect(() => {
-    load(page)
-  }, [page, load])
 
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const items = data?.items ?? []
