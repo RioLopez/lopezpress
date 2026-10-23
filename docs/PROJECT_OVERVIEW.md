@@ -44,139 +44,85 @@
 
 ```
 lopezpress/
-├─ cmd/server/main.go          # 入口：加载 .env → 迁移 → 装配 handler → 启动 :8080
+├─ cmd/server/main.go          # 入口：加载 .env → 迁移 → slug 回填 → 自动备份检查 → 装配 handler → :8080
 ├─ internal/
-│  ├─ config/config.go         # 配置解析 + 数据库迁移(runManualMigrations) + 红线所在
-│  ├─ models/models.go         # 全部 GORM 模型（User/Post/Category/Tag/LoginLog/SiteConfig/...）
-│  ├─ services/services.go     # 业务规则核心（ListPostsPage/ListArchive/GetAuthor/GetPostPublic…）
-│  ├─ services/accounts.go     # 账号业务逻辑（注册/登录/改密/禁用/重置）
-│  ├─ handlers/                # HTTP 适配层（auth/posts/admin/accounts/categories/upload）
-│  │   ├─ auth.go              # WithAuth / WithOptionalAuth / Me / ChangePassword
-│  │   ├─ posts.go             # 文章 CRUD + 公开读 + 归档 + 上下篇
-│  │   ├─ admin.go             # 仪表盘 / 站点配置 / 备份 / 回收站
-│  │   ├─ accounts.go          # 用户管理 / 登录历史
-│  │   ├─ categories.go        # 分类 + 标签
-│  │   └─ upload.go            # 本地 + SM.MS 图床
-│  ├─ middleware/              # login_limiter.go（登录失败锁定）/ limiter.go（通用）/ middleware.go
-│  └─ router/router.go         # 全部 40 个端点注册（见 §4）
-├─ web/
-│  └─ src/
-│     ├─ main.tsx              # 路由表（wouter Switch + Guarded/AdminGuarded/GuestOnly）
-│     ├─ core/                 # api / auth / i18n / md / router / site / theme / app / types / debounce
-│     ├─ pages/                # 19 个页面（见 §5）
-│     └─ ui/                   # 8 个复用组件（Layout/AdminLayout/PostEditor/Sidebar/UserMenu/...）
-├─ deploy/                     # VPS 部署脚本（systemd / nohup）
-├─ LopezPress.bat                 # Win 一键启动（幂等、自动开浏览器）
-├─ PROGRESS.md                 # 22 轮开发记录
-├─ HANDOVER.md                 # 接手总览（必读）
+│  ├─ clientip/clientip.go     # 客户端真实 IP（TRUSTED_PROXIES 闸门，第 43 轮）
+│  ├─ config/config.go         # 配置解析 + 数据库迁移(runManualMigrations) + schema 漂移检查 + 红线所在
+│  ├─ models/models.go         # GORM 模型（User/Post/Category/Tag/PostView/PostRevision/SiteConfig/...）
+│  ├─ models/presets.go        # 预设两层分类树的单一事实源
+│  ├─ services/                # 业务规则层（handler 只做 HTTP 适配）
+│  │   ├─ services.go          # 核心：列表/分页/归档/可见性/备份/快照
+│  │   ├─ accounts.go          # 账号、站点配置、仪表盘聚合（spec 33）
+│  │   ├─ views.go             # 浏览量指纹去重（spec 23）
+│  │   ├─ revisions.go         # 修订历史与回滚（spec 31）
+│  │   ├─ slug.go              # slug 生成/唯一化/历史回填（spec 29）
+│  │   ├─ access.go            # public_read + 分类树（spec 27）
+│  │   ├─ batch.go             # 批量操作，逐条复用单条逻辑（spec 26）
+│  │   ├─ import_md.go         # Markdown 批量导入（spec 32）
+│  │   ├─ related.go           # 相关文章（spec 35）
+│  │   ├─ autobackup.go        # 每日快照（spec 34）
+│  │   ├─ roles.go             # 权限集中判定
+│  │   ├─ mail.go / fts.go / recover.go
+│  ├─ handlers/                # auth / posts / admin / accounts / categories / upload / feed / import
+│  ├─ middleware/              # login_limiter / limiter / middleware
+│  └─ router/router.go         # 全部 76 条路由注册（速查见 `api.md`）
+├─ web/src/
+│  ├─ main.tsx                 # 路由表（wouter + Guarded / Readable / AdminGuarded / GuestOnly）
+│  ├─ core/                    # api / auth / i18n / md / router / site / theme / app / types / format / debounce
+│  ├─ pages/                   # 24 个页面（见 §5）
+│  └─ ui/                      # 11 个复用组件（Layout/AdminLayout/PostEditor/Sidebar/UserMenu/Pagination/...）
+├─ deploy/                     # VPS 部署（systemd / nginx / docker compose）
+├─ LopezPress.bat              # Win 一键启动（幂等、自动开浏览器）
+├─ MASTER.md                   # 母文档（入口，先读它）
+├─ PROGRESS.md                 # 52 轮开发记录
+├─ HANDOVER.md                 # 接手总览 + §7 陷阱
+├─ api.md                      # 端点索引 + 关键端点细节
 ├─ README.md                   # 快速上手
-└─ docs/                       # ARCHITECTURE / AUDIT_REPORT / specs(20) / decisions(0001-0004)
+└─ docs/                       # ARCHITECTURE / specs(01–35) / decisions(0001–0004) / 审计 / 产品文档
 ```
 
 **改代码黄金动线**：`cmd/server/main.go` → `internal/config` → `internal/router` → `internal/services/*`（业务规则都在这里）→ `handlers/auth.go` → `middleware/*` → `models` → `web/src/core` + `web/src/pages`。
 
 ---
 
-## 4. 后端 API 端点速查（40 条）
+## 4. 后端 API 端点
 
-鉴权标注：`公`=匿名可访问，`鉴`=需登录，`管`=需管理员（实际由 `WithAuth`/`WithAdmin` 包裹）。
+**76 条**，按域分组的完整表 + 关键端点请求/响应样例在 **`api.md`**（本文件不再重复，避免两处失真）。
 
-### 4.1 公开 / 鉴权相关
-| 方法 | 路径 | 鉴权 | Handler |
-|---|---|---|---|
-| GET | `/health` | 公 | 健康检查 |
-| GET | `/` | 公 | 前端静态入口 |
-| POST | `/api/auth/register` | 公* | `Register`（受 `RegisterOpen` 开关限制） |
-| GET | `/api/auth/register/open` | 公 | `RegistrationOpen`（是否开放注册） |
-| POST | `/api/auth/login` | 公 | `Login`（套 `loginLimiter` 失败锁定） |
-| GET | `/api/authors/{username}` | 公 | `GetAuthor` |
-| GET | `/api/site-config` | 公 | `GetSiteConfig`（公开站点信息） |
-| GET | `/api/posts/{id}/public` | 公 | `GetPostPublic`（私密文章返回 404） |
-| GET | `/api/auth/me` | 鉴 | `Me`（启动 token 复核） |
-| PUT | `/api/auth/me` | 鉴 | `UpdateMe`（资料/头像/简介） |
-| POST | `/api/auth/logout` | 鉴 | `Logout` |
-| POST | `/api/auth/change-password` | 鉴 | `ChangePassword` |
-| GET | `/api/me/stats` | 鉴 | `MeStats`（个人中心统计） |
-
-### 4.2 内容（文章 / 分类 / 标签）
-| 方法 | 路径 | 鉴权 | Handler |
-|---|---|---|---|
-| GET | `/api/posts` | 公(opt) | `ListPosts`（分页/搜索/分类/标签/可见性） |
-| GET | `/api/posts/recent` | 公(opt) | `RecentPosts` |
-| GET | `/api/posts/archive` | 公(opt) | `ListArchive` |
-| GET | `/api/posts/{id}` | 公(opt) | `GetPost` |
-| GET | `/api/posts/{id}/nav` | 公(opt) | `GetPostPrevNext` |
-| GET | `/api/categories` | 公(opt) | `ListCategories` |
-| GET | `/api/tags` | 公(opt) | `ListTags` |
-| POST | `/api/posts` | 鉴 | `CreatePost` |
-| PUT | `/api/posts/{id}` | 鉴 | `UpdatePost` |
-| DELETE | `/api/posts/{id}` | 鉴 | `DeletePost`（移入回收站） |
-| GET | `/api/categories/with-count` | 鉴 | `ListCategoriesWithCount` |
-| POST | `/api/categories` | 鉴 | `CreateCategory` |
-| PUT | `/api/categories/{id}` | 鉴 | `UpdateCategory` |
-| DELETE | `/api/categories/{id}` | 鉴 | `DeleteCategory` |
-| GET | `/api/tags/with-count` | 鉴 | `ListTagsWithCount` |
-| DELETE | `/api/tags/{id}` | 鉴 | `DeleteTag` |
-
-### 4.3 上传 / 用户管理 / 站点 / 备份 / 回收站
-| 方法 | 路径 | 鉴权 | Handler |
-|---|---|---|---|
-| POST | `/api/upload` | 鉴 | `UploadImage`（本地 2MB / SM.MS） |
-| GET | `/api/users` | 鉴 | `ListUsers` |
-| POST | `/api/users` | 鉴 | `CreateUser` |
-| PUT | `/api/users/{id}` | 鉴 | `UpdateUser` |
-| PUT | `/api/users/{id}/disabled` | 鉴 | `SetUserDisabled` |
-| POST | `/api/users/{id}/reset-password` | 鉴 | `ResetPassword` |
-| DELETE | `/api/users/{id}` | 鉴 | `DeleteUser` |
-| GET | `/api/users/{id}/logins` | 鉴 | `ListUserLogins` |
-| GET | `/api/admin/site-config` | 鉴 | `GetAdminSiteConfig` |
-| PUT | `/api/admin/site-config` | 鉴 | `UpdateSiteConfig` |
-| GET | `/api/admin/dashboard` | 鉴 | `GetDashboard` |
-| POST | `/api/backup` | 鉴 | `ExportBackup`（JSON） |
-| POST | `/api/backup/import` | 鉴 | `ImportBackup` |
-| POST | `/api/backup/restore-snapshot` | 鉴 | `RestoreSnapshot` |
-| GET | `/api/backup/download` | 鉴 | `DownloadBackup` |
-| GET | `/api/trash` | 鉴 | `ListTrash`（7 天内） |
-| POST | `/api/trash/empty` | 鉴 | `EmptyTrash` |
-| POST | `/api/trash/{id}/restore` | 鉴 | `RestoreTrash` |
-| GET | `/api/admin/pending` | 鉴 | `ListPending`（admin 见 user 发文 / root 全见） |
-| POST | `/api/admin/review/{id}` | 鉴 | `ReviewPost`（体 `{"decision":...}`） |
-| POST | `/api/admin/ban/{id}` | 鉴 | `BanPost`（**root only**） |
-| GET | `/api/admin/banned` | 鉴 | `ListBanned`（**root only**） |
-| POST | `/api/admin/banned/{id}/send-back` | 鉴 | `SendBackPost`（**root only**） |
-| DELETE | `/api/admin/banned/{id}` | 鉴 | `DeleteBannedPermanently`（**root only**，硬删） |
-| GET | `/uploads/` | 公 | `ServeUploads`（本地图片静态服务） |
-
-> 注：管理员接口实际由 `WithAdmin`/`WithRoot` 包裹（`GetDashboard`/`site-config`/`users/*`/`backup/*`/`trash/*`/审核封禁系列）。全量路由以 `internal/router/router.go` 为准。
+改端点时必须同时改三处：`internal/router/router.go`（注册）→ `api.md`（文档）→ 前端 `web/src/core/api.ts`（调用），
+然后跑 `python scripts/contract_check.py` 确认前后端没有漂移。
 
 ---
 
-## 5. 前端路由与页面地图（19 页 + 3 种守卫）
+## 5. 前端路由与页面地图（24 页 + 4 种守卫）
 
 ### 5.1 守卫（定义在 `web/src/main.tsx`）
 - `Guarded`：需登录，未登录跳转 `/login`
 - `AdminGuarded`：需 **admin 或 root** 角色（第 25 轮起 root 也可进后台）
 - `GuestOnly`：已登录用户反向跳走（登录/注册页用）
+- `Readable`（第 46 轮）：读者路由专用——允许匿名，但站点关闭「公开阅读」时跳登录（`useSite().public_read`）
 
 ### 5.2 路由表
 | 路径 | 页面 | 守卫 |
 |---|---|---|
-| `/` | `ListPage`（文章列表/搜索/分类筛选） | Guarded |
-| `/archive` | `ArchivePage`（按时间归档） | Guarded |
+| `/` | `ListPage`（文章列表/搜索/分类筛选/分页 `?page=N`） | Readable |
+| `/archive` | `ArchivePage`（按时间归档，服务端分页 50/页） | Readable |
 | `/create` | `CreatePage`（新建，薄壳委托 `PostEditor`） | Guarded |
 | `/edit/:id` | `EditPage`（编辑，薄壳委托 `PostEditor`） | Guarded |
-| `/read/:id` | `ReadPage`（阅读页/目录/字号/代码复制） | 公开 |
+| `/read/:id` | `ReadPage`（阅读页/目录/字号/代码复制/相关文章/面包屑） | Readable |
+| `/p/:slug` | `SlugPage`（永久链接，内部转 `ReadPage`） | Readable |
 | `/settings` | `SettingsPage`（图床 token 等） | Guarded |
 | `/me` | `PersonalCenterPage`（个人中心/我的文章/安全） | Guarded |
-| `/u/:username` | `AuthorPage`（作者主页） | 公开 |
-| `/admin` | `AdminDashboardPage`（仪表盘） | Admin |
+| `/u/:username` | `AuthorPage`（作者主页） | Readable |
+| `/admin` | `AdminDashboardPage`（趋势图/待审/最多阅读/最近登录） | Admin |
+| `/admin/posts` | `AdminPostsPage`（文章管理：筛选/勾选/批量/导入 Markdown） | Admin |
 | `/admin/categories` | `AdminCategoriesPage` | Admin |
 | `/admin/tags` | `AdminTagsPage` | Admin |
 | `/admin/users` | `AdminUsersPage`（用户管理/批量/重置/登录历史；层级化） | Admin |
 | `/admin/review` | `AdminReviewPage`（审核工作台：通过/打回+意见） | Admin |
 | `/admin/banned` | `AdminBanVaultPage`（封禁库：发回/永久删除） | **Root** |
 | `/admin/site` | `AdminSitePage`（站点配置/图床/友链/注册开关） | Admin |
-| `/admin/backup` | `AdminBackupPage`（导出/导入/快照） | Admin |
+| `/admin/backup` | `AdminBackupPage`（导出/导入/快照/每日自动备份状态） | Admin |
 | `/admin/trash` | `AdminTrashPage`（回收站） | Admin |
 | `/admin/audit` | `AdminAuditPage`（操作审计） | Admin |
 | `/login` | `LoginPage` | GuestOnly |
@@ -189,7 +135,9 @@ lopezpress/
 - `Layout.tsx` / `AdminLayout.tsx`：前台/后台布局骨架。
 - `Sidebar.tsx` / `UserMenu.tsx`：侧栏与用户菜单（含语言/主题切换）。
 - `ImageUploader.tsx`：本地 + SM.MS 上传。
-- `Toast.tsx` / `Footer.tsx`：轻量复用件。
+- `Pagination.tsx`（第 43 轮）：首页 / 上页 / 页码窗 / 下页 / 末页 / 跳转。
+- `RevisionList.tsx`（第 51 轮）：编辑页底部的历史版本面板。
+- `Toast.tsx` / `Footer.tsx` / `TableState.tsx`：轻量复用件。
 
 ### 5.4 i18n
 `web/src/core/i18n.tsx` 手写 `zh`/`en` 双字典（约 1200 行），`t('a.b.c', vars)` 点路径取值，localStorage 持久化，`navigator.language` 兜底默认中文。新增文案务必在此同步两语言，否则回退为 key 字符串。
@@ -240,17 +188,19 @@ lopezpress/
 
 ---
 
-## 10. 当前验证状态（2026-10-15 第 25 轮实测）
+## 10. 当前验证状态（2026-10-23 第 52 轮实测）
 
-| 检查 | 命令 | 结果 |
-|---|---|---|
-| 后端编译 | `go build ./...` | ✅ 通过 |
-| 后端静态检查 | `go vet ./...` | ✅ 通过 |
-| 后端测试 | `go test ./...` | ✅ 全绿（本轮新增 `moderation_test.go` 7 个用例） |
-| 前端类型检查 | `npx tsc --noEmit` | ✅ 通过 |
-| 前端构建 | `npm run build` | ✅ 60 模块；JS 206.28 kB / gzip 63.42 kB，CSS 57.29 kB / gzip 10.76 kB |
+| 门禁 | 结果 |
+|---|---|
+| `go build ./...` / `go vet ./...` | ✅ |
+| `go test -count=1 ./...` | ✅ 168 个 `Test*` / 39 个文件 |
+| `tsc --noEmit` | ✅ |
+| `vite build` | ✅ JS 233.35 kB（gzip 71.77）、CSS 61.06 kB（gzip 11.45），无新增依赖 |
+| `scripts/contract_check.py` | ✅ 76 条路由 / 69 个前端调用 / 方法不匹配 0 |
+| `scripts/doc_check.py` | ✅ 70 份文档、22/22 顶层被点名、70/70 横幅 |
+| 真机 | 列表分页、浏览量去重、归档分页、slug 解析、相关文章、自动备份、公开读开关全部实测通过 |
 
----
+未验证：**Docker 构建**（开发机无 Docker）、**真实 VPS 端到端**。
 
 ## 11. 待拍板（HANDOVER §9，同步收敛）
 
@@ -272,4 +222,4 @@ lopezpress/
 
 ---
 
-*本文为 2026-10-15 更新（第 25 轮后），随代码演进请以 `internal/router/router.go` 与 `web/src/main.tsx` 的实时路由为准。*
+*本文为 2026-10-23 更新（第 52 轮后）。路由与页面以 `internal/router/router.go`、`web/src/main.tsx` 为准；两者不一致时先改本文。*

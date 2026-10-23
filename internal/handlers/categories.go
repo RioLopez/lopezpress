@@ -8,6 +8,20 @@ import (
 	"lopezpress/internal/services"
 )
 
+// ApplyPresetCategories materialises the shipped category tree (spec 27).
+// POST /api/admin/categories/preset (auth, admin)
+//
+// Idempotent: existing names are adopted, never recreated, so clicking twice
+// is safe.
+func ApplyPresetCategories(w http.ResponseWriter, r *http.Request) {
+	res, err := svc.ApplyPresetCategories(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // ListCategories returns all categories.
 // GET /api/categories (auth)
 func ListCategories(w http.ResponseWriter, r *http.Request) {
@@ -22,9 +36,6 @@ func ListCategories(w http.ResponseWriter, r *http.Request) {
 // ListCategoriesWithCount returns all categories with post counts.
 // GET /api/categories/with-count (auth, admin)
 func ListCategoriesWithCount(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	cats, err := svc.ListCategoriesWithCount(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
@@ -36,9 +47,6 @@ func ListCategoriesWithCount(w http.ResponseWriter, r *http.Request) {
 // CreateCategory creates a new category.
 // POST /api/categories (auth, admin)
 func CreateCategory(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	var in services.CreateCategoryInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -55,9 +63,6 @@ func CreateCategory(w http.ResponseWriter, r *http.Request) {
 // UpdateCategory renames a category.
 // PUT /api/categories/{id} (auth, admin)
 func UpdateCategory(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	var in services.UpdateCategoryInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -75,9 +80,6 @@ func UpdateCategory(w http.ResponseWriter, r *http.Request) {
 // DeleteCategory removes a category and detaches posts.
 // DELETE /api/categories/{id} (auth, admin)
 func DeleteCategory(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := svc.DeleteCategory(r.Context(), id); err != nil {
 		writeServiceError(w, err)
@@ -100,9 +102,6 @@ func ListTags(w http.ResponseWriter, r *http.Request) {
 // ListTagsWithCount returns all tags with post counts.
 // GET /api/tags/with-count (auth, admin)
 func ListTagsWithCount(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	tags, err := svc.ListTagsWithCount(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
@@ -111,12 +110,29 @@ func ListTagsWithCount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tags)
 }
 
+// UpdateTag renames a tag.
+// PUT /api/tags/{id} (auth, admin)
+//
+// Renaming rather than delete+create keeps every post_tags association, which
+// is why this endpoint exists (spec 25).
+func UpdateTag(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var in services.UpdateTagInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeInvalidBody(w)
+		return
+	}
+	tag, err := svc.UpdateTag(r.Context(), id, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tag)
+}
+
 // DeleteTag removes a tag and all its associations.
 // DELETE /api/tags/{id} (auth, admin)
 func DeleteTag(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := svc.DeleteTag(r.Context(), id); err != nil {
 		writeServiceError(w, err)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
-import { getAuthor, ApiError } from '../core/api'
+import { getAuthor, errStatus } from '../core/api'
 import { useNav } from '../core/router'
 import type { AuthorView } from '../core/types'
 
@@ -21,7 +21,7 @@ export function AuthorPage({ username }: { username: string }) {
     getAuthor(username)
       .then(setData)
       .catch((e) => {
-        if (e instanceof ApiError && e.status === 404) setNotFound(true)
+        if (errStatus(e) === 404) setNotFound(true)
         else pushToast('error', t('admin.failed'))
       })
       .finally(() => setLoading(false))

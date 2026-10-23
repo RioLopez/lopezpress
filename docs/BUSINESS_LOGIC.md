@@ -17,7 +17,7 @@
 状态定义(`models.go`):`published`(公开)/ `private`(仅作者+管理员)/ `pending`(审核队列)/
 `rejected`(被打回,待作者修改)/ `banned`(封禁库,仅 root 可见)。
 
-**创建入口**(`CreatePost`, services.go:538):
+**创建入口**(`CreatePost`, services.go):
 
 | 调用者角色 | 请求 status | 实际落地 status |
 |---|---|---|
@@ -44,7 +44,7 @@
 | banned | DeleteBannedPermanently | 硬删除 | 仅 root | 先清 post_tags 关联行(P1-4) |
 | 任意 | DeletePost | 软删(回收站) | 作者 / admin(仅 user 文)/ root | **banned 文章的软删未设防(疑点 Q2)** |
 
-### 1.2 可见性矩阵(`canSeePost` services.go:639,单篇读取唯一权威)
+### 1.2 可见性矩阵(`canSeePost` services.go,单篇读取唯一权威)
 
 | 文章 status | 匿名 | user(非作者) | 作者 | admin | root |
 |---|---|---|---|---|---|
@@ -84,24 +84,39 @@
 
 ### 1.6 列表 / 归档 / feed
 
-- `ListPostsPage`:分页 page/size(1..100),status/q/category/tag/sort 过滤;
-  pinned 优先,其次 created_at/view_count DESC(排序列白名单防注入 :807);
-  搜索 LIKE + escapeLike 转义(:730)。匿名仅 published。
-- `ListArchive`(:674):全量 published,剥 body 省流量,匿名可读。
-- `FeedPosts`(:697)/`GetPostPublic`(:718):仅 published,view_count 原子自增。
+- `ListPostsPage`:分页 page/size(1..100),status/q/category/tag/sort 过滤；pinned 优先，其次按排序列（白名单防注入）；
+  搜索 `LIKE` + `escapeLike` 转义。匿名仅 published。**页面不传 size 时用 `site_configs.page_size`（第 43 轮）**。
+- `ListArchivePage`（第 47 轮）：服务端分页（默认 50 / 上限 200）、只含 published、`body` 恒空。旧的全量 `ListArchive` 保留给兼容。
+- `FeedPosts` / `GetPostPublic`：仅 published。**两者都不再自增浏览量**（第 43 轮起，见 §1.7）。
+
+### 1.7 浏览量计数（第 43 轮，spec 23）
+
+- **唯一入口**是 `ReportView`（`POST /api/posts/{id}/view`）。`GetPost` / `GetPostPublic` 是纯读，永远不改 `view_count`。
+- 去重键：`post_views` 表的 `UNIQUE(post_id, visitor_hash, day)`；指纹 = `sha256(IP + UA + JWT_SECRET)`，`day` 为 UTC `YYYY-MM-DD`。
+- 实现是 `INSERT ... ON CONFLICT DO NOTHING` + 看 `RowsAffected`，**不是"先查再插"**（并发下后者会重复计数）。
+- 作者本人读自己的文章不计；UA 命中爬虫名单不计；同一访客同一天同一篇只计一次。
+- 计数成功后再 `view_count + 1`。90 天前的行按天惰性清理（`viewPruneDay` 每进程每天一次）。
+- 真实 IP 来自 `internal/clientip.Client(r)`，只信 `TRUSTED_PROXIES` 传来的 `X-Forwarded-For`。
+
+### 1.8 相关文章（第 52 轮，spec 35）
+
+- `RelatedPosts(id, limit)`：同 `category_id` **或** 共享任一标签；只含 `published`；排除自身；`view_count DESC, created_at DESC` 取前 N（默认 5）。
+- 一条原生 SQL 完成，不在 Go 里排序或过滤。
+- 无分类且无标签 → 返回空切片（不是错误）；未知 id → 404。
+- 独立文章（无关联）也会返回 `[]`，前端据此隐藏区块。
 
 ---
 
 ## 2. 用户域(accounts / auth)
 
-### 2.1 注册(`Register` services.go:330)
+### 2.1 注册(`Register` services.go)
 
 - **门**:站点级 `allow_register`(默认 false,单用户站;`POST /api/users` 管理端建号不受此门)。
 - 校验:三项非空;密码 ≥8;`username OR email` 查重(409)。
 - 角色:不显式设置,依赖 DB 默认 `default:'user'`(models.go:54)——**安全由 schema 保证**。
 - 注册成功即发 JWT(自动登录)。
 
-### 2.2 登录(`Login` services.go:383)
+### 2.2 登录(`Login` services.go)
 
 - `username OR email` 单字段登录(前端统一放 `email` 字段)。
 - 顺序:查用户 → **disabled 403** → bcrypt 校验。注意:disabled 在密码校验**之前**返回,
@@ -161,7 +176,7 @@
 
 ## 3. 系统域(backup / upload / mail / 限流 / 审计)
 
-### 3.1 备份导出(`ExportBackup` services.go:1627)
+### 3.1 备份导出(`ExportBackup` services.go)
 
 - 全表序列化:users(密码哈希经 `json:"-"` 单独 Scan 成 `password_hashes` map)、
   categories、tags、posts(**Unscoped 含软删**,保证备份可恢复回收站)、post_tags。
@@ -229,12 +244,29 @@
 
 ---
 
+### 3.9 每日自动备份（第 52 轮，spec 34）
+
+- 开关：`site_configs.auto_backup`（默认关）/ `backup_keep`（默认 7，夹在 1..90）。
+- `MaybeAutoBackup`：关 → 直接返回；`auto-YYYYMMDD.db` 已存在 → 返回空名；否则 `VACUUM INTO` 写入并按 keep 淘汰最旧的 `auto-*`。
+- 触发：启动一次 + 每 30 分钟一次。**语义是"每天最多一次"**，进程没跑的那天不补。
+- 与导入前快照（`snapshot-*`）是两套保留策略，互不删除；两者都能在 `/api/backup/snapshots` 看到并恢复。
+- root 专属；非 root 保存站点设置时，服务端继承已有值（防止 admin 把 root 的策略冲成关闭）。
+
+### 3.10 仪表盘统计口径（第 52 轮，spec 33）
+
+- `posts_total`：**所有**文章（含待审/私密/封禁，不含软删）。
+- `views_total`：`SUM(view_count)`，即去重后的阅读数之和，不是请求数。
+- `pending_total`：`status = 'pending'` 的数量——"今天需要人处理的事"。
+- `view_trend`：近 30 天按 `post_views.day` 聚合，**服务端补零**，前端拿到恒为 30 项。
+- `top_posts`：published 且 `view_count > 0`，按浏览量降序取 5；待审/封禁文章不参与排名。
+- `recent_posts` 的 `body` 恒为空（仪表盘只渲染标题，不传正文）。
+
 ## 4. 审计疑点清单(反推发现,待分级处理)
 
 | # | severity | 位置 | 问题 | 拟处置 |
 |---|---|---|---|---|
 | **Q2** | 🔴 P1 | `UpdatePost` :850 / `DeletePost` :979 | **作者可编辑/软删自己已 banned 的文章**——违背"banned 仅 root 管"的设计;且作者软删后 root 的 `DeleteBannedPermanently` 会 404(First 带软删 scope),封禁数据永久残留于 vault 之外 | ✅ **已修(第 28 轮)**:`UpdatePost` 对 banned 文章非 root 一律 403(root 保留编辑权);`DeletePost` 对 banned 文章**所有角色** 403(banned 只能经 vault 的 send-back/永久删出口);回归 `TestBannedPostFrozenForAuthor` 6 断言全绿 |
-| **Q6** | 🔴 P1 | `Authenticate` services.go:469 | **disabled 账号在 Authenticate 无门**——Login 拦禁用,但已持有的 JWT(最长 24h)仍可调用所有 API(含 WithAuth 写操作);admin 禁用恶意账号后其会话当天仍可用。must_change_password 有门而 disabled 没有,同类状态只做一半(与 P0-1 同构的"设计了检查漏落地") | ✅ **已修(第 29 轮)**:`Authenticate` token_version 校验后加 `if user.Disabled → 403`,一处修覆盖 WithAuth/WithOptionalAuth 两个中间件;回归 `TestAuthenticateRejectsDisabledUser`(禁用 403 / 重新启用同 token 恢复) |
+| **Q6** | 🔴 P1 | `Authenticate` services.go | **disabled 账号在 Authenticate 无门**——Login 拦禁用,但已持有的 JWT(最长 24h)仍可调用所有 API(含 WithAuth 写操作);admin 禁用恶意账号后其会话当天仍可用。must_change_password 有门而 disabled 没有,同类状态只做一半(与 P0-1 同构的"设计了检查漏落地") | ✅ **已修(第 29 轮)**:`Authenticate` token_version 校验后加 `if user.Disabled → 403`,一处修覆盖 WithAuth/WithOptionalAuth 两个中间件;回归 `TestAuthenticateRejectsDisabledUser`(禁用 403 / 重新启用同 token 恢复) |
 | **Q8** | 🟢 P3 | `UpdateUser` :379 | disabled 分支不对称:admin **不能禁用**另一个 admin,但**能启用**另一个 admin(`*in.Disabled &&` 条件只在禁用时拦) | 记录;启用危害低于禁用,暂缓 |
 | **Q9** | 🟢 P3 | `DeleteUser` :495 | last-admin 保护只数未软删 admin;被软删的 admin 占名额但不活跃(无用户恢复端点,影响有限) | 记录 |
 | **Q7** | 🔴 P0 | `ImportBackup` :1770 / `RestoreSnapshot` :1907(handler 仅 requireAdmin) | **备份导入/恢复是完整的 root 接管路径**:payload 是攻击者可控 JSON,`tx.Create(&u)` 不校验角色——admin 导入一份把自建用户设为 root(或替换 root 的 password_hash)的备份即可接管站点,直接绕过"root 不可经 API 创建"红线(R2)。恢复快照同理替换全库 | ✅ **已修(第 30 轮)**:service 层 `IsRoot(actor)` 守卫(ImportBackup/RestoreSnapshot 加 actor 参数)+ handler 改 `requireRoot` + 前端导入区对非 root 禁用并说明;回归 `TestImportAndRestoreAreRootOnly`(admin 403/root 放行/恶意 root 行未落库) |

@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 func TestSendTestMailRequiresAdmin(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSendTestMailNotConfigured(t *testing.T) {
 	// "SMTP not configured" branch (400) is what we actually exercise.
 	admin := models.User{ID: "adm", Username: "admin", Email: "admin@example.com", Role: "admin"}
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/mail/test", nil)
-	req = req.WithContext(context.WithValue(req.Context(), UserContextKey, admin))
+	req = req.WithContext(services.WithActor(req.Context(), admin, ""))
 	w := httptest.NewRecorder()
 	SendTestMail(w, req)
 	if w.Code != http.StatusBadRequest {

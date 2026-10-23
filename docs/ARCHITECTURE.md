@@ -130,6 +130,8 @@ config.Load()                // 读取 + 默认值
   → cfg.ValidateSecurity()   // 开库前校验 JWT_SECRET 强度（prod 严格，dev 仅 warn）
   → config.InitDB(cfg)       // 建目录、Open GORM、runManualMigrations（手写迁移 + schema_migrations 门控）、仅对"不存在的表"AutoMigrate、seedDemoData（首启随机 admin 密码横幅）
   → services.New(db, cfg)    // 业务厚层
+  → svc.BackfillSlugs()      // spec 29：给历史文章补 slug（幂等，一次索引查询）
+  → svc.MaybeAutoBackup()    // spec 34：今天没快照就做一份；之后每 30 分钟一次（命中文件即 stat 一次）
   → handlers.Init(db, cfg, svc)
   → middleware.NewLimiter(...) + NewLoginLimiter()（仅套 POST /api/auth/login）
   → router.New(cfg, limiter, loginLimiter)   // 组装中间件链 + 注册路由
@@ -138,6 +140,19 @@ config.Load()                // 读取 + 默认值
 
 > ⚠️ `glebarez/sqlite` + GORM `AutoMigrate` 在误判需重建表时会走有缺陷的 copy-rename 路径（漏 NOT NULL 列致启动崩溃）。当前用「仅对不存在的表 AutoMigrate + 手写迁移门控」规避；改 `internal/config/config.go` 务必谨慎（详见 HANDOVER.md §7.1）。
 ```
+
+### 5.4 每日自动备份（spec 34）
+
+```
+启动 / 每 30 分钟 tick
+  → GetSiteConfig(auto_backup?)  ── 关 ──▶ 直接返回（无 IO）
+  → 检查 backups/auto-YYYYMMDD.db 存在? ── 是 ──▶ 返回（幂等）
+  → VACUUM INTO 该文件（SQLite 原子一致副本）
+  → pruneAutoBackups(keep)  只删 auto-*，绝不碰 snapshot-*
+```
+
+**没有 cron、没有外部依赖、没有常驻内存状态**：文件名就是状态机。代价是"进程没跑的那天不补"，
+换来的是"任何部署方式（二进制 / systemd / Docker）都自动可用"。
 
 ---
 
@@ -196,9 +211,15 @@ func Chain(h http.Handler, mws ...Middleware) http.Handler {
 | `DB_MAX_OPEN` | `4` | GORM 连接池最大打开连接（SQLite 单文件，低配机刻意调小，避免浪费 goroutine/内存） |
 | `DB_MAX_IDLE` | `2` | GORM 连接池最大空闲连接 |
 | `LOG_LEVEL` | `warn` | GORM 日志级别（`debug`/`info`/`warn`/`error`），低配机默认降噪 |
-| `RATE_LIMIT_RPS` | `5` | 令牌桶速率上限（每 key 每秒请求数） |
-| `RATE_LIMIT_BURST` | `10` | 令牌桶突发上限（允许瞬时超出 RPS 的缓冲） |
+| `RATE_LIMIT_RPS` | `20` | 令牌桶速率上限（每 key 每秒请求数） |
+| `RATE_LIMIT_BURST` | `50` | 令牌桶突发上限（允许瞬时超出 RPS 的缓冲） |
 | `CORS_ORIGINS` | `*` | 逗号分隔；生产收紧 |
+| `TRUSTED_PROXIES` | 仅回环 | **部署到 Nginx 后面必须配**（如 `127.0.0.1/32` 或 `172.16.0.0/12`），否则客户端 IP 全是反代地址，浏览量去重会退化成"全站一天一次" |
+| `BACKUP_DIR` | `data/backups` | 备份 JSON 与快照目录 |
+| `UPLOAD_DIR` / `UPLOAD_MAX_BYTES` | `data/uploads` / 2 MB | 本地图片存储与单文件上限 |
+| `SM_MS_TOKEN` | 空 | SM.MS 图床 token（服务端持有，优于存 DB） |
+| `ADMIN_INITIAL_PASSWORD` | 随机生成 | 首启 root 密码；不设则随机并打印到 stderr |
+| `PUBLIC_READ` | — | **不是环境变量**，是 `site_configs.public_read`（后台可切，即时生效） |
 
 > **目标机型**：1 vCPU / 1.5 GB 内存 / 5 GB 磁盘的 VPS，**硬性只用 70%**（≈1.0 GB 内存、≈3.5 GB 磁盘可用，1.5G 机型通常无 swap，内存超限即 OOM）。
 > 上述 `DB_MAX_OPEN=4 / DB_MAX_IDLE=2 / LOG_LEVEL=warn` 三项默认值即为该预算收紧：GORM 池更小、日志更安静、限流桶缓存上限降到 512（`internal/middleware`）。

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listBanned, sendBackBanned, deleteBanned, ApiError } from '../core/api'
+import { listBanned, sendBackBanned, deleteBanned, errMessage } from '../core/api'
 import type { Post } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
@@ -57,7 +57,7 @@ export function AdminBanVaultPage() {
       setNote('')
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }
@@ -71,7 +71,7 @@ export function AdminBanVaultPage() {
       pushToast('success', t('admin.deleted'))
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }

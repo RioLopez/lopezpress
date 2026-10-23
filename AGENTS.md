@@ -20,7 +20,7 @@
 | 约束 | 说明 |
 |------|------|
 | **不换框架** | 后端 Go `net/http` + GORM + `glebarez/sqlite`(零 CGO);前端 Preact + Vite + TS。没有性能/功能瓶颈证据时,不为了"更现代"改栈 |
-| **不加重依赖** | 后端 `go.mod` 直接依赖 6 个（sqlite 驱动 / jwt / uuid / x-crypto / x-time / gorm，另有 10 个 indirect）；前端 3 个 npm 包(`preact` + `wouter` + `marked`)。加依赖前先问"能不能手写/标准库解决" |
+| **不加重依赖** | 后端 `go.mod` 直接依赖 6 个（sqlite 驱动 / jwt / uuid / x-crypto / x-time / gorm，另有 11 个 indirect）；前端 3 个 npm 包(`preact` + `wouter` + `marked`)。加依赖前先问"能不能手写/标准库解决" |
 | **低资源优先** | SQLite 连接池 4/2、限流内存态、无 Redis、无后台常驻任务。任何改动都要过"1 vCPU / 1 GB 可用内存"这关 |
 | **root 唯一且不可经 API 创建/提升** | 角色 `root/admin/user`;root 全库唯一,仅首启 seed + 迁移 `0003_root_migration` 产生 |
 | **可见性判定只在 service 层** | `canSeePost`(`internal/services`)是文章五态 `published/private/pending/rejected/banned` 的唯一权威,handler/router 不写可见性 if |
@@ -36,6 +36,10 @@
 4. **测试 fixture 造 root/admin 必须直改 DB**(`db.Model(&models.User{}).Update("role", ...)`),这是 handlers 测试 `setup(t)` 返回 `(*services.Service, *gorm.DB)` 的原因。
 5. **文件读取被审批拦截时**(曾发生在 `feed_test.go`),派 `Agent`(Explore 子代理)读取可绕过。
 6. **Windows 中文编码**:读写仓库内文件一律 UTF-8;涉及本机 GBK 文件的操作先确认编码。
+7. **新增模型字段必须同时写手工迁移**（第 46 轮血泪）：已存在的表不走 AutoMigrate，少一条 `ALTER TABLE` 就是运行时 500（`site_url` 曾因此坏了一个月没人发现）。启动期 `checkSchemaDrift` 会把缺列打成 `WARN`。
+8. **新增通配路由先查同前缀形状**（第 48 轮崩溃）：`GET /api/posts/by-slug/{slug}` 与 `GET /api/posts/{id}/public` 在 Go 1.22 ServeMux 里互为歧义，**注册时直接 panic，进程起不来**。新永久链接端点因此放在 `/api/permalinks/{slug}`。
+9. **`*int64` 不能直接进原生 SQL**（第 52 轮）：`database/sql` 没有 `*int64` 的 driver.Value，`Raw(...)` 传它会报 `unsupported type`；先解包成 `any`（nil 或值）。
+10. **root 专属设置不能被 admin 的整表单保存覆盖**（第 52 轮）：站点设置是「读全量 → 改 → 整体 PUT」，admin 提交时不带 `auto_backup` 就会把它重置为 false。服务端必须显式继承原值。
 
 ## 4. 怎么跑 / 怎么验
 
@@ -48,11 +52,14 @@ LopezPress.bat status|stop|restart|dev|build|help
 # 验证门禁(改完代码必须全绿,缺一不可)
 go build ./...          # 后端编译
 go vet ./...            # 静态检查
-go test ./...           # 单测
+go test -count=1 ./...   # 单测(跳过缓存)
 cd web; npx tsc --noEmit   # 前端类型
 npm run build           # 前端生产构建
 python scripts/doc_check.py   # 改过文档时必须跑:母文档索引/份数/横幅是否仍一致
+python scripts/arch_check.py  # 改过代码时必须跑:架构债只许降不许升(见 docs/ARCH_REVIEW_2026-10-23.md)
 ```
+
+> `arch_check.py` 是**棘轮**不是 linter:存量违规记在 `scripts/arch_baseline.json`,只拦"变多"。违规数下降后用 `--update` 锁住战果;`--baseline` 仅首次/重建时用。退出码 1 = 有规则回升,必须修,不许直接 `--update` 掩盖。
 
 > 本机 Go 路径:`C:\Users\LopezPC\go-sdk\go\bin`(旧记录 `C:\Users\Lopez\go-install\go\bin` 已失效)。
 > 长期运行服务必须独立终端启动,不要用对话内后台进程(会话结束会被回收)。
@@ -78,11 +85,13 @@ python scripts/doc_check.py   # 改过文档时必须跑:母文档索引/份数/
 全仓库文档分两类。**新对话没有历史上下文**,AI 只靠本母文档 + 其指向的 Class A 文档恢复全部约束,**不凭记忆推测项目状态**,一切以文档为准。每个文件顶部都有 `> 类别 A/B` 横幅,单独打开也能自识别。
 
 ### 6.1 Class A — AI 指挥/约束(母文档族)
-由**本文件(根目录 `AGENTS.md`)统管**。AI 进入仓库**必须依次读**:`AGENTS.md`(本文件) → `docs/AI_STANDARD.md` → `HANDOVER.md`(§0+§7) → `docs/TODO.md`。
+由**`MASTER.md` 统管**（第 41 轮起：用户只说一句「去母文档找」）。AI 进入仓库**必须依次读**：
+`MASTER.md`（总索引 + 自驱协议）→ `AGENTS.md`（本文件，速查 + 红线）→ `docs/AI_STANDARD.md` → `HANDOVER.md`（§0+§7）→ `docs/TODO.md`。
 
 | 文档 | 角色 |
 |---|---|
-| `AGENTS.md`(本文件) | **母文档**:速查 + 红线 + 验证命令 + 本两类制 |
+| `MASTER.md` | **唯一入口**:文档总索引 + 自驱协议 + 事实基线 + 断点表 + 用 `doc_check.py` 校验 |
+| `AGENTS.md`(本文件) | 速查卡:硬约束 + 10 条陷阱 + 验证命令 + 本两类制 |
 | `docs/AI_STANDARD.md` | 五阶段工作流 / 任务分级 T0–T3 / 验证门禁 / 十条红线 R1–R10 / 上下文纪律 |
 | `HANDOVER.md` | 项目现状 + 关键陷阱(§7,改代码前必读) |
 | `docs/TODO.md` | 待办权威(AI 选任务唯一依据) |
@@ -96,7 +105,10 @@ python scripts/doc_check.py   # 改过文档时必须跑:母文档索引/份数/
 |---|---|
 | `README.md` / `PROGRESS.md` / `api.md` | 上手 / 轮次史 / API 参考 |
 | `docs/ARCHITECTURE.md` / `docs/PROJECT_OVERVIEW.md` | 架构设计 / 代码地图速查 |
-| `docs/specs/`(01–22) | 页面功能规格(EARS 验收语法) |
+| `docs/specs/`(01–35) | 页面功能规格(EARS 验收语法) |
+| `docs/FEATURE_DESIGN_MATRIX.md` | 44 项功能 × 六维设计完整度(哪个功能只是能跑、设计没写清) |
+| `docs/PRODUCT_REVIEW.md` / `docs/COMPETITIVE_GAP.md` | 买家视角评分 / 竞品对标缺口 |
+| `docs/NEXT_VERSION_BACKLOG.md` | v0.2 未立项的想法池 |
 | `docs/DESIGN_SYSTEM.md` | 全站 UI 标准 |
 | `docs/BUSINESS_LOGIC.md` | 业务逻辑反向梳理 |
 | `docs/AUDIT_REPORT.md` / `docs/AUDIT_2026-10-15.md` / `docs/archive/` | 安全/功能审计 |

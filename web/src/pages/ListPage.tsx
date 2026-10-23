@@ -1,74 +1,107 @@
-import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
+import { useEffect, useState, useCallback } from 'preact/hooks'
 import { useDebounce } from '../core/debounce'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listPostsPaged, deletePost, listCategories, ApiError } from '../core/api'
+import { listPostsPaged, deletePost, listCategories, errMessage, errStatus } from '../core/api'
 import type { PostPage, PostStatus, Category } from '../core/types'
 import { renderMD, stripHTML, highlight } from '../core/md'
 import { Sidebar } from '../ui/Sidebar'
+import { Pagination } from '../ui/Pagination'
 import { useNav } from '../core/router'
 
-const PAGE_SIZE = 20
+// Spec 24: classic pagination. The page number lives in the URL (?page=N) and
+// the page SIZE is decided by the server from site_config.page_size — the
+// client deliberately never sends `size`, so one link means one thing for
+// everybody and stays shareable.
+
+// The filters that are part of the URL (deep-linkable from the admin
+// category/tag pages). Keyword + status stay in component state: pushing a
+// URL on every keystroke would trash the history.
+interface UrlFilters {
+  page: number
+  category: number | null
+  tag: string | null
+}
+
+function parseUrl(location: string): UrlFilters {
+  const qs = location.includes('?') ? location.slice(location.indexOf('?') + 1) : ''
+  const p = new URLSearchParams(qs)
+  const rawPage = parseInt(p.get('page') ?? '', 10)
+  const rawCat = parseInt(p.get('category') ?? '', 10)
+  return {
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    category: Number.isFinite(rawCat) ? rawCat : null,
+    tag: p.get('tag') || null,
+  }
+}
+
+function buildUrl(f: UrlFilters): string {
+  const p = new URLSearchParams()
+  if (f.page > 1) p.set('page', String(f.page))
+  if (f.category != null) p.set('category', String(f.category))
+  if (f.tag) p.set('tag', f.tag)
+  const qs = p.toString()
+  return qs ? `/?${qs}` : '/'
+}
 
 export function ListPage() {
   const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
-  const [, navigate] = useNav()
+  const [location, navigate] = useNav()
+
+  const url = parseUrl(location)
+  const page = url.page
+  const activeCategory = url.category
+  const activeTag = url.tag
+
   const [pageData, setPageData] = useState<PostPage | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState<PostStatus | ''>('')
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [activeCategory, setActiveCategory] = useState<number | null>(null)
-  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
-  const [error, setError] = useState(false)
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  const hasMoreRef = useRef(false)
   const debouncedSearch = useDebounce(search, 300)
 
-  // Load one page. `append` keeps previously loaded items (infinite scroll);
-  // a fresh load (page reset / filter change) replaces the list.
+  // Single navigation helper: every filter change goes through it so the page
+  // number is always reset deliberately (spec 24 AC-3.1) instead of by an
+  // effect that would also fire on mount and fight a deep link.
+  const go = useCallback(
+    (next: { page?: number; category?: number | null; tag?: string | null }) => {
+      navigate(
+        buildUrl({
+          page: next.page ?? 1,
+          category: next.category !== undefined ? next.category : activeCategory,
+          tag: next.tag !== undefined ? next.tag : activeTag,
+        }),
+      )
+    },
+    [navigate, activeCategory, activeTag],
+  )
+
   const load = useCallback(
-    async (
-      q: number,
-      s: PostStatus | '',
-      srch: string,
-      cat: number | null,
-      tag: string | null,
-      append: boolean,
-    ) => {
-      if (append) setLoadingMore(true)
-      else setLoading(true)
-      setError(false)
+    async (q: number, s: PostStatus | '', srch: string, cat: number | null, tag: string | null) => {
+      setLoading(true)
       try {
         const res = await listPostsPaged({
           status: s || undefined,
           q: srch || undefined,
           page: q,
-          size: PAGE_SIZE,
+          // No `size`: the server applies site_config.page_size (spec 24).
           // Explicit null check: a valid category id could be falsy (0),
           // which `||` would silently drop and disable the filter.
           category: cat == null ? undefined : cat,
           tag: tag == null ? undefined : tag,
         })
-        setPageData((prev) =>
-          append && prev ? { ...prev, items: [...prev.items, ...res.items] } : res,
-        )
-        setPage(q)
+        setPageData(res)
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
+        if (errStatus(e) === 401) {
           navigate('/login')
           return
         }
-        setError(true)
         pushToast('error', t('post.loadFailed'))
       } finally {
         setLoading(false)
-        setLoadingMore(false)
       }
     },
     [pushToast, t, navigate],
@@ -82,65 +115,37 @@ export function ListPage() {
     loadCategories()
   }, [loadCategories])
 
-  // Reset to the first page whenever a filter changes.
   useEffect(() => {
-    setPage(1)
-  }, [debouncedSearch, status, activeCategory, activeTag])
-
-  // Single data-fetch effect: fresh load on page 1 / back, append on forward.
-  useEffect(() => {
-    load(page, status, debouncedSearch, activeCategory, activeTag, page > 1)
+    load(page, status, debouncedSearch, activeCategory, activeTag)
   }, [page, status, debouncedSearch, activeCategory, activeTag, load])
-
-  const loadNext = useCallback(() => {
-    if (loading || loadingMore || error) return
-    if (!hasMoreRef.current) return
-    setPage((p) => p + 1)
-  }, [loading, loadingMore, error])
-
-  // Infinite scroll: observe the bottom sentinel and load more when it scrolls
-  // into view (with a 200px lookahead margin).
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasMoreRef.current) loadNext()
-      },
-      { rootMargin: '200px' },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [loadNext])
 
   const remove = async (id: string) => {
     if (!(await confirmDialog(t('list.deleteConfirm')))) return
     try {
       await deletePost(id)
       pushToast('success', t('post.deleted'))
-      await load(page, status, debouncedSearch, activeCategory, activeTag, false)
+      await load(page, status, debouncedSearch, activeCategory, activeTag)
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('post.deleteConfirm'))
+      pushToast('error', errMessage(e, t('post.deleteConfirm')))
     }
   }
 
-  const onCategorySelect = (id: number | null) => {
-    setActiveCategory(id)
-    setPage(1)
-  }
+  const onCategorySelect = (id: number | null) => go({ category: id })
+  const onTagSelect = (name: string | null) => go({ tag: name })
 
-  const onTagSelect = (name: string | null) => {
-    setActiveTag(name)
-    setPage(1)
-  }
-
-  const totalPagesNum = pageData ? Math.max(1, Math.ceil(pageData.total / PAGE_SIZE)) : 1
+  // Server-decided page size; fall back to 10 only while the first response
+  // is still in flight.
+  const size = pageData?.page_size || 10
   const totalItems = pageData?.total ?? 0
-  const hasMore = page < totalPagesNum
-  hasMoreRef.current = hasMore
+  const totalPagesNum = Math.max(1, Math.ceil(totalItems / size))
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
 
   const items = pageData?.items ?? []
+  // A deep link may point past the end (post deleted, filters changed). That
+  // is not an error state — show the message plus the pager so the reader can
+  // get back (spec 24 AC-1.4).
+  const hasActiveFilter = debouncedSearch !== '' || status !== '' || activeCategory !== null || activeTag !== null
+  const outOfRange = !loading && items.length === 0 && totalItems > 0 && page > totalPagesNum
 
   return (
     <div class="list-page">
@@ -148,16 +153,25 @@ export function ListPage() {
         <div class="list-main">
           <div class="list-header">
             <h1>{t('list.title')}</h1>
-            <button class="btn btn-primary" onClick={() => navigate('/create')}>
-              {t('nav.create')}
-            </button>
+            {/* Spec 27: anonymous readers must never see an authoring entry. */}
+            {user && (
+              <button class="btn btn-primary" onClick={() => navigate('/create')}>
+                {t('nav.create')}
+              </button>
+            )}
           </div>
 
           <div class="list-toolbar">
             <input
               placeholder={t('list.searchPlaceholder')}
               value={search}
-              onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+              onInput={(e) => {
+                setSearch((e.target as HTMLInputElement).value)
+                // Spec 24 AC-3.1: a filter change restarts at page 1. Doing it
+                // here (not in an effect) keeps a deep link like ?page=3 from
+                // being reset on mount.
+                if (page !== 1) go({ page: 1 })
+              }}
             />
             <select
               value={activeCategory !== null ? String(activeCategory) : ''}
@@ -171,7 +185,10 @@ export function ListPage() {
                 <option key={c.id} value={String(c.id)}>{c.name}</option>
               ))}
             </select>
-            <select value={status} onInput={(e) => setStatus((e.target as HTMLSelectElement).value as PostStatus | '')}>
+            <select value={status} onInput={(e) => {
+              setStatus((e.target as HTMLSelectElement).value as PostStatus | '')
+              if (page !== 1) go({ page: 1 })
+            }}>
               <option value="">{t('list.allStatus')}</option>
               <option value="published">{t('list.published')}</option>
               <option value="private">{t('list.private')}</option>
@@ -181,25 +198,50 @@ export function ListPage() {
           {loading ? (
             <p class="muted">{t('common.loading')}</p>
           ) : totalItems === 0 ? (
-            <div class="empty-state">
-              <div class="empty-icon">
-                <div class="empty-icon-doc">
-                  <div class="empty-icon-line" />
-                  <div class="empty-icon-line empty-icon-line--short" />
-                  <div class="empty-icon-line empty-icon-line--short" />
-                </div>
+            // A filtered empty result is NOT "you have no posts yet": the old
+            // copy told a reader to go write their first post after a search
+            // that simply matched nothing (spec 28).
+            hasActiveFilter ? (
+              <div class="empty-state">
+                <p class="empty-text">{t('list.noResults')}</p>
+                <button class="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setStatus(''); go({ page: 1, category: null, tag: null }) }}>
+                  {t('list.clearFilters')}
+                </button>
               </div>
-              <p class="empty-text">{user ? t('list.empty') : t('list.emptyLoggedOut')}</p>
+            ) : (
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <div class="empty-icon-doc">
+                    <div class="empty-icon-line" />
+                    <div class="empty-icon-line empty-icon-line--short" />
+                    <div class="empty-icon-line empty-icon-line--short" />
+                  </div>
+                </div>
+                <p class="empty-text">{user ? t('list.empty') : t('list.emptyLoggedOut')}</p>
+              </div>
+            )
+          ) : outOfRange ? (
+            <div class="empty-state">
+              <p class="empty-text">{t('list.pageOutOfRange')}</p>
+              <button class="btn btn-ghost btn-sm" onClick={() => go({ page: 1 })}>
+                {t('list.firstPage')}
+              </button>
             </div>
           ) : (
             <>
               <p class="list-count">
                 {t('list.pageOf', { page: String(page), total: String(totalPagesNum) })}
-                &middot; {t('common.count', { from: String((page - 1) * PAGE_SIZE + 1), to: String((page - 1) * PAGE_SIZE + items.length), total: String(totalItems) })}
+                &middot; {t('common.count', { from: String((page - 1) * size + 1), to: String((page - 1) * size + items.length), total: String(totalItems) })}
               </p>
               <ul class="post-list">
                 {items.map((p) => (
                   <li key={p.id} class="post-item" onClick={() => navigate(`/read/${p.id}`)}>
+                    {/* Spec 28: the cover field existed (editor + model) but
+                        was never rendered in any list, so choosing a cover
+                        had no visible effect. */}
+                    {p.cover && (
+                      <img class="post-cover-thumb" src={p.cover} alt="" loading="lazy" />
+                    )}
                     <div class="post-item-head">
                       <span class="post-title">
                         {p.pinned && <span class="badge-pinned">{t('list.pinned')}</span>}
@@ -247,24 +289,7 @@ export function ListPage() {
                   </li>
                 ))}
               </ul>
-              {/* Paging is append-style (infinite scroll): a classic
-                  prev/next pager would re-append page 1 on "prev" and
-                  duplicate items, so progress lives in the count line
-                  above and loading continues via the sentinel below. */}
-              <div class="lazy-load" ref={sentinelRef}>
-                {loadingMore ? (
-                  <span class="lazy-load-text">
-                    <span class="lazy-load-spinner" />
-                    {t('list.loadingMore')}
-                  </span>
-                ) : hasMore ? (
-                  <button class="btn btn-ghost btn-sm lazy-load-btn" onClick={loadNext}>
-                    {t('list.loadMore')}
-                  </button>
-                ) : (
-                  <span class="lazy-load-end">{t('list.noMore')}</span>
-                )}
-              </div>
+              <Pagination page={page} totalPages={totalPagesNum} onPage={(n) => go({ page: n })} />
             </>
           )}
         </div>

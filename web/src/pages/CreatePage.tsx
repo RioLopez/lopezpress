@@ -3,7 +3,7 @@ import { PostEditor } from '../ui/PostEditor'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { createPost, ApiError } from '../core/api'
+import { createPost, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function CreatePage() {
@@ -44,7 +44,7 @@ export function CreatePage() {
           pushToast('success', t('editor.created'))
           navigate(`/read/${p.id}`)
         } catch (e) {
-          pushToast('error', e instanceof ApiError ? e.message : t('editor.createFailed'))
+          pushToast('error', errMessage(e, t('editor.createFailed')))
           setBusy(false)
         }
       }}

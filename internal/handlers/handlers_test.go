@@ -44,7 +44,7 @@ func setup(t *testing.T) (*services.Service, *gorm.DB) {
 
 	// Tests rely on open registration; enable it for the test DB.
 	if err := db.Where("id = ?", 1).First(&models.SiteConfig{}).Error; err != nil {
-		_ = db.Create(&models.SiteConfig{ID: 1, SiteName: "Echo", SiteTitle: "Echo", ImgHostMode: "local", AllowRegister: true}).Error
+		_ = db.Create(&models.SiteConfig{ID: 1, SiteName: "Echo", SiteTitle: "Echo", ImgHostMode: "local", AllowRegister: true, PageSize: 10, PublicRead: true}).Error
 	}
 
 	cfg := config.Load()

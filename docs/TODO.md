@@ -6,12 +6,76 @@
 > 完成后把 `[ ]` 改 `[x]`。
 > **本文件是唯一权威待办清单**。首轮审计快照已归档至 `docs/archive/2026-10-14-FUNCTIONAL_AUDIT.md`（勿再当作待办）。
 >
-> **当前状态（2026-10-22 第 39 轮后，勾选状态与正文结论逐条对齐）**：
+> **当前状态（2026-10-23 第 52 轮后，勾选状态与正文结论逐条对齐）**：
 > - 早期 P1/P2/P3 与功能缺口全部完成（见下方各节勾选）；
 > - **P0 级 7 项已全部修复**（P0-1～P0-6 修复轮 1，P0-7 第 30 轮）；
-> - **P1 级仅剩 P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）；P1-17（root 密码恢复）第 39 轮已修；P1-15/P1-16 第 28/29 轮已修；
-> - P2 级仅剩 **P2-3 剩余 7 类（经核查为纯样式，不做）** 与 **P2-6（可信代理闸门，降级评估未修）**；P2-16（无用依赖）第 39 轮已修；
-> - 「评论」仍为唯一未做的增强方向。
+> - **P1 级仅剩 P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）；P1-17（root 密码恢复）第 39 轮已修；P1-15/P1-16 第 28/29 轮已修；P1-11 的计数行（写死 20）第 43 轮随分页改造修掉；
+> - P2 级仅剩 **P2-3 剩余 7 类（经核查为纯样式，不做）**；**P2-6（可信代理闸门）第 43 轮已修**；P2-16（无用依赖）第 39 轮已修；
+> - 「评论」仍为唯一明确不做的方向（用户 2026-10-22 决定）；SEO/OG 因纯 SPA 抓不到卡片，暂缓。
+>
+> **第 43 轮新增待办（产品功能，用户已拍板，尚未实现）**：
+> - [x] **F-1 后台文章管理页 `/admin/posts` + 批量操作** ✅ 第 44 轮完成（spec 26）
+> - [x] **F-2 后台分区导航**（内容 / 用户 / 系统三组）✅ 第 44 轮完成
+> - [ ] **F-3 前台首页去掉编辑/删除按钮**（F-1 已建好，但普通用户 role=user 目前只能从首页进编辑；需先在个人中心 `/me` 给自己的文章加编辑入口，再撤首页按钮。顺带修一个现存缺陷：首页按钮对**所有人**显示，非作者点了必 403）
+> - [x] **F-4 `/archive` 全量加载** ✅ 第 47 轮完成（spec 28）：`GET /api/posts/archive/paged`（默认 50 / 上限 200 / body 恒空），前端改用服务端分页。
+> - [ ] **F-5 站点名仍是 `Echo`**（`site_configs.site_name`，DB 现值），改名 LopezPress 属数据修正，非代码问题。
+> - [ ] **F-6 一条 `draft` 状态脏数据**（文章「封面测试」，第 22 轮已废 draft 五态），五态之外的状态永不显示也管不到，需清理或迁移为 published/private。
+> - [x] **F-7 前台匿名阅读** ✅ 第 46 轮完成（spec 27）：改为 `site_configs.public_read` 开关，管理员在「站点设置 → 显示设置」切换；前后端同时执行（匿名关闭时 API 直接 401）。
+> - [x] **A-06 分类分层级** ✅ 第 46 轮完成（spec 27）：`parent_id` 两层树 + 预设分类树 + 删除父级时子级上移 + 父级筛选含子级。
+> - [x] **A-05 封禁闭环** ✅ 第 48 轮完成（spec 30）：后台文章管理页加 root 专属「封禁」按钮，封禁库不再是单向门。
+> - [x] **I-03 文章永久链接** ✅ 第 48 轮完成（spec 29，方案 A）：`/p/{slug}` + 旧 `/read/{uuid}` 永久保留；历史文章启动回填；sitemap/RSS 用 slug。
+> - [x] **F-8 仪表盘只有两个数字** ✅ 第 52 轮完成（spec 33）：30 天去重浏览量趋势（内联 SVG，不引图表库）+ 待审计数 + 最多阅读 Top5。
+> - [x] **F-9 备份只能手动点** ✅ 第 52 轮完成（spec 34）：每日自动快照（root 开关 + 保留份数 1–90），启动时 + 每 30 分钟惰性检查，`auto-YYYYMMDD.db` 与导入快照互不干扰。
+> - [x] **F-10 读完一篇没有出口** ✅ 第 52 轮完成（spec 35）：相关文章（同分类/同标签，≤5 篇）+ 阅读页面包屑。
+> - [x] **F-11 历史数据 `posts.category_id = 0`** ✅ 第 52 轮修正为 `NULL`（3 篇）：0 不指向任何分类，属于无效外键，会让后台分类列显示空。
+> - [ ] **F-12 WXR（WordPress XML）导入**：Markdown 批量导入已覆盖自建站迁移；WXR 格式脏、体积大，暂未做。
+> - [ ] **F-13 编辑器内 slug 编辑框**：接口已支持（`PUT /api/posts/{id}` 带 `slug`），前端 `PostEditor` 表单未加输入框。
+> - [x] **隐藏 bug：保存站点设置 500** ✅ 第 46 轮发现并修：`site_configs.site_url` 列在旧库中缺失（AutoMigrate 不碰已存在的表）。修法为迁移 `0008` + 启动时的 `checkSchemaDrift` 漂移告警。
+
+## 🏗️ 架构债（2026-10-23 第 53 轮架构复审新增）
+
+> 完整证据链 + 目标分层 + 验收指标见 `docs/ARCH_REVIEW_2026-10-23.md`（§2 一致性问题、§3 架构问题、§6 迁移路线）。
+> **与下方 P0/P1/P2 的区别**：下面是"功能/安全 bug"，这里是"代码组织债"——不改也能跑，但每加一个功能就更难改。
+> **顺序不能乱**：先 P0 立规矩（否则后面每轮都会长出新写法），再搬代码。
+
+- [x] **AR-0 立机械门禁 `scripts/arch_check.py`（零行为变化，最高性价比）** ✅ 2026-10-23 第 54 轮完成
+  已实现 **7 项计数 + 1 条待补**（R6 错误构造 / R7 迁移注册表需 AST 级检查，随 AR-2/AR-5 落地）：R1 传输符号、R2.files/R2.funcs 文件与函数长度、R3 service 包 struct 堆积、R4 handler 内 `require*`、R5 handler 内 `recordAudit`、R8 前端裸 `fetch`、R9 注释块内重复行。
+  基线存 `scripts/arch_baseline.json`，棘轮语义（只拦变多）。
+  已接入 `AGENTS.md` §4 验证门禁（改代码必跑）。已顺手修两个小缺陷：`checkSchemaDrift` 改由新增的 `models.All()` 驱动（原先手写 9/11，漏 `PostRevision` 与 `SchemaMigration`，且与 AutoMigrate 的清单是两份独立副本）；4 处 doc comment 重复（`router.New`、`Service.Register`、`ImportBackup`、`handlers.Register`）。`GetPostPublic` 的 "Increments view_count" 注释已在此前轮次修正，无需再动。
+  门禁：`go build/vet/test` 全绿（29 个包/8 个测试包）；`arch_check.py` 退出 0。
+- [x] **AR-1 拿回分层边界** ✅ 2026-10-23 第 55 轮完成
+  已完成：`ServeBackup` → `ResolveBackupFile(name) (path, size, err)`；`ServeUploads` → `ResolveUploadFile(name) (path, err)`；`UploadImage(ctx, r *http.Request)` → `UploadImage(ctx, filename, data)`（`_ = ctx` 消失，ctx 真正传进 `GetSiteConfig` 与图床调用）；出站 SM.MS 客户端抽出 `internal/imghost` 包。
+  **R1 口径同时修正**（不是"调低门槛"）：旧口径数"import net/http 的文件数"=11，其中 10 个只是 `http.StatusXxx` 整数常量——换成自定义常量是改名，零架构收益。新口径数**真正耦合传输的符号**（`ResponseWriter` / `*http.Request` / `ServeFile` / `NotFound` / `http.Client` / `NewRequest` / `MaxBytesReader` / `http.Handler`），P1 前 12 处 / 1 个文件 → 现在 **0**。剩下 11 个文件只 import 状态码常量，记为新观察项 **R1b=11**（只显示、不阻断）。
+  行为验证（真跑，非推断）：上传→取回字节一致 + `Content-Type: image/png`；`Range: bytes=0-9` → 206；`If-Modified-Since` → 304；非图片扩展名 → 400 白名单文案；缺 `file` 字段 → 400；未授权 → 401；`/uploads/../go.mod`、`%2f` 编码、子路径 → 全 404；备份下载 200 + `Content-Length` 与实际字节一致 + `Content-Disposition` 正确；备份名穿越（`../app.db`、`a%2Fb.json`、空名）→ 全 404。
+  **测试移动**：`services/upload_test.go` 随被测代码迁到 `imghost/imghost_test.go`，断言不变，另加 1 条 `TestUploadTimeoutIsBounded`（Q11 的防挂死属性）。
+- [ ] **AR-1b（可选，低优先级）状态码语义化**：295 处 `http.StatusXxx` 让领域层仍在说 HTTP 数字。真正做法是把 `newErr(404, ...)` 换成 `newErr(ErrNotFound, ...)` + 单一映射表，而不是复制一份整数常量。收益是领域可脱离 HTTP 表达错误，成本是 295 处替换 + 全量测试复核，故不并入 AR-1。
+- [ ] **AR-1c（真 bug，低优先级）上传超限返回 400 而非 413**：`MaxBytesReader(maxUploadBytes())` 在 `ParseMultipartForm` 阶段就截断，导致 `header.Size > maxUploadBytes()` 的 413 分支**永远走不到**（死代码），用户看到的是 `invalid multipart form`。这是 P1 前就存在的既有行为，本轮只做搬移未改语义。修法：把 `MaxBytesReader` 的错误单独映射成 413。
+- [x] **AR-2 审计单点化** ✅ 2026-10-23 第 56 轮完成
+  已完成：新建 `internal/services/audit.go` 的 `func (s *Service) audit(ctx, actor, action, target, detail string)`，是**全库唯一** `models.ActionLog` 构造点（R10 门禁拦其余文件）；`WithActor`/`ActorFromContext`/`ClientIPFromContext`/`SystemActor` 把「谁在动、从哪来」经 context 从 JWT 中间件传给 service（handler 不再传 `*http.Request` 给审计）。
+  handler 侧 18 处 `recordAudit` 全部下沉为 service 写方法内的 `s.audit(...)`（35 处调用），`recordAudit`/`RecordAction` 双轨删除——R5 18→0、R10=0。
+  8 个缺口全部补齐：分类增删改（`create/update/delete_category`）/ 上传（`upload_image`）/ 删图（`delete_upload`）/ 发文章（`create_post`）/ 预设分类（`apply_preset_categories`）/ 恢复修订（`restore_revision`）/ 批量操作（`batch_*`）/ 导入 Markdown（`import_markdown`）。
+  审计是 best-effort（插入失败只 `slog.Warn` 不破坏主操作）；刻意不审 Login/Register/UpdateMe（Login 已有 `login_log`），改密（admin 强制 + 自助）例外都审。
+  回归 `internal/services/audit_test.go` 3 用例：AC-1 调用写用例即产生审计行、AC-2 显式 actor 优先于 context、AC-3 无请求身份（cron）也写行且 actor/IP 为空。
+- [x] **AR-3 拆 `services.go`（2,671 行）** ✅ 2026-10-23 第 57 轮完成
+  纯移动（不改函数体、172 个测试零改动仍全绿）。`services.go` 消失，拆成 15 个域文件：`service.go`（Service/New/ServiceError/StatusOf/MsgOf 核心）、`dto.go`（25 个 DTO + `toPublic`）、`auth.go`（注册/登录/JWT）、`posts.go`（读+创建）、`posts_list.go`（分页列表）、`posts_edit.go`（改/删）、`moderation.go`（审核/封禁库）、`tags.go`（标签关联事务）、`taxonomy.go`（分类/标签 CRUD）、`nav.go`（上一篇/下一篇）、`users.go`（ListUsers/SetUserDisabled/UserStats）、`backup.go`（导出/导入）、`restore.go`（快照恢复）、`trash.go`（回收站）、`media.go`（图片上传/管理/文件解析）。
+  顺带拆掉另外两个超长文件：`accounts.go`（749→313 行）拆成 `site_config.go`（站点配置+登录记录）+ `accounts.go`（用户 CRUD）+ `accounts_profile.go`（资料/作者/仪表盘）；`mail.go`（420→257 行）拆成 `mail.go`（高层）+ `mail_smtp.go`（SMTP 底层协议）。
+  结果：services 包最大文件 314 行（`backup.go`），全部 ≤350 行；**R2.files 4→1**（仅剩 `config.go` 1023 行，属 config 包，非本轮范围）。顺手修 `dto.go` 里一处错位注释（`UserPublic` 前误挂的 `CategoryWithCount` 注释）。
+- [x] **AR-4 路由表声明化** ✅ 2026-10-23 第 58 轮完成
+  76 条路由改为 `[]route{method, path, auth, roles, handler}` 集中声明（`internal/router/router.go` 的 `var routes`）；`roles` 用 `models.RoleAdmin/RoleRoot`（`adminRoles` = admin|root、`rootRoles` = root）。`/admin/banned` 等 9 个 root-only 端点（ban/list-banned/send-back/delete-banned/import-backup/restore-snapshot/list-snapshots/get-run-auto-backup）由表声明 `roles: rootRoles`。
+  权限从 handler 上移到路由表：新增 `handlers.RequireRole(roles...)` 中间件（从 context 读 actor 角色，放行或 403），删掉 handlers 里 30 处 `requireAdmin` + 9 处 `requireRoot` 及两个函数定义——**R4 39→0**。`requireAdmin`/`requireRoot` 语义保留：root-only 报 `"root only"`、其余报 `"admin only"`。
+  纵深防御不变：service 层 `IsRoot`/`IsAdminOrRoot`/`canReviewPost`/`canManageUser` 仍逐用例校验（`UpdateSiteConfig` 里「非 root 不能改 AutoBackup」的字段级授权保留在 handler，非路由守卫）。现有越权测试（`TestBanPostRequiresRoot`/`TestListBannedHiddenFromAdmin` 等）不改仍全绿；新增 `handlers/guard_test.go` 6 用例锁定 `RequireRole` 行为。
+  顺带修 `contract_check.py`：解析路由表格式 + 两处既有解析误报（`importMarkdown` 裸 fetch 默认 GET、`archive/paged` 嵌套反引号），「方法不匹配」恢复 0。（前端路由同层表达仍在 AR-7。）
+- [x] **AR-5 迁移注册表** ✅ 2026-10-23 第 59 轮完成
+  9 段克隆迁移函数收敛为「1 张注册表 + 1 个泛型助手」：新建 `internal/config/migrate.go`，`var migrations = []migration{{version, up}}` 有序注册表（10 条），`runManualMigrations` 循环 + `apply` 集中门禁（原每个函数各抄一遍的「查 gate → 判表 → 判列 → ALTER → record」删掉），8 个 `addXxxColumn` 收敛成泛型 `ensureColumns(model, cols, after...)`。`dropScheduledAt`/`promoteFirstAdminToRoot` 保留为具名 `up` 函数（去掉各自 gate+record）。漂移检查 `checkSchemaDrift` 本就遍历 `models.All()`（P0 已改），无手写清单。
+  `config.go` 1023 → 557 行（迁移代码拆出），`migrate.go` 250 行 ≤350。新增 `arch_check.py` **R7 门禁**（`add*Column` 克隆函数计数，目标 0，已归零锁基线）。
+  **顺带修一个真 bug**：双库冒烟（新库 + 拷贝 `app.db.bak-20261014` 旧库各跑一次 `InitDB`）发现 `users.token_version` **自 v0.1.0 起就在模型里、却从未写过迁移**，旧库登录/登出会 `no such column` 500（漂移检查 WARN 早已提示）。加 `0011_add_token_version` 一条注册表项即修复——正是本阶段验收「新增列只需 2 行」的实证。冒烟后新库=旧库=89 列、零缺列、零真类型差异（余下 `VARCHAR≡TEXT`、`bool→numeric≡INTEGER` 均为 SQLite 亲和性别名，良性）。
+  测试 173→176：`mig_test.go` 重写 `TestDropScheduledAt`（纯 up）+ 新增 `TestApplyMigrationGate`（集中门禁）/ `TestRunManualMigrationsFresh`（注册表全量）/ `TestEnsureColumns`（泛型助手）。
+- [x] **AR-6 前端数据层** ✅ 2026-10-23 第 60 轮完成（数据层核心 + 旗舰页）
+  新增 `core/http.ts`（唯一网络出口，单 `fetch` 调用）：`ApiError` + `request`/`upload`/`download` 三基元 + `errMessage`/`errStatus` 两个错误提取助手（全库仅此 2 处 `instanceof ApiError`）。`api.ts` 改成纯类型化 facade，删内部 3 处裸 fetch（`importMarkdown`/`downloadBackup`/`uploadImage` 改走 `upload`/`download`），re-export `ApiError`/`setTokenGetter`/`setOnUnauthorized`/`errMessage`/`errStatus` 保持 `auth.tsx` 与页面兼容。新增 `core/useQuery.ts`（`useQuery(fn, deps) → {data,loading,error,reload,setData}` + `useMutation`，零依赖、含竞态防护）。
+  结果：**R8 3→0**（`fetch` 只剩 `http.ts` 一处）、`instanceof ApiError` 54→2、`tsc --noEmit` + `vite build` 全绿（产物 233.35→231.99 kB）。顺带修 `contract_check.py`（解析 `upload()`/`download()` 两个新基元，3 个端点恢复识别，「方法不匹配」维持 0）。
+  **旗舰页示范**：`PersonalCenterPage` 623→**52 行**——三个区块拆到 `pages/personal/{MyHomepage,ContentManage,SecurityCenter}.tsx`（共享 `Pager`+`PAGE_SIZE`），列表三态机换成 `useQuery`（乐观更新用暴露的 `setData`）。**其余页面（AdminUsers 525 / AdminPosts 353 等）的 `useQuery` 铺开是下一增量**（`load` 回调+刷新、toast-on-error 形态与旗舰页略异，逐个冒烟）。
+- [ ] **AR-7 i18n 与守卫收敛**：`i18n.tsx` 1,775 行按域拆；`t()` 未命中加 dev 警告；删 5 处重复 admin 守卫；统一 `confirmDialog`（`window.confirm` 只剩 0 处）。
+- [ ] **AR-8 前端最小测试**：vitest 覆盖 `format` / `md` 清洗 / `api` 错误映射三个纯函数模块（1 个 devDependency，不进产物）。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
 
@@ -145,8 +209,8 @@
   ✅ **已修（2026-10-15 修复轮 3）**：4 处全部接 i18n（新增 `auth.usernamePlaceholder/passwordPlaceholder/showPwd/hidePwd`、`editor.dragDivider`、`admin.restoreConfirm` 键，zh+en）；LoginPage 不再泄露默认口令提示。
 - [x] **P2-5 `'draft'` CSS 类借用**：`post-status-draft` 已不是合法 PostStatus（3 处使用）。
   ✅ **已修（2026-10-15 修复轮 3）**：删 `index.css` 死类 `.post-status-draft`/`.post-status-scheduled`；`tsc`+`vite build` ✅。
-- [ ] **P2-6 `clientIP` 信任 XFF**：审计 IP 可伪造；生产经 Nginx 覆盖可缓解，建议加可信代理闸门。
-  ⏳ **未修（降级评估）**：单实例直裸部署场景(本机/dev)无代理,XFF 本就来自客户端;生产部署走 Nginx 时由 Nginx 覆盖 XFF(见 deploy/nginx.conf),可信代理闸门需新增 `TRUSTED_PROXIES` 配置+中间件改造,收益随场景而变,列为 P2 待办。
+- [x] **P2-6 `clientIP` 信任 XFF**：审计 IP 可伪造；生产经 Nginx 覆盖可缓解，建议加可信代理闸门。
+  ✅ **已修（第 43 轮）**：新增 `internal/clientip` 包 + `TRUSTED_PROXIES`（逗号分隔 IP/CIDR，默认仅 `127.0.0.1/32,::1/128`）。只有 `RemoteAddr` 命中可信代理才采信 `X-Forwarded-For`，否则一律用 `RemoteAddr`；非法配置启动即 `log.Fatalf`。`middleware` 与 `handlers` 两份重复的 `clientIP` 已并入该包。5 个表驱动测试覆盖「伪造头被忽略 / 可信代理被采纳 / 自定义 CIDR / 非法配置报错」。
 - [x] **P2-7 `?page=abc` 静默落入 legacy 分支**：`posts.go:70-78` `Atoi` 错误被忽略 → 响应结构与请求意图相反。
   ✅ **已修（2026-10-15 修复轮 3）**：`ListPosts` 显式解析 `page/size/category`，任一显式提供但非数字 → 400；补回归 `TestListPostsRejectsBadPageParam`。
 - [x] **P2-8 分页双机制并存**：`ListPage` 按钮分页 + IntersectionObserver 无限滚动互相触发。

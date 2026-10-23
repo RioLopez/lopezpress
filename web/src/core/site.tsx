@@ -17,6 +17,10 @@ const DEFAULT: SiteConfigPublic = {
   footer_text: '',
   icp_no: '',
   friend_links: '',
+  page_size: 10,
+  // Until the real config arrives, assume public: a blog should not flash a
+  // login redirect at a visitor while the config request is in flight.
+  public_read: true,
 }
 
 interface SiteContextValue {

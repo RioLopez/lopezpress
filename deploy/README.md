@@ -49,6 +49,25 @@ ssh root@你的VPS_IP 'curl -s http://localhost:8080/health'
 # {"status":"ok"}
 ```
 
+**同时配 `TRUSTED_PROXIES`（放在 Nginx 后面时必做）**：
+
+```bash
+# Nginx 与后端在同一台机器时：
+TRUSTED_PROXIES=127.0.0.1/32
+# 用 Docker Compose（后端在容器网段）时：
+TRUSTED_PROXIES=172.16.0.0/12
+```
+
+不配的后果：后端看到的客户端 IP 全是反代地址（`127.0.0.1` 或 `172.x`），
+于是**浏览量去重退化成"全站一天只算一次"**，登录限流也会把所有人算成同一个 IP。
+`internal/clientip` 只信任这个白名单里传来的 `X-Forwarded-For`；不在白名单里时直接用 `RemoteAddr`（防伪造）。
+
+**建议顺手打开「每日自动备份」**：后台 → 站点设置 → 自动备份（root 可见）。
+开启后每天生成一份 `data/backups/auto-YYYYMMDD.db`，保留份数可选 3/7/14/30/90。
+它不依赖 cron，但**只在进程运行时才可能触发**；如果 VPS 会长期关机，请另外配置系统级备份。
+
+---
+
 **立即改 `.env` 里的 `JWT_SECRET`**：
 
 ```bash
@@ -101,8 +120,8 @@ systemctl status lopezpress | grep -E 'Memory|CPU'
 | `systemctl status` 显示 OOMKilled | 内存超 `MemoryMax=768M`。调低 `DB_MAX_OPEN`（如 2），或把 `MemoryMax` 提到 900M（别超 1G 预算） |
 | 启动后立即重启 | `journalctl -u lopezpress -n 100` 看 `.env` 路径/权限；确认 `User=echoapi` 能读写 `data/` |
 | `health` 返回 500 | 数据库文件损坏或路径不可写；`ls -l /opt/lopezpress/data/app.db` |
-| 限流误报 429 | 正常。客户端 IP 桶默认 `RATE_LIMIT_RPS=5 / BURST=10`，单 IP 连发 10 个以上会触发。调 `.env` 放宽后 `systemctl restart` |
-| 升级后端口被占 | `ss -lntp | grep 8080`，确认旧进程没在跑；或改 `.env` 的 `SERVER_PORT` |
+| 限流误报 429 | 正常。客户端 IP 桶默认 `RATE_LIMIT_RPS=20 / BURST=50`。调 `.env` 放宽后 `systemctl restart` |
+| 升级后端口被占 | `ss -lntp | grep 8080`，确认旧进程没在跑；或改 `.env` 的 `PORT` |
 
 ## 一句话
 

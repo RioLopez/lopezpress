@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listPending, reviewPost, ApiError } from '../core/api'
+import { listPending, reviewPost, errMessage } from '../core/api'
 import type { Post } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
@@ -47,7 +47,7 @@ export function AdminReviewPage() {
       pushToast('success', t('admin.reviewApproved'))
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }
@@ -69,7 +69,7 @@ export function AdminReviewPage() {
       setNote('')
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }

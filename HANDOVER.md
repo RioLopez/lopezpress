@@ -270,16 +270,79 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 `web/src/core/auth.tsx` 启动时 `GET /api/auth/me` 复核 token；`localStorage` 写死 token（#4）。JWT 1h 过期后无自动刷新——到期需重新登录（当前设计，非 bug）。
 
+### 7.8 浏览量只在显式上报里加，读接口是纯读（第 43 轮，spec 23）
+
+- `GetPost` / `GetPostPublic` **不再**修改 `view_count`。计数唯一入口是 `POST /api/posts/{id}/view` → `services.ReportView`。
+- 去重的**唯一机制**是 `post_views` 上的 `UNIQUE(post_id, visitor_hash, day)` + `INSERT ... ON CONFLICT DO NOTHING` 的 `RowsAffected`。**不要**改成"先查再插"或加应用层 if——并发下会重复计数。
+- 指纹 = `sha256(ip|ua|JWT_SECRET)`，**改 `JWT_SECRET` 会让当天已计数的访客再计一次**（可接受，但要知道）。
+- 新增文章状态或改可见性时注意：只有 `published` 可计数，其余状态 `ReportView` 返回 404（与公开读一致，避免泄露存在性）。
+- 前端 `ReadPage` 在 `status === 'published'` 时上报一次；**不要**在列表页/预览页也上报。
+
+### 7.9 客户端 IP 只认可信代理（第 43 轮，修 P2-6）
+
+- 所有 IP 获取统一走 `internal/clientip.Client(r)`（`middleware` 与 `handlers` 里曾各有一份会漂移的实现，已合并）。
+- 只有 `RemoteAddr` 命中 `TRUSTED_PROXIES`（默认仅回环）才采信 `X-Forwarded-For`；否则忽略。**部署到 VPS 时必须设 `TRUSTED_PROXIES`**，否则 nginx 后面的 IP 全是 `127.0.0.1`，浏览量去重会退化成"全站一天一次"。
+- 非法配置在 `main` 启动时 `log.Fatalf`，不会静默降级。
+
+### 7.10 每页条数由服务端决定（第 43 轮，spec 24）
+- 公共列表前端**只传 `page`，不传 `size`**；`ListPostsPage` 在 `PageSize < 1` 时读 `site_config.page_size`（`ClampPageSize` 钳到 5/10/20/30）。
+- `site_configs.page_size` 是**手工迁移**加的列（`0005_add_page_size`，`ALTER TABLE`），因为该表早已存在、不能交给 AutoMigrate（见 §7.1）。
+- 别为了"灵活"让前端传 size：`?page=N` 会对不同人含义不同，链接就不能分享了。
+
+### 7.11 批量操作必须复用单条 service 方法（第 44 轮，spec 26）
+
+- `BatchUpdatePosts`（`services/batch.go`）**逐条调用 `UpdatePost` / `DeletePost`**，刻意不写第二套权限判断。新增批量动作时也照此办理——一旦在批量里手写 `if me.Role == ...`，就会绕过 `roles.go` 与状态机，重演第 25 轮的 P0 事故模式。
+- 批量返回 `affected` + `skipped[]`（带英文原因），**部分成功是设计而非 bug**；只有基础设施级错误（空 ids / 未知动作 / >100 条 / admin 越权发布）才整体 4xx。
+- `publish` 仅 root；admin 走 `POST /api/admin/review/{id}`。别在批量里给 admin 开口子。
+- `add_tags` 交给 `UpdatePost` 前必须做**集合运算**：`UpdatePost` 在 `in.Tags != nil` 时**整体替换**标签，直接把增量传进去会静默删掉原有标签。
+
+### 7.12 新加的模型字段必须配套手工迁移（第 46 轮，血泪）
+
+- **已存在的表永远不会被 AutoMigrate 碰**（§7.1 的代价）。所以给模型加字段后，如果不同时写一条 `ALTER TABLE ADD COLUMN` 的手工迁移，**这一列在旧库里根本不存在**，错误只会在调用到它的那个接口上以 500 暴露。
+- 第 46 轮就是踩了这个：`site_configs.site_url` 从来没有迁移，**保存站点设置一直 500**，因为没人点过保存所以一直没发现。修法：迁移 `0008_add_site_url`。
+- 防线：`config.checkSchemaDrift` 在每次启动时用反射把模型字段与真实表结构比对，缺列就打
+  `WARN schema drift: <表>.<列> is missing`。**看到这条日志不要忽略**，它意味着某个功能已经坏了。
+- 加字段的标准动作：改 `models/*.go` → 在 `runManualMigrations` 里加 `addXxxColumn`（`schema_migrations` 门控 + `HasColumn` 判断 + 新库直接 `recordMigration`）→ 在测试库/真库各启动一次看是否还有 WARN。
+
+### 7.13 阅读开关与分类树（第 46 轮，spec 27）
+
+- 匿名读的**唯一权威**是 `site_configs.public_read`，由 `WithOptionalAuth` 强制（关闭时匿名一律 401）。前端 `Readable` 守卫只是 UX，不是安全边界——**不要**在 handler 里另写判断。
+- 该值在 `Service` 里有内存缓存，**改配置必须走 `UpdateSiteConfig`**（它会 `invalidatePublicRead`）；直接 SQL 改库不会立刻生效，需重启。
+- 分类**只允许两层**：父级不得再有父级。`validateCategoryParent` 同时做了存在性、自引用、三层和环路四道检查。删父级时子级上移到祖父级。
+- 按父级筛选会**包含子级文章**（`categoryWithDescendants`）；不要改回 `category_id = ?`，否则父节点永远显示为空。
+
+### 7.14 原生 SQL 不认 `*int64`（第 52 轮）
+
+- `posts.category_id` 是 `*int64`。直接把它当参数传给 `db.Raw(...)` 会在运行时报
+  `sql: converting argument ... unsupported type *int64`，因为 `database/sql` 的 driver.Value 白名单里没有指针。
+- 正确写法：先解包 `var cat any; if post.CategoryID != nil { cat = *post.CategoryID }`，再传 `cat`。
+- `nil` 传进去是合法的（匹配 `IS NULL` 的语义），所以"无分类"不需要特判 SQL 字符串。
+- 相关文章（spec 35）就是这条的现场：ORM 一切正常，只有 `Raw` 那一条会炸。
+
+### 7.15 整表单保存会冲掉你没提交的字段（第 52 轮）
+
+- 站点设置是「GET 全量 → 前端持有 → PUT 全量」，`SiteConfigFromMap` 对**缺失字段取零值**。
+- 于是：root 打开了每日备份，admin 在同一个页面点保存（他的 payload 里没有 `auto_backup`）→ 备份被静默关掉。
+- 修法两层：① 前端只对 root 渲染该开关；② **服务端**在 `UpdateSiteConfig` handler 里，非 root 时显式继承已有的 `auto_backup` / `backup_keep`。
+- 通用教训：任何"整对象 PUT"的接口，凡有字段只允许特定角色改，都必须在服务端做继承，不能只靠前端不渲染。
+
+### 7.16 每日快照的三个隐含约定（第 52 轮，spec 34）
+
+- **文件名即状态机**：`auto-YYYYMMDD.db` 存在就代表"今天备过了"。不要引入"last_backup_at"字段——文件和状态会不一致，而文件才是真的。
+- **前缀必须与导入快照分开**（`auto-` vs `snapshot-`）：否则上午做过一次导入，当天的自动备份就会误判为已完成。
+- **淘汰只碰自己创建的文件**：`pruneAutoBackups` 只删 `auto-*`；`pruneSnapshots` 只删 `snapshot-*`。混在一起删会删掉"导入前那份救命快照"。
+- 定时器是 30 分钟一次的 `stat`，不是 cron。进程没跑的那天不会补，**保证是"每天最多一次"而不是"每天正好一次"**——这个语义要跟用户说清楚。
+
 ---
 
 ## 8. 已知问题 & 待修复清单
 
 | 等级 | 问题 | 位置 / 状态 |
 |------|------|------------|
-| 🟡 | 编辑器草稿仅 localStorage，不跨设备 | `PostEditor.tsx`（30 天 TTL，可接受） |
+| 🟡 | 编辑器草稿仅 localStorage，不跨设备 | `PostEditor.tsx`（30 天 TTL，可接受）；服务端修订历史只管已保存版本 |
 | 🟡 | 第 25 轮未写独立功能 spec（用户口述需求直接实现） | `docs/specs/` 暂无 21 号；规则与端点已记入 HANDOVER §5.3/§7.7，建议后补 spec |
 | 🟢 | 登录限流器账号桶 key：`email` 优先、回退 `username`（7.2 已加固） | `login_limiter.go` + 单测 |
-| 🟢 | `/archive` 一次拉全部 published（已剥 body） | `ListArchive`，已知接受；量大改按年分页 |
+| 🟢 | `/archive` 已改服务端分页（第 47 轮，50/页） | `ListArchivePage`；旧全量端点保留兼容 |
 | 🟢 | 全文搜索 LIKE `%...%`，千级后变慢 | 纯 Go 驱动无 FTS5，暂保留 |
 | 🟢 | GORM `Select("COUNT(*)")` 污染后续 scope | 已修，需警惕同类写法 |
 | 🟢 | JWT_SECRET 生产必须覆盖 | `.env.example` 已注明；`ValidateSecurity` 已校验 |

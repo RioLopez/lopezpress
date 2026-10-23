@@ -115,7 +115,31 @@ func TestSitemapHandler(t *testing.T) {
 	if !strings.Contains(body, "<urlset") {
 		t.Fatalf("sitemap missing <urlset>: %s", body)
 	}
-	if !strings.Contains(body, "/read/") {
-		t.Fatalf("sitemap missing post links: %s", body)
+	// Spec 29: canonical post links use the slug when the post has one.
+	if !strings.Contains(body, "/p/map-me") {
+		t.Fatalf("sitemap should advertise the slug permalink: %s", body)
+	}
+}
+
+// Spec 29: a row created before slugs existed has an empty slug and must keep
+// being advertised through the UUID route rather than disappearing.
+func TestSitemapFallsBackToIDWithoutSlug(t *testing.T) {
+	_, db := setup(t)
+	author := models.User{Username: "legacy", Email: "legacy@example.com", Role: models.RoleUser}
+	if err := db.Create(&author).Error; err != nil {
+		t.Fatalf("create author: %v", err)
+	}
+	legacy := models.Post{Title: "Old Post", Body: "b", Status: "published", AuthorID: author.ID, Slug: ""}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+	Sitemap(rec, req)
+
+	if body := rec.Body.String(); !strings.Contains(body, "/read/"+legacy.ID) {
+		t.Fatalf("sitemap should fall back to /read/{id} without a slug: %s", body)
 	}
 }

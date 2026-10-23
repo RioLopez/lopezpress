@@ -16,19 +16,21 @@ interface NavItem {
   rootOnly?: boolean
 }
 
-// Left vertical sidebar nav (spec 06). Content management is grouped; the
-// account area sits at the bottom. The ban vault is root-only.
+// Left vertical sidebar nav (spec 06, regrouped in spec 26). Eleven flat items
+// were hard to scan; they now follow the Halo-style split of CONTENT / USERS /
+// SYSTEM. The group titles come from i18n so the structure survives translation.
 const NAV: NavItem[] = [
   { to: '/admin', label: 'nav.dashboard' },
-  { to: '/admin/categories', label: 'admin.categoriesTitle', group: 'nav.admin' },
-  { to: '/admin/tags', label: 'admin.tagsTitle', group: 'nav.admin' },
-  { to: '/admin/users', label: 'admin.usersTitle', group: 'nav.admin' },
-  { to: '/admin/review', label: 'admin.reviewTitle', group: 'nav.admin' },
-  { to: '/admin/banned', label: 'admin.banVaultTitle', group: 'nav.admin', rootOnly: true },
-  { to: '/admin/site', label: 'site.title', group: 'nav.admin' },
-  { to: '/admin/backup', label: 'admin.backupTitle', group: 'nav.admin' },
-  { to: '/admin/trash', label: 'admin.trashTitle', group: 'nav.admin' },
-  { to: '/admin/audit', label: 'audit.title', group: 'nav.admin' },
+  { to: '/admin/posts', label: 'admin.postsTitle', group: 'nav.groupContent' },
+  { to: '/admin/review', label: 'admin.reviewTitle', group: 'nav.groupContent' },
+  { to: '/admin/categories', label: 'admin.categoriesTitle', group: 'nav.groupContent' },
+  { to: '/admin/tags', label: 'admin.tagsTitle', group: 'nav.groupContent' },
+  { to: '/admin/trash', label: 'admin.trashTitle', group: 'nav.groupContent' },
+  { to: '/admin/banned', label: 'admin.banVaultTitle', group: 'nav.groupContent', rootOnly: true },
+  { to: '/admin/users', label: 'admin.usersTitle', group: 'nav.groupUsers' },
+  { to: '/admin/site', label: 'site.title', group: 'nav.groupSystem' },
+  { to: '/admin/backup', label: 'admin.backupTitle', group: 'nav.groupSystem' },
+  { to: '/admin/audit', label: 'audit.title', group: 'nav.groupSystem' },
 ]
 
 export function AdminLayout({ children }: { children: ComponentChildren }) {

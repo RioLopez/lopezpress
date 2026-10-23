@@ -17,7 +17,7 @@ import (
 // withUser injects a user into the request context the same way WithAuth does,
 // so handlers can be exercised without a real JWT round trip.
 func withUser(r *http.Request, u models.User) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), UserContextKey, u))
+	return r.WithContext(services.WithActor(r.Context(), u, ""))
 }
 
 // seedModerationFixtures creates a root, an admin and two plain users, plus a

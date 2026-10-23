@@ -2,7 +2,7 @@
 
 # LopezPress（原 Echo Content API）— 阶段总结与问题记录
 
-> 更新时间：2026-10-22（第 38 轮文档校准）
+> 更新时间：2026-10-23（第 55 轮：P1 拿回分层边界）
 > 用途：存档各轮次进度、已知风险、待解决问题，供后续接续开发参考。
 > 说明：仓库早期名为 echo-content-api，2026-10-20 第 38 轮前正式更名 LopezPress；下文历史记录中偶见的旧名指同一项目。
 
@@ -75,6 +75,11 @@
 | 第四十轮（首次推送 + 凭据台账） | github-auto-upload 技能推远程 / 建立 CREDENTIALS.md | ✅ 已推上 GitHub | 见 §4.40 |
 | 第四十一轮（母文档 `MASTER.md`） | 文档总索引 + 自驱协议 + 事实基线 | ✅ 已推上 GitHub | 见 §4.41 |
 | 第四十二轮（母文档可持续化） | 会话启动提示词 ×3 / 断点协议 / `doc_check.py` 机器校验 | ✅ 本机实测 | 见 §4.42 |
+| 第五十三轮（架构复审） | 同题异构取证 + 目标分层 + 8 阶段路线 | ✅ 只读，未改代码 | 见 `docs/ARCH_REVIEW_2026-10-23.md` |
+| 第五十四轮（P0 立规矩） | `scripts/arch_check.py` 棘轮门禁 + `models.All()` 治漂移漏表 | ✅ 门禁全绿 | 见 §4 |
+| 第五十五轮（P1 分层） | service 层传输符号 12 处 → 0 + `internal/imghost` 抽出 | ✅ 门禁全绿 + 7 组真跑冒烟 | 见 §4 |
+
+> 第 43–52 轮为功能轮次，详情见 §4 对应小节；本节自第 53 轮起只收录"改了架构或门禁"的里程碑轮。
 
 ---
 
@@ -732,12 +737,387 @@
 
 **为什么这次的"可持续"比之前可靠**：以前靠 AI 自觉更新文档（第 38 轮就抓到 3 处勾选与正文矛盾）；现在少了索引会**直接红**，把"靠自觉"换成了"跑一遍就知道"。
 
+### 第四十三轮 — 浏览量去重 + 首页纯分页 + 标签改名（2026-10-22）
+
+**起因**：用户实机看站点提出三个问题——首页无页码、浏览量可被刷新刷高、标签/分类后台太弱。用户明确要求「任何想法先共同商讨再执行」，所以先做了一轮事实核对与方案讨论（含对"按账号算浏览量"这一前提的纠正：博客读者多数匿名），逐条拍板后才动手。
+
+**1. 浏览量去重（spec 23，关联 TODO P2-6）**
+
+- 现状是 `GetPost` / `GetPostPublic` **每次 GET 就 `view_count + 1`**：作者自看、刷新、爬虫全算，且可被脚本刷。
+- 新增 `post_views(post_id, visitor_hash, day)` + `UNIQUE(post_id, visitor_hash, day)`；`visitor_hash = sha256(ip|ua|JWT_SECRET)`，只存哈希（管理员也无法还原访客 IP/UA）。
+- 新端点 `POST /api/posts/{id}/view`（`withOptionalAuth`，匿名可调）：作者本人 → `reason=author`；爬虫 UA → `reason=bot`；同日同人同篇 → `reason=duplicate`；只有 `INSERT` 真正插入（`RowsAffected==1`）才 +1。
+- **读接口变纯读**：`GetPost` / `GetPostPublic` 不再改 `view_count`。
+- 90 天保留期，**每进程每 UTC 日最多清理一次**（`viewPruneMu`/`viewPruneDay`）。
+- **顺带修 P2-6**：新增 `internal/clientip` 包，`TRUSTED_PROXIES`（逗号分隔 IP/CIDR，默认 `127.0.0.1/32,::1/128`）。只有当 `RemoteAddr` 命中可信代理时才采信 `X-Forwarded-For`，否则忽略——伪造头不再能绕过限流/锁定/去重。`middleware.Limiter` 与 `handlers` 两处各自的 `clientIP` 全部并入该包（此前是两份会漂移的实现）。非法配置在启动时 `log.Fatalf`。
+
+**2. 首页纯分页（spec 24）**
+
+- 删掉无限滚动（`IntersectionObserver` + `loadNext` + 追加合并逻辑），改为 URL 驱动的经典分页：`?page=N` 写在地址栏，刷新/分享/前进后退都保持当前页。
+- **size 由服务端决定**：前端只传 `page`，不传 `size`——否则同一个链接对不同人含义不同，分享即失效。`site_configs.page_size`（新增列，手工迁移 `0005_add_page_size`，默认 10，只允许 5/10/20/30，非法值 `ClampPageSize` 回落 10）。
+- 新组件 `web/src/ui/Pagination.tsx`：首页/上一页/页码窗（当前页 ±2，首末恒显，空档折成 `…`）/下一页/末页/跳转输入框。
+- 筛选（关键字、状态、分类、标签）变更时回到第 1 页；深链 `?page=999` 不再报错，显示"这页没有内容"+ 回首页按钮。
+- 顺带修 P1-11 遗留：计数行 `from–to` 现在用服务端实际页大小，不再写死 20。
+
+**3. 标签改名 + 计数跳转（spec 25）**
+
+- 后端新增 `PUT /api/tags/{id}`（`requireAdmin`，重名 409 / 空名 400 / 不存在 404，长度 >64 前置 400 避免驱动层 500）。改名只动 `tags.name`，`post_tags` 按 id 关联，文章不丢标签——这正是该端点的存在理由（此前只能删除重建）。
+- 标签页补行内改名；分类/标签页的计数变成链接，点进 `/?category=id` 与 `/?tag=name`；两页各加前端本地过滤框（不新增后端搜索接口）。
+- 明确**不做**：标签/分类的批量删除（数量少、误删不可恢复，属负收益）。用户坚持要的"批量"改落在"后台文章管理页"上（下一轮，spec 待写）——依据是 Halo 2.17 的批量管理是对**文章**做的，不是对标签做的。
+
+**改动文件**：后端 `models/models.go`（`PostView`、`SiteConfig.PageSize`）、`clientip/clientip.go`（新）、`services/views.go`（新）、`services/services.go`（去自增、`ListPageSize`/`ClampPageSize`、`UpdateTag`）、`services/accounts.go`（`page_size` 映射与钳制）、`handlers/{posts,categories,accounts,auth}.go`、`router/router.go`、`config/config.go`（迁移 + `TRUSTED_PROXIES`）、`cmd/server/main.go`；前端 `pages/ListPage.tsx`（重写）、`pages/ReadPage.tsx`（上报）、`pages/AdminSitePage.tsx`、`pages/AdminTagsPage.tsx`（重写）、`pages/AdminCategoriesPage.tsx`、`ui/Pagination.tsx`（新）、`core/{api,types,i18n,site}.tsx`、`index.css`。
+
+**验证（真机）**
+- `go build ./...` / `go vet ./...` / `go test -count=1 ./...` 全绿（新增 13 个测试：views/tag 8 + clientip 5）。
+- `npx tsc --noEmit` / `vite build` 全绿。
+- 迁移实测：旧库 `data/app.db` 启动后自动加 `page_size=10`，`/api/site-config` 返回 `page_size:10`。
+- 分页实测：`/api/posts?page=1` → `items=10 total=12 page_size=10`；`?page=2` → 2 条；`?page=9` → 0 条 + total 12（不重复、不报错）。
+- 浏览量实测：首次上报 `{"counted":true,"view_count":11}` → 同 UA 再报 `{"counted":false,"reason":"duplicate"}` → `curl/8.4.0` 报 `reason=bot` → 再次 `GET` 文章 `view_count` 仍为 11（读接口确认不再自增）。
+- 鉴权实测：无 token `PUT /api/tags/1` → 401。
+- `scripts/contract_check.py`：方法不匹配 0；后端路由 63 → **65**，前端调用 56 → **58**。
+- 注：`go test ./internal/clientip/` 在本机报 `fork/exec ...: Access is denied`（新建包首次编译的临时 exe 被环境拦截），改用 `go test -c -o bin/clientip.test.exe` + 直接运行，5 个用例全 PASS。
+
+**文档**：新增 spec 23/24/25；`docs/TODO.md` 勾 P2-6；`MASTER.md` §3/§7 数字更新。
+
+### 第四十四轮 — 后台文章管理页 + 批量操作 + 后台分区（2026-10-22）
+
+**起因**：第 43 轮讨论遗留的两条用户决定——「批量我还是觉得要有」「后台分区我也要」。同时查 Halo 2.17 的发布说明后确认：**Halo 的批量管理是对【文章】做的**（批量发布/取消发布、批量设置分类/标签/作者），不是对标签做的。而我们此前**根本没有"后台文章管理"这个页面**——文章列表就是前台首页，管理按钮长在阅读界面上。所以本轮先补这个页面，批量才有正确落点。
+
+**1. 批量操作后端（spec 26）**
+
+- 新端点 `POST /api/admin/posts/batch`，白名单 6 个动作：`publish` / `private` / `delete` / `set_category` / `add_tags` / `remove_tags`。
+- **核心设计：逐条复用 `UpdatePost` / `DeletePost`，不写第二套权限逻辑。** 角色矩阵、审核状态机、"banned 冻结"全部由单条方法继承——这是第 25 轮教训（设计了集中权限层却手写 if-else，漏一个就是 P0）的直接回应。
+- **部分成功语义**：某条无权限/不存在 → 记入 `skipped` 并带英文原因，不影响其他条目；只有批量基础设施错误（空 ids / 未知动作 / >100 条 / admin 越权发布）才整体 4xx。
+- `publish` 仅 root（与单条路径一致）；admin 调用整批 403，而不是返回 N 条相同 skip。
+- `add_tags`/`remove_tags` 先读当前标签做集合运算再交给 `UpdatePost`（它按 `in.Tags != nil` 整体替换）；add 幂等、remove 大小写不敏感。
+- 上限 100 条（单写 SQLite 上更长的批量会长时间占写锁）。
+
+**2. 后台文章管理页 `/admin/posts`**
+
+- 表格式列表：勾选框、标题（点击进阅读页）、状态徽标、分类、浏览量、发布时间、行内编辑/删除。
+- 筛选：关键字、五态状态、分类；分页复用 `Pagination`，管理表格用固定 20 条/页（**不跟随** `site_config.page_size`——工作面板不该被站点阅读设置绑架）。
+- 批量条固定在列表上方：显示已选数量 + 发布（仅 root 可见）+ 转私密 + 改分类 + 加/减标签 + 删除 + 取消选择；**每个动作都过确认弹窗**并写明"将对 N 篇执行 X"。
+- 切页/换筛选会**清空选择**，避免"对看不见的行下手"。
+- 编辑/删除按钮由首页搬到此处（首页按钮暂时保留，因为普通用户 role=user 目前只能从首页进入编辑，见 TODO F-3）。
+
+**3. 后台导航分区（spec 26）**
+
+- 侧边栏从 11 项平铺改为 **内容 / 用户 / 系统** 三组（`AdminLayout` 的 `group` 机制早就有，只是此前全填同一个 key）：
+  - 内容：文章管理、内容审核、分类、标签、回收站、封禁库（root 专属）
+  - 用户：用户管理
+  - 系统：站点设置、备份、审计日志
+- 仪表盘留在顶部不分组。
+
+**改动文件**：后端 `services/batch.go`（新）、`services/batch_test.go`（新）、`handlers/posts.go`、`router/router.go`；前端 `pages/AdminPostsPage.tsx`（新）、`main.tsx`（路由）、`ui/AdminLayout.tsx`（NAV 分组）、`core/{api,i18n}.ts(x)`、`index.css`。
+
+**验证**
+- `go build` / `go vet` / `go test -count=1 ./...` 全绿（新增 5 个批量测试，总数 133 → **138**）；顺带 `gofmt` 后把 7 个**无关**的既有文件还原，保持 diff 聚焦。
+- `tsc --noEmit` / `vite build` 全绿（65 模块；JS 220.38 kB / gzip 67.32 kB，CSS 59.33 kB / gzip 11.07 kB）。
+- `scripts/contract_check.py`：路由 65 → **66**，前端调用 58 → **59**，方法不匹配 0。
+- 真机（现签一个 root JWT 打接口）：
+  - 无 token → 401；未知动作 → `400 unknown action`；空 ids → `400 ids is required`
+  - `add_tags ["smoke-test"]` → `{affected:1,skipped:[]}`，再查文章标签确实多了 `smoke-test`
+  - `remove_tags ["smoke-test"]` → affected 1，标签恢复原样（**验证后数据已还原**）
+  - 不存在的 id → `{affected:0, skipped:[{id:"nope", reason:"post not found"}]}`（不 500）
+
+**文档**：新增 spec 26；`docs/TODO.md` 勾 F-1/F-2；`MASTER.md` §3/§7/§9.4 更新。
+
+### 第四十六轮 — 阅读权限开关 + 分类层级 + 预设分类树（2026-10-22）
+
+**决策来源**：用户拍板「超级管理员可在后台配置是否需要公开或登录」「评论暂不考虑」「分类最好可以分层级并且由你预设」。
+
+**1. 阅读权限开关（spec 27，解 TODO F-7）**
+
+- 新增 `site_configs.public_read`（默认 true）。**前后端同时执行**：`WithOptionalAuth` 在匿名且开关关闭时直接 401（此前只有前端路由守卫拦，API 侧其实敞着，属于"锁只挂门面上"）；SPA 新增 `Readable` 守卫，仅 `/`、`/archive`、`/read/:id` 走它，写作类路由仍用 `Guarded`。
+- 开关读进内存缓存（`publicRead`/`publicReadSet`），`UpdateSiteConfig` 落库后立即失效——改完不用重启。
+- 匿名读者看不到任何写作/管理入口：首页「写文章」按钮改为 `{user && ...}`，阅读页的编辑/删除本就有 `canEdit` 门。
+- 匿名仍能读 `GET /api/site-config`（否则 SPA 无法知道自己该不该弹登录）。
+
+**2. 分类层级（spec 27）**
+
+- `categories.parent_id`（自引用，**只允许两层**：父级不得再有父级）。
+- 建/改分类校验：父级存在、不能是自己、不能造三级、带环检测兜底（防手改数据库导致死循环）。
+- 删除分类时**子级上移到祖父级**（不级联删除结构）。
+- 按父级筛选时**包含子级文章**（`categoryWithDescendants`），否则父节点看着是空的。
+- 后台分类表改为树形缩进 + 父级列 + 新建/编辑时可选父级；前台侧栏按树展示（子级缩进）。
+
+**3. 预设分类树**
+
+- 预设写在 `internal/models/presets.go`（单一事实源，config 的首启播种与服务端的应用接口共用）：
+  `技术笔记 → 后端开发/前端开发/数据库/运维部署`、`系统与网络 → Windows/Linux/macOS`、`生活随笔 → 折腾记录/读书笔记`。
+- 新库首启自动播种；老库在后台点「应用预设分类」应用。
+- **幂等规则**：同名已存在 → 不重建；已存在且无父级 → 只设父级（"归位"）；已有别的父级 → 不动；本身有子级的分类永不被领养（否则造出三层）。
+- 实测：现有库应用后 `created=10, reparented=2`（Linux、Windows 被归位到「系统与网络」），再次应用 `created=0, reparented=0`。
+
+**4. ⚠️ 顺带修掉一个既有隐藏 bug：保存站点设置一直 500**
+
+- 真机验证时发现 `PUT /api/admin/site-config` 报 `SQL logic error: no such column: site_url`。
+- 根因：这个库建于 `SiteURL` 字段加入模型之前，而**已存在的表永远不会被 AutoMigrate 碰**；当时没有为 `site_url` 写手工迁移，于是该列从未被加上。之前没暴露，是因为没人点过"保存设置"。
+- 修复：迁移 `0008_add_site_url`。**并加了持久防线** `checkSchemaDrift`：启动时用反射把每个模型的字段与真实表结构比对，缺列就 `WARN schema drift: <表>.<列> is missing — add a hand-written migration`。以后同类问题会在启动日志里出现，而不是等到某个接口 500。
+
+**改动文件**：后端 `models/{models,presets}.go`、`config/config.go`（迁移 0006/0007/0008 + 漂移检查 + 预设播种）、`services/{services,accounts,access,category_tree_test,presets}.go`、`handlers/{auth,categories,accounts}.go`、`router/router.go`；前端 `main.tsx`、`core/{types,site,api,i18n}.ts(x)`、`pages/{AdminCategoriesPage,AdminSitePage,ListPage}.tsx`、`ui/Sidebar.tsx`、`index.css`。
+
+**验证**
+- `go build` / `go vet` / `go test -count=1 ./...` 全绿（新增 6 个测试：匿名开关缓存失效、父级规则、删父级上移子级、父级筛选含子级、预设幂等、预设只领养孤儿）。
+- `tsc --noEmit` / `vite build` 全绿（JS 223.70 kB / gzip 68.59）。
+- 契约：路由 66 → **67**，前端调用 59 → **60**，不匹配 0。
+- 真机：保存设置 200（此前 500）；`public_read=false` → 匿名 `/api/posts`、`/api/categories` 均 401，带 token 200；匿名读 `/api/site-config` 仍 200 且 `public_read=false`；改回 true → 匿名恢复 200；`?category=12`（系统与网络）返回其子级 Windows 下的 1 篇文章。
+
 ---
 
 
 
-## 五、已知风险 & 待解决问题
+### 第四十七轮 — 读者链路补全 + 「算不算合格博客」盘点（2026-10-22）
 
+**先纠正自己的判断**：第 45 轮的覆盖矩阵按"有没有 spec"打分，把阅读页判成大量 ❌。这轮读代码才发现——**实现度比文档度高**：阅读页早有目录（TOC）、阅读进度条、阅读时长、字数统计、图片灯箱、代码复制、上一篇/下一篇，只是从没写进 spec。属于"文档缺失"，不是"功能缺失"。
+
+**本轮实做四件事（都是真缺）**
+
+1. **归档分页**（TODO F-4）：旧的 `GET /api/posts/archive` 一次返回**全部** published（正文清空但三张关联全 Preload）。新增 `GET /api/posts/archive/paged?page=&size=`（默认 50 / 上限 200 / 只含 published / `body` 恒空），前端改用它 + 通用 `Pagination`；旧端点保留兼容。
+2. **robots.txt**：新增 `GET /robots.txt`，声明 sitemap 绝对地址 + `Disallow: /admin`、`/api/`、`/login`；**跟随 `public_read`**——锁站时 `Disallow: /`，不向爬虫广告会 401 的 URL。
+3. **列表封面**：`posts.cover` 早存在、编辑器可选，但没有任何列表渲染它（选了等于白选）。列表项加 104×70 缩略图（object-fit:cover + lazy）。
+4. **筛选空态**：搜索无结果原本显示"暂无文章，点击上方按钮写第一篇"。现在区分：**有筛选** → "没有找到匹配的文章" + 「清除筛选」；**无筛选** → 原文案。
+
+**改动文件**：后端 `services/services.go`（`ListArchivePage`）、`handlers/{posts,feed}.go`、`router/router.go`、`services/archive_test.go`（新）；前端 `pages/{ArchivePage,ListPage}.tsx`、`core/{api,i18n}.ts(x)`、`index.css`。
+
+**验证**
+- `go build` / `go vet` / `go test -count=1 ./...` 全绿（新增 1 个归档分页用例，144 → **145**）。
+- `tsc --noEmit` / `vite build` 全绿（JS 224.47 kB / gzip 68.83）。
+- 契约：路由 67 → **69**，前端调用 60 → **61**，不匹配 0。
+- 真机：`?page=1&size=5` → 5 条 / total 12 / body 全空；`?page=3&size=5` → 2 条；`?page=abc` → 400；`/robots.txt` 含 sitemap 与三条 Disallow。
+
+---
+
+### 第四十八轮 — 文章永久链接（slug）+ 封禁闭环（2026-10-22）
+
+**决策**：用户选**方案 A**——新增 `/p/{slug}`，**旧 `/read/{uuid}` 永久保留**，两个地址都有效。定时发布明确不做。
+
+**1. 永久链接（spec 29）**
+
+- `posts.slug`（迁移 0009，非唯一索引：去重在 service 层做，冲突时自动加 `-2`）。
+- `Slugify`：小写化；保留 ASCII 字母数字与中日韩字符；其余折叠成 `-`；上限 80 字符。中文标题直接得中文链接（`/p/校园网自动登录系统`），可读且合法。
+- 纯符号标题回退成文章 id，**slug 永不为空**。
+- 创建时自动生成；**改标题不动链接**（永久链接的意义）；显式传 `slug` 才改。
+- 新端点 `GET /api/permalinks/{slug}`；sitemap 与 RSS 优先 `/p/{slug}`，无 slug 回退 `/read/{id}`（`permalink()` 单一实现）。
+- **历史文章回填**：`Service.BackfillSlugs` 在启动时补齐（幂等），本机实测 13 篇全部补齐、0 空值。放 service 而非迁移，因为 slug 生成逻辑只能在 service 里有一份。
+- 前端：新页面 `SlugPage` 先解析 slug → 再交给既有 `ReadPage`；`/p/:slug` 路由；阅读页「复制永久链接」按钮（无 slug 的行不显示）。
+
+**2. ⚠️ 踩到启动崩溃：路由歧义**
+
+`GET /api/posts/by-slug/{slug}` 与既有 `GET /api/posts/{id}/public` 在 Go 1.22 ServeMux 里**互为歧义**（两者都能匹配 `/api/posts/by-slug/public`，且谁都不更具体），注册时直接 panic，进程起不来。改为 `GET /api/permalinks/{slug}`（移出 `/api/posts/` 子树）。**教训：新增通配路由前先想清楚同前缀的既有形状。**
+
+**3. 封禁闭环（spec 30）**
+
+- 后端四个封禁端点早就齐了，但**前端没有任何发起入口**——封禁库是单向门，只能出不能进。
+- 后台文章管理页为 root 增加行内「封禁」按钮（admin 不渲染），带确认框；已是 banned 的行不显示。
+
+**改动文件**：后端 `models/models.go`、`config/config.go`（迁移 0009）、`services/{services,slug,slug_test}.go`、`handlers/{posts,feed}.go`、`handlers/feed_test.go`、`router/router.go`、`cmd/server/main.go`；前端 `pages/{SlugPage,ReadPage,AdminPostsPage}.tsx`、`main.tsx`、`core/{api,types,i18n}.ts(x)`。
+
+**验证**
+- `go build` / `go vet` / `go test -count=1 ./...` 全绿（新增 5 个 slug 用例 + 1 个 sitemap 回退用例，145 → **150**）。
+- `tsc --noEmit` / `vite build` 全绿（JS 225.74 kB / gzip 69.26）。
+- 契约：路由 69 → **70**，前端调用 61 → **63**，不匹配 0。
+- 真机：13 篇文章全部回填 slug（0 空值）；`/api/permalinks/<中文slug>` → 200；未知 slug → 404；sitemap 输出 `/p/…`；RSS `<link>` 为 `/p/校园网自动登录系统`；`/p/anything` 前端路由 200。
+
+---
+
+### 第四十九轮 — 买家视角审查（真装一遍）+ 修 3 个首启 bug（2026-10-22）
+
+**方法**：不读代码，改为「买下来真装一遍」——全新 DB、空实例、按文档部署、登录、改密、备份、改密后用后台，全程记录响应。产出 `docs/PRODUCT_REVIEW.md`（10 维评分 + P0/P1 清单 + 出价建议 + 下轮 6 件事）。
+
+**评分结论**：综合 **7/10**。阅读 9、性能 9、后台 8、写作 7、可发现性 7、首启 7、数据安全 6、部署 5、外观 4、迁移 **3**。
+
+**只有真装才会发现的 3 个 bug（已修）**
+1. **预设分类树从未生效**：全新库显示 `技术/教程/随笔` 三个平铺分类。根因是 `seedDemoData` 先建分类，导致 `seedPresetCategories` 的"空表才播种"判断被跳过——上轮的功能在真实首启里等于没上线。修：调整顺序（预设先播种）+ 示例数据复用已有分类。实测现在 12 个两层分类、示例文章落在 `前端开发/后端开发/技术笔记`。
+2. **默认品牌是 `Echo`**：新站站点名/标题都是别人的品牌。改为 `LopezPress`（老库的现值属数据修正，需在站点设置里自己改）。
+3. **仪表盘返回文章全文**：`recent_posts` 带完整 Markdown，首屏最重响应只渲染标题。服务层清空 `body`。
+
+**同时确认是"设计如此、不是 bug"的**：改密前所有后台接口 403 `password change required`——`LoginPage:28` 检测到 `must_change_password` 会跳 `/change-password`，是安全门而非缺陷。
+
+**买家视角的主要缺口（未修，已进报告）**：部署包未实测 Docker、首启密码只在 stderr（容器里易丢）、无导入器（WordPress/Markdown）、备份只有手动、无草稿态、无 OG 分享卡片、外观几乎不可定制。
+
+**验证**：`go build` / `go test ./...` 全绿；全新实例实测站点名 `LopezPress`、12 个分类、示例文章归入子分类、列表 5.7 ms。
+
+---
+
+### 第五十轮 — 竞品对标缺口分析（2026-10-23）
+
+用户要求「对比其他博客，哪些功能欠缺、哪些深度不够」。产出 `docs/COMPETITIVE_GAP.md`：对 WP / Ghost / Halo / Hugo-Hexo 做 15 个域的深度矩阵（●完整 / ◐有但浅 / ○没有），分「完全缺失 10 项」「有但浅 12 项」「我们更强 5 项」「补强顺序 9 条」。
+
+**结论**：读者端对标 Ghost 能打 8 分，作者端 5 分，运营端（统计/SEO/迁移）4 分。拦住买家的四件事：**导入器、草稿、修订历史、编辑器工具栏**——都在"每天都用但各缺一点"的位置。
+
+**明确建议不抄**：主题体系（代价极高且与轻量定位冲突，改为 3 套配色 + 2 种列表布局）、评论/会员/插件市场。
+
+纯文档轮，未改代码。
+
+---
+
+### 第五十一轮 — 修订历史 + Markdown 批量导入（2026-10-23）
+
+用户要求「历史版本、导入器都要有；深度不够的尽量补，但不能抬高配置要求」。
+
+**1. 修订历史（spec 31）**
+- 新表 `post_revisions`（新表走 AutoMigrate，无需手工迁移）；`UpdatePost` 在**写回之前**快照当前状态，所以"恢复"= 回到保存前。
+- 每篇最多 20 份，超出淘汰最旧（1 vCPU 上不接受无限增长）。
+- 恢复**只回滚标题/正文，不回滚状态**（不能借恢复绕过审核/封禁）；恢复本身也产生快照，可再回退。
+- 权限复用"能否编辑该文"的判定；跨文章的 revID → 404。
+- 前端：编辑页底部「历史版本」折叠面板，列表 + 恢复（二次确认）。
+
+**2. Markdown 批量导入（spec 32）**
+- `POST /api/admin/import/markdown`（multipart，最多 200 个文件 / 单文件 2 MB / 总 24 MB）。
+- 支持 frontmatter `title/date/category/tags/draft`；无 frontmatter 时用首个 `# 标题`，再退到文件名；**保留原始发布时间**（否则归档时间线全变成今天）。
+- 分类/标签按名复用，不造重复；每文件独立提交，单文件失败不影响其他，响应逐条给 `skipped` 原因。
+- root 导入直接 published，admin 导入进待审（不破例）；`draft: true` 建成 private。
+- 前端：文章管理页「导入 Markdown」按钮（多选 .md）。
+
+**坑**：`ImportResult` 与既有备份导入的结构体重名，编译报 redeclared → 改名为 `MarkdownImportResult/MarkdownFile/MarkdownSkip`。
+
+**验证（真机）**
+- `go test ./...` 全绿（新增 7 个用例：快照内容、20 条上限、恢复不还状态、越权 403、跨文 404、frontmatter 全字段、标题回退、分类标签复用、空文件与 201 个文件）。
+- `tsc` / `vite build` 全绿（JS 228.28 kB / gzip 70.17）。
+- 真机：改一次正文 → 历史 1 条且内容是旧值 → 恢复 → 正文回到旧值（随后已还原到原文）；multipart 导入 1 个带 frontmatter 的 md → `created:1`；验证用的导入文章与标签已从库中清除。
+
+---
+
+### 第五十二轮 — 统计趋势 + 每日自动备份 + 相关文章/面包屑 + 全文档校准（2026-10-23）
+
+用户指令：「继续补好，等都补好了就改文档、读 MASTER、改所有文档」。本轮先补三项功能，再做一次全仓库文档校准。
+
+**1. 仪表盘统计（spec 33）**
+
+- `GET /api/admin/dashboard` 扩展三块：`view_trend`（近 30 天逐日去重阅读，**服务端补零**）、`pending_total`、`top_posts`（published 且 view_count>0，Top5）。
+- 前端仪表盘加第三张卡（待审核）、趋势图、最多阅读榜。**图表是手写内联 SVG**（30 个 `rect`），不引任何图表库——用 CSS 变量填色，暗色主题自动跟随。
+- 口径写进 spec：浏览量统计的是"去重后的阅读"，不是请求数。
+
+**2. 每日自动备份（spec 34）**
+
+- `site_configs` 加 `auto_backup`（默认 **关**）与 `backup_keep`（默认 7，1–90），迁移 `0010_add_auto_backup`。
+- `Service.MaybeAutoBackup`：`VACUUM INTO` 写 `auto-YYYYMMDD.db`；**文件名即状态**，存在就跳过（幂等）。保留份数由 `pruneAutoBackups` 执行，只删 `auto-*`。
+- 触发：启动一次 + 每 30 分钟一次（命中文件时成本 = 一次 `stat`）。语义是"每天最多一次"，不是"每天准点一次"。
+- `auto-*` 与 `snapshot-*` 一样可列出、可恢复（`isSnapshotName`）。
+- root 专属：`GET/POST /api/admin/backup/auto`；前端站点设置加开关（仅 root 渲染），备份页显示上次快照时间 + 「立即快照」。
+- **安全细节**：`UpdateSiteConfig` 收到非 root 提交时，显式继承库里的 `auto_backup`/`backup_keep`，避免 admin 保存设置把 root 的策略冲掉。
+
+**3. 相关文章 + 面包屑（spec 35）**
+
+- `GET /api/posts/{id}/related`（optional auth）：同分类 **或** 共享标签、仅 published、排除自己，按 `view_count DESC, created_at DESC` 取 5 条。一条原生 SQL，不在 Go 里排序。
+- 阅读页底部「相关文章」（无结果不渲染），标题上方「首页 / 分类」面包屑。
+- 踩坑：`category_id` 是 `*int64`，直接传 `Raw()` 报 `unsupported type *int64` → 先解包成 `any`。
+
+**4. 数据修正**
+
+- 3 篇历史文章 `category_id = 0`（指向不存在的分类）→ 置 `NULL`。这是无效外键，会让后台分类列空白。
+
+**5. 全文档校准（用户要求"改所有文档"）**
+
+| 文档 | 改了什么 |
+|---|---|
+| `MASTER.md` | §1/§2/§3（份数 67→70、specs 01–35、matrix 44 项）/§7 全部基线数字/§9.4 断点 |
+| `AGENTS.md` | indirect 10→11、`go test -count=1`、陷阱从 6 条扩到 **10 条**（新增手工迁移/路由歧义/`*int64`/整表单覆盖） |
+| `HANDOVER.md` | 新增 §7.14–7.16；§8 里 `/archive` 与草稿两行改成本轮事实 |
+| `docs/TODO.md` | F-4 勾销（47 轮已修）；新增 F-8～F-13，其中 F-8/9/10/11 本轮完成 |
+| `docs/FEATURE_DESIGN_MATRIX.md` | **修正一个自身错误：旧表写"33 项"漏数了 W-01～W-10，实际 44 项**；A-01 转全绿、A-10 加 34、新增 R-13 |
+| `docs/COMPETITIVE_GAP.md` | 已补项目标注状态 |
+| `docs/PRODUCT_REVIEW.md` | 评分与"下一轮 6 件事"按现状重排 |
+| `api.md` | 新增 6 个端点 |
+| `docs/PROJECT_OVERVIEW.md` | 路由数、页面数、新模块 |
+| `docs/ARCHITECTURE.md` | 新表与新服务文件 |
+| `docs/BUSINESS_LOGIC.md` | 自动备份/统计/相关文章的行为 |
+| `README.md`、`docs/README.md`、`deploy/*` | 功能列表、spec 编号、备份说明 |
+
+**验证**
+
+- `go build` / `go vet` / `go test -count=1 ./...` 全绿：测试 157 → **168**（新增 10 个：自动备份 5 + 相关文章 4 + 仪表盘 1）。
+- `tsc --noEmit` / `vite build` 全绿：JS 233.35 kB / gzip 71.77 kB（比上轮 +5 kB，全部来自三个新界面块，无新依赖）。
+- 契约：路由 73 → **76**，前端调用 66 → **69**，方法不匹配 0。
+- `doc_check.py` PASS：70 份文档、22/22 顶层被点名、70/70 横幅齐全。
+- 真机：`view_trend` 30 点且末项 = 今日阅读数；`related` 对带标签文章返回 2 篇；`POST /api/admin/backup/auto` 生成 `auto-20261022.db` 并出现在快照列表；`/`、`/admin` 均 200。
+
+---
+
+### 第五十三轮 — 架构复审：同题异构取证 + 目标分层 + 8 阶段路线（2026-10-23）
+
+用户指令：「把 AI 写的代码拆解，找出某功能用 A 写法、某功能用 B 写法这种不一致，找出架构设计不好的问题，整体重新规划」。本轮**只读取证，未改一行 `.go`/`.tsx`**。
+
+- 产物：`docs/ARCH_REVIEW_2026-10-23.md`（证据链 + 目标架构 + 8 阶段迁移），`docs/TODO.md` 新增「🏗️ 架构债 AR-0～AR-8」。
+- 核心判断：不是"写得烂"，是**同一个问题在不同轮次各解一遍**——9 类同题异构并存。
+- 实测数字：service 层 5,242 行里 `services.go` 占 2,767 行（52.8%）；27 个 DTO 混在方法之间；`canReviewPost` **零调用**＝"集中权限层"声明不实；审计双轨导致 24 个写操作有 6 个无审计；迁移 9 段克隆；前端 0 测试 / 54 处 `instanceof ApiError` / `fetch` 4 落点。
+- 最严重的边界破坏：`Service.ServeBackup/ServeUploads` 直接写 `http.ResponseWriter`，`UploadImage(ctx, r *http.Request)` 首行 `_ = ctx`。
+- 目标分层 `httpx → app → {policy, store, models}` 单向，8 条规则全部可机械检查；**先立门禁再搬代码**。
+
+### 第五十四轮 — P0：架构棘轮门禁（2026-10-23）
+
+- 新增 `scripts/arch_check.py` + `scripts/arch_baseline.json`：7 项计数，**棘轮语义**（只拦变多；降了 `--update` 锁住；升了退出码 1）。已实测 FAIL 路径有效。
+- 接入 `AGENTS.md` §4、`MASTER.md` §5/§6.3/§9.6，改代码必跑。
+- 根治 1：新增 `models.All()` 作为唯一实体清单。原先 AutoMigrate 清单 11 个、`checkSchemaDrift` 手写 9 个，**漏 `PostRevision` + `SchemaMigration`** → 「新增列必须有手写迁移」对 `post_revisions` 完全失效。
+- 根治 2：4 处重复 doc comment（`router.New`、`Service.Register`、`ImportBackup`、`handlers.Register`），并把「注释块内重复行」做成规则 R9（基线 0）。
+- 验证：`go build/vet/test` 全绿；新库 + 旧库副本两次冒烟，无 drift 警告、11 张表齐全。
+
+### 第五十五轮 — P1：拿回分层边界（2026-10-23）
+
+- `ServeBackup` → `ResolveBackupFile(name) (path, size, err)`；`ServeUploads` → `ResolveUploadFile(name) (path, err)`；`UploadImage(ctx, r *http.Request)` → `UploadImage(ctx, filename, data)`。设响应头、`io.Copy`、`http.ServeFile` 全部回到 handler。
+- 出站 SM.MS 客户端抽出 `internal/imghost` 包（适配器，零领域知识），`services` 包至此**无任何传输符号**；`_ = ctx` 消失且 ctx 真正被使用。
+- **R1 口径修正**（写在报告 §7.1，不是调低门槛）：旧口径数"import net/http 的文件数"=11，逐个核对发现 10 个只用了 `http.StatusXxx` 整数常量——换自定义常量等于改名、零收益。新口径数真正耦合传输的符号，P1 前 12 处 → **0**。剩余 11 个文件记为观察项 R1b（不阻断），语义化改造列为可选 AR-1b。
+- 测试迁移：`services/upload_test.go` → `imghost/imghost_test.go`，断言不变，另加 `TestUploadTimeoutIsBounded`。
+- 真跑冒烟（7 组）：上传→取回字节一致 + `image/png`；`Range` → 206；`If-Modified-Since` → 304；非图片 → 400 白名单；缺字段 → 400；未授权 → 401；`/uploads/../go.mod` 等三种穿越 → 全 404；备份下载 200 + `Content-Length` 与实际一致 + `Content-Disposition` 正确；备份名穿越三种 → 全 404。
+- 顺带发现既有 bug（记为 AR-1c）：`MaxBytesReader` 在 `ParseMultipartForm` 阶段就截断，导致 413 分支是**死代码**，超限用户看到的是 400 `invalid multipart form`。P1 只搬移未改语义，保持行为一致。
+
+### 第五十六轮 — P2：审计单点化（2026-10-23）
+
+- 新建 `internal/services/audit.go`：`func (s *Service) audit(ctx, actor, action, target, detail string)`，是**全库唯一** `models.ActionLog` 构造点（R10 门禁拦其余文件）。配套 `WithActor`/`ActorFromContext`/`ClientIPFromContext`/`SystemActor`——「谁在动、从哪来」经 context 从 JWT 中间件传给 service，service 不再接触 `*http.Request`。
+- handler 侧 18 处 `recordAudit` 全部下沉为 service 写方法内的 `s.audit(...)`；`recordAudit` 与 `RecordAction` 双轨删除，统一 35 处 `s.audit` 调用。
+- 8 个审计缺口全部补齐：分类增删改 / 上传 / 删图 / 发文章 / 预设分类 / 恢复修订 / 批量操作 / 导入 Markdown。
+- 审计 best-effort（插入失败仅 `slog.Warn`，不破坏主操作）；刻意不审 Login/Register/UpdateMe（Login 已有 `login_log`），改密（admin 强制 + 自助）例外都审。
+- 回归 `internal/services/audit_test.go` 3 用例：AC-1 调用写用例即产生审计行；AC-2 显式 actor 优先于 context；AC-3 无请求身份（cron）也写行且 actor/IP 为空。
+- 验证：`go build/vet/test` 全绿（8 个测试包）；`arch_check.py` R5 18→0、R10=0、R3 45→44，`--update` 锁定基线；`docs/TODO.md` AR-2 勾选完成。
+
+### 第五十七轮 — P3：拆 services.go（2026-10-23）
+
+- **纯移动，不改行为**：`services.go`（2,671 行）消失，拆成 15 个域文件（`service.go` 核心 / `dto.go` 25 个 DTO / `auth.go` / `posts.go` / `posts_list.go` / `posts_edit.go` / `moderation.go` / `tags.go` / `taxonomy.go` / `nav.go` / `users.go` / `backup.go` / `restore.go` / `trash.go` / `media.go`）。函数体零改动，用一次性脚本按行号精确切分 + gofmt，`go build/vet/test` 全绿即证明无符号丢失。
+- 顺带拆掉另两个超长文件：`accounts.go`（749→313）→ `site_config.go`（站点配置+登录记录）+ `accounts.go`（用户 CRUD）+ `accounts_profile.go`（资料/作者/仪表盘）；`mail.go`（420→257）→ `mail.go`（高层）+ `mail_smtp.go`（SMTP 底层协议）。
+- 结果：services 包最大文件 314 行，**全部 ≤350 行**；`arch_check` **R2.files 4→1**（仅剩 `config.go` 1023 行，属 config 包，不在 AR-3 范围）。R1b 11→26 为观察项（文件增多自然增加「import net/http 的文件数」，只显示不阻断）。
+- 顺手修 `dto.go` 一处错位注释（`UserPublic` 前误挂的 `CategoryWithCount` 注释）。
+- 验证：`go build/vet/test` 全绿（172 个 `Test*` 零改动）；`doc_check` PASS；`arch_check` R2.files 4→1 并 `--update` 锁定；`docs/TODO.md` AR-3 勾选完成。
+
+### 第五十八轮 — P4：路由表声明化（2026-10-23）
+
+- **路由表集中声明**：`internal/router/router.go` 的 76 条路由改成 `var routes = []route{{method, path, auth, roles, handler}}`，按域分组。`auth` 三档（`authPublic`/`authRequired`/`authOptional`），`roles` 用 `adminRoles`（admin|root）/ `rootRoles`（root）；`/`、`/health`、login（带 loginLimiter）保留为特殊注册。
+- **权限上移**：新增 `handlers.RequireRole(roles...)` 中间件（context 读 actor 角色，放行或 403），删 handlers 里 30 处 `requireAdmin` + 9 处 `requireRoot` 及两个定义——**R4 39→0**。root-only 报 `"root only"`、其余报 `"admin only"`（消息不变）。9 个 root-only 端点（ban/banned/send-back/delete-banned/import-backup/restore-snapshot/snapshots/auto-backup）由表声明。
+- **纵深防御不变**：service 层 `IsRoot`/`IsAdminOrRoot`/`canReviewPost`/`canManageUser` 仍逐用例校验；`UpdateSiteConfig` 的「非 root 不能改 AutoBackup」字段级授权保留在 handler（非路由守卫）。现有越权测试（`TestBanPostRequiresRoot`/`TestListBannedHiddenFromAdmin` 等）不改仍全绿；新增 `guard_test.go` 6 用例锁定 `RequireRole`。
+- **顺带修 `contract_check.py`**：解析路由表格式 + 两处既有误报（`importMarkdown` 裸 fetch 默认 GET、`archive/paged` 嵌套反引号），「方法不匹配」恢复 0。
+- 验证：`go build/vet/test` 全绿（173 个 `Test*`）；`contract_check` 方法不匹配 0；`doc_check` PASS；`arch_check` **R4 39→0、R2.funcs 17→16** 并 `--update` 锁定；`docs/TODO.md` AR-4 勾选完成。
+
+---
+
+### 第五十九轮 — P5：迁移注册表（2026-10-23）
+
+- **迁移从「9 段克隆」收敛为「1 张表 + 1 个泛型」**：新建 `internal/config/migrate.go`，`var migrations = []migration{{version, up}}` 有序注册表（10 条）；`runManualMigrations` 循环调用，`apply` 集中门禁（原每个函数各抄一遍的「查 gate → 判表 → 判列 → ALTER → record」删除）。8 个 `addXxxColumn` 收敛成泛型 `ensureColumns(model, cols, after...)`（`after` 跑幂等 index/backfill）；`dropScheduledAt`/`promoteFirstAdminToRoot` 保留具名 `up`（去掉各自 gate+record）。`config.go` 1023 → 557 行（迁移代码拆出），`migrate.go` 250 行。
+- **新增 `arch_check.py` R7 门禁**：`add*Column` 克隆函数计数（目标 0，已归零锁基线）。漂移检查 `checkSchemaDrift` 本就遍历 `models.All()`（P0 已改），无手写清单。
+- **顺带修一个真 bug**：双库冒烟（新库 + 拷贝 `app.db.bak-20261014` 旧库各跑一次 `InitDB`）发现 `users.token_version` **自 v0.1.0 起就在模型里、却从未写过迁移**，旧库登录/登出会 `no such column` 500（漂移检查 WARN 早已提示）。加 `0011_add_token_version` 一条注册表项即修复——正是「新增列只需 2 行」的实证。冒烟后新库=旧库=89 列、零缺列、零真类型差异（`VARCHAR≡TEXT`、`bool→numeric≡INTEGER` 均为 SQLite 亲和性别名，良性）。
+- 验证：`go build/vet/test` 全绿（**176 个 `Test*`**：`mig_test.go` 重写 `TestDropScheduledAt` 纯 up + 新增 `TestApplyMigrationGate`/`TestRunManualMigrationsFresh`/`TestEnsureColumns`）；`arch_check` R7=0 并 `--update` 锁定；`docs/TODO.md` AR-5 勾选完成。
+
+---
+
+### 第六十轮 — P6：前端数据层（2026-10-23）
+
+- **唯一网络出口 `core/http.ts`**：`ApiError` + `setTokenGetter`/`setOnUnauthorized` + 单 `fetch`（`fetchRaw`，含 429 退避）+ `request`/`upload`/`download` 三基元 + `errMessage`/`errStatus`（全库仅此 2 处 `instanceof ApiError`）。`api.ts` 改成纯类型化 facade：删内部 3 处裸 `fetch`（`importMarkdown`/`downloadBackup`/`uploadImage` 改走 `upload`/`download`），re-export `ApiError`/`setTokenGetter`/`setOnUnauthorized`/`errMessage`/`errStatus` 保持 `auth.tsx` 与页面兼容。`downloadBackup` 因此第一次拿到 429 退避（之前是手抄 fetch 副本漏了）。
+- **新增 `core/useQuery.ts`**：`useQuery(fn, deps) → {data,loading,error,reload,setData}`（`setData` 供乐观更新）+ `useMutation`（busy 标志、rethrow 保留调用方错误处理）。零依赖、含竞态防护。
+- **错误提取去重**：23 个文件里 54 处 `e instanceof ApiError ? e.message : t('…')` 统一为 `errMessage(e, t('…'))`，`e.status === 401/404` 统一为 `errStatus(e) === …`，复合三元（改密 401 分支）一并收敛。
+- **旗舰页示范**：`PersonalCenterPage` 623 → **52 行**——三个区块拆到 `pages/personal/{MyHomepage,ContentManage,SecurityCenter}.tsx`（共享 `Pager`+`PAGE_SIZE`），列表三态机换成 `useQuery`（乐观更新走 `setData`）。
+- 验证：`tsc --noEmit` + `vite build` 全绿（产物 233.35→231.99 kB）；`arch_check` **R8 3→0**（`fetch` 只剩 `http.ts` 一处）并 `--update` 锁定；`contract_check` 方法不匹配 0（顺带修解析器识别 `upload()`/`download()`，3 端点恢复）；`docs/TODO.md` AR-6 勾选完成。
+
+---
+
+### 第六十一轮 — P6 收尾：useQuery 铺开到管理页（2026-10-23）
+
+- **扩展 `useQuery` 成「读三态机」的 superset**（向后兼容，旗舰页零改动）：新增 `UseQueryOptions{enabled, onError}` 和 awaitable `reload`（`() => Promise<void>`）。`enabled=false` 时不发请求（覆盖管理页的 role guard）；`onError` 覆盖「toast-on-error」形态（区别于旗舰页的 error 态 + retry）；`reload` 直接 fetch 并返回 Promise，`await load()` → `await reload()` 语义保留。内部用 `fnRef`/`optsRef` 持有最新闭包，`reload` 身份稳定。
+- **迁移 `AdminPostsPage`（353→343 行）**：`load` 回调三态机 → `useQuery(enabled:isAdmin, onError:toast)`；4 处 mutation 后 `await load()` → `await reload()`；清空选择 effect 依赖去掉 `load`。
+- **迁移 `AdminUsersPage`（525→520 行）**：同上；`users = data ?? []`（原初始 `[]`），清空选择 effect 与 `allSelected` 依赖从 `users` 改 `data`（避免 `data ?? []` 每次 render 新引用导致 effect 空转）。
+- 验证：`tsc --noEmit` + `vite build` 全绿（产物 231.99→232.18 kB，useQuery 扩展的极小增量）；`arch_check` R8=0 不变、`contract_check` 方法不匹配 0；`instanceof ApiError` 代码仍 2 处、裸 `fetch` 仍唯一（`http.ts` 内）。
+- **剩余**：还有 10 个页面手写三态机——6 个管理页（`AdminBanVault`/`AdminCategories`/`AdminDashboard`/`AdminReview`/`AdminTags`/`AdminTrash`，与 `AdminUsers` 同构：`load`+toast+`TableState`）+ 4 个读者页（`Archive`/`Author`/`List`/`Read`，形态更复杂：`List` 有 401 跳转、`Read` 有并行请求）。下一增量批量铺开。
+
+---
+
+## 五、已知风险 & 待解决问题
 | 等级 | 问题 | 影响 | 状态 |
 |------|------|------|------|
 | 🔴 高 | `echo.draft.<id>` 不清理，localStorage 随文章增多膨胀 | 大量删除文章后本地存储不回收 | ✅ 已解决（第 14 轮 TTL + 保存回收） |
@@ -766,14 +1146,14 @@
 |--------|------|
 | `go build ./...` | ✅ exit 0 |
 | `go vet ./...` | ✅ exit 0 |
-| `go test -count=1 ./...` | ✅ 全绿（handlers 8.7s / services 8.2s / config 1.7s / middleware 1.4s / models 1.3s；`cmd/server` 与 `router` 无测试） |
+| `go test -count=1 ./...` | ✅ 全绿（services 8.1s / handlers 7.3s / config 1.5s / middleware 1.8s / models 1.1s；`cmd/server`、`router`、`clientip` 见下注） |
 | `npx tsc --noEmit` | ✅ exit 0 |
-| `vite build` | ✅ 63 模块；JS 209.09 kB / gzip 64.54 kB，CSS 57.64 kB / gzip 10.85 kB（2.73s） |
-| 规模基线 | 后端 48 个 `.go`（含新增 `config/recover.go`）/ 约 11.4k 行；前端 43 个 `.ts(x)` / 8,324 行；测试 29 个文件 / 120 个 `Test*` 函数（services 65 / handlers 24 / middleware 21 / config 6 / models 4） |
+| `vite build` | ✅ 64 模块；JS 213.68 kB / gzip 65.72 kB，CSS 58.61 kB / gzip 10.97 kB（2.59s） |
+| 规模基线 | 后端 54 个 `.go`（含 4 个本轮新增）/ 12,446 行；前端 44 个 `.ts(x)` / 8,629 行 / 22 页面；测试 31 个文件 / **133** 个 `Test*` 函数 |
 | 依赖基线 | 后端 6 个直接依赖；前端 3 个（`preact` / `wouter` / `marked`） |
-| 契约基线 | 后端 63 条路由，前端调用 56 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
-| 文档一致性 | `scripts/doc_check.py` PASS：54 份文档、19 个顶层文档全部被母文档点名、5 个批量目录已索引、54/54 带 A/B 横幅 |
-| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；UI 实机交互未验证（后端进程会被会话回收） |
+| 契约基线 | 后端 **65** 条路由，前端调用 **58** 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
+| 文档一致性 | `scripts/doc_check.py` PASS：**57** 份文档、19 个顶层文档全部被母文档点名、5 个批量目录已索引、57/57 带 A/B 横幅 |
+| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；UI 实机交互未验证（后端进程会被会话回收）。`go test ./internal/clientip/` 本机报 `fork/exec: Access is denied`，需 `go test -c -o bin/clientip.test.exe` 后再跑 |
 
 ---
 

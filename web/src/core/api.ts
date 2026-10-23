@@ -1,6 +1,10 @@
-// Thin REST client over the Go backend. All calls are same-origin in dev
-// (vite proxy) and prod (Nginx). The Authorization header is attached from
-// the auth context via a closure that's set by setTokenGetter.
+// Typed REST facade over the Go backend. Every endpoint helper here is a thin
+// wrapper over the three transport primitives in core/http.ts (request /
+// upload / download) — there is no fetch() and no error parsing in this file.
+// All calls are same-origin in dev (vite proxy) and prod (Nginx).
+
+import { request, upload, download } from './http'
+export { ApiError, setTokenGetter, setOnUnauthorized, errMessage, errStatus } from './http'
 
 import type {
   AuthResult,
@@ -16,6 +20,7 @@ import type {
   LocalUpload,
   Post,
   PostNav,
+  Revision,
   PostPage,
   SiteConfigFull,
   SiteConfigPublic,
@@ -30,83 +35,6 @@ import type {
   UserStats,
   UserWithDisabled,
 } from './types'
-
-export class ApiError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-let tokenGetter: () => string = () => ''
-export function setTokenGetter(fn: () => string) {
-  tokenGetter = fn
-}
-
-// Invoked on a 401 from a non-auth endpoint (i.e. an expired/invalid token),
-// so the app can clear the session and bounce to /login. Registered by the
-// auth context. Business 401s from /api/auth/* are handled per-call.
-let onUnauthorized: (() => void) | null = null
-export function setOnUnauthorized(fn: (() => void) | null) {
-  onUnauthorized = fn
-}
-
-// Retry a failed fetch on 429 (rate-limited), honouring the server's
-// Retry-After header. The general per-identity limiter can trip when a
-// single page mount fires a burst of parallel requests (e.g. the admin
-// review workbench). Without a backoff the first burst would surface the
-// whole page as "failed to load" even though the data is fine 100ms later.
-//
-// Only safe GET / read-shaped requests should be retried: a 429 on a
-// POST/PUT/DELETE means the write did NOT reach the handler (the limiter
-// sits outside the handlers, before CORS/Recover), so retrying a mutation
-// would risk a double-apply. `request` therefore retries a 429 only when
-// the method is GET (or no method, i.e. GET) and there is no body.
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-async function fetchWith429Retry(
-  path: string,
-  init: RequestInit | undefined,
-): Promise<Response> {
-  const method = (init?.method ?? 'GET').toUpperCase()
-  const canRetry = method === 'GET' && !init?.body
-  let attempt = 0
-  const maxAttempts = canRetry ? 3 : 1
-  for (;;) {
-    const res = await fetch(path, { ...init })
-    if (res.status !== 429 || attempt >= maxAttempts - 1) return res
-    // Read Retry-After (seconds) from the limiter; fall back to a fixed
-    // 250ms backoff if the header is absent.
-    const ra = res.headers.get('Retry-After')
-    const delay = ra ? Math.min(parseInt(ra, 10) * 1000, 2000) : 250
-    await sleep(delay)
-    attempt++
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers || {})
-  const t = tokenGetter()
-  if (t) headers.set('Authorization', `Bearer ${t}`)
-  if (init?.body) headers.set('Content-Type', 'application/json')
-
-  const res = await fetchWith429Retry(path, { ...init, headers })
-  if (res.status === 204) return undefined as T
-
-  let data: any
-  const text = await res.text()
-  data = text ? JSON.parse(text) : null
-
-  if (!res.ok) {
-    if (res.status === 401 && onUnauthorized && !path.startsWith('/api/auth/')) {
-      onUnauthorized()
-    }
-    const msg = (data && data.error) || `HTTP ${res.status}`
-    throw new ApiError(res.status, msg)
-  }
-  return data as T
-}
 
 // --- auth ---
 // Registering issues a JWT, so the new account is signed in straight away.
@@ -188,15 +116,29 @@ export const listTags = () => request<Tag[]>('/api/tags')
 export const getRecentPosts = () => request<Post[]>('/api/posts/recent')
 export const listArchive = () => request<Post[]>('/api/posts/archive')
 
+// Spec 28: paginated archive. The UI uses this — the unpaginated form above
+// loads every published post on every visit.
+export const listArchivePaged = (q: { page?: number; size?: number } = {}) => {
+  const p = new URLSearchParams()
+  if (q.page) p.set('page', String(q.page))
+  if (q.size) p.set('size', String(q.size))
+  const qs = p.toString()
+  return request<PostPage>(`/api/posts/archive/paged${qs ? `?${qs}` : ''}`)
+}
+
 // --- admin: category CRUD + tag with count ---
 export const listCategoriesWithCount = () =>
   request<CategoryWithCount[]>('/api/categories/with-count')
 
-export const createCategory = (b: { name: string }) =>
+export const createCategory = (b: { name: string; parent_id?: number | null }) =>
   request<Category>('/api/categories', { method: 'POST', body: JSON.stringify(b) })
 
-export const updateCategory = (id: number, b: { name: string }) =>
+export const updateCategory = (id: number, b: { name: string; parent_id?: number | null }) =>
   request<Category>(`/api/categories/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+
+// Spec 27: apply the shipped category tree. Idempotent — safe to click twice.
+export const applyPresetCategories = () =>
+  request<{ created: number; reparented: number }>('/api/admin/categories/preset', { method: 'POST' })
 
 export const deleteCategory = (id: number) =>
   request<void>(`/api/categories/${id}`, { method: 'DELETE' })
@@ -207,12 +149,77 @@ export const listTagsWithCount = () =>
 export const deleteTag = (id: number) =>
   request<void>(`/api/tags/${id}`, { method: 'DELETE' })
 
+// Spec 25: rename a tag in place. Associations survive because post_tags is
+// keyed by tag id; delete+create would silently drop them.
+export const updateTag = (id: number, name: string) =>
+  request<Tag>(`/api/tags/${id}`, { method: 'PUT', body: JSON.stringify({ name }) })
+
 // --- prev/next nav + public read ---
+// Spec 34: daily snapshot state + on-demand run.
+export const getAutoBackupStatus = () =>
+  request<{ enabled: boolean; keep: number; last_at: string; files: number }>('/api/admin/backup/auto')
+
+export const runAutoBackup = () =>
+  request<{ file: string }>('/api/admin/backup/auto', { method: 'POST' })
+
+// Spec 35: related posts.
+export const getRelatedPosts = (id: string) => request<Post[]>(`/api/posts/${id}/related`)
+
 export const getPostPrevNext = (id: string) =>
   request<PostNav>(`/api/posts/${id}/nav`)
 
+// Spec 23: report one read of a post. The server de-duplicates per visitor per
+// day, ignores the author and crawlers, and returns the current count so the
+// UI can show the post-trip value. Fire-and-forget: a failed report must never
+// break reading the article, so errors are swallowed into `null`.
+export type ViewReport = { counted: boolean; view_count: number; reason?: string }
+
+export const reportView = (id: string) =>
+  request<ViewReport>(`/api/posts/${id}/view`, { method: 'POST' }).catch(() => null)
+
+// Spec 31: revision history.
+export const listRevisions = (id: string) =>
+  request<Revision[]>(`/api/posts/${id}/revisions`)
+
+export const restoreRevision = (id: string, revId: number) =>
+  request<Post>(`/api/posts/${id}/revisions/${revId}/restore`, { method: 'POST' })
+
+// Spec 32: markdown import via multipart (the shared request helper would set
+// Content-Type: application/json and break the multipart boundary).
+export const importMarkdown = (fd: FormData) =>
+  upload<{ created: number; skipped: { name: string; reason: string }[] }>(
+    '/api/admin/import/markdown',
+    fd,
+  )
+
 export const getPostPublic = (id: string) =>
   request<Post>(`/api/posts/${id}/public`)
+
+// Spec 29: resolve a permanent link.
+export const getPostBySlug = (slug: string) =>
+  request<Post>(`/api/permalinks/${encodeURIComponent(slug)}`)
+
+// Spec 30: pull a post into the banned vault (root only).
+export const banPost = (id: string) =>
+  request<Post>(`/api/admin/ban/${id}`, { method: 'POST' })
+
+// Spec 26: one bulk action over many posts. The server routes every id
+// through the single-item service method, so partial permission failures come
+// back as `skipped` instead of failing the whole batch.
+export interface BatchResult {
+  affected: number
+  skipped: { id: string; reason: string }[]
+}
+
+export const batchPosts = (
+  ids: string[],
+  action: 'publish' | 'private' | 'delete' | 'set_category' | 'add_tags' | 'remove_tags',
+  extra: { category_id?: number; tags?: string[] } = {},
+) =>
+  request<BatchResult>('/api/admin/posts/batch', {
+    method: 'POST',
+    body: JSON.stringify({ ids, action, ...extra }),
+  })
 
 // --- admin: user management ---
 export const listUsers = () =>
@@ -337,29 +344,8 @@ export const restoreSnapshot = (file: string) =>
 
 // Backups are written to the server's disk, so the file itself must be
 // pulled separately. Returns a Blob the caller can hand to saveAs().
-export async function downloadBackup(filename: string): Promise<Blob> {
-  const headers = new Headers()
-  const t = tokenGetter()
-  if (t) headers.set('Authorization', `Bearer ${t}`)
-
-  const res = await fetch(
-    `/api/backup/download?file=${encodeURIComponent(filename)}`,
-    { headers },
-  )
-  if (!res.ok) {
-    // The download endpoint serves JSON-encoded errors on failure.
-    const text = await res.text()
-    let msg = `HTTP ${res.status}`
-    try {
-      const parsed = JSON.parse(text)
-      if (parsed && parsed.error) msg = parsed.error
-    } catch {
-      /* non-JSON body (e.g. HTML error page) — keep the status fallback */
-    }
-    throw new ApiError(res.status, msg)
-  }
-  return res.blob()
-}
+export const downloadBackup = (filename: string) =>
+  download(`/api/backup/download?file=${encodeURIComponent(filename)}`)
 
 // Triggers a browser download for an already-fetched Blob.
 export function saveBlob(blob: Blob, filename: string) {
@@ -393,34 +379,13 @@ export const restoreTrash = (id: string) =>
 export const emptyTrash = () =>
   request<{ deleted: number }>('/api/trash/empty', { method: 'POST' })
 
-
 // --- image upload ---
-
-// Sends an image as multipart/form-data. The browser sets the
-// multipart boundary automatically; do NOT set Content-Type here.
+// Sends an image as multipart/form-data. The browser sets the multipart
+// boundary automatically; do NOT set Content-Type here.
 export const uploadImage = (file: File) => {
   const form = new FormData()
   form.append('file', file)
-  const headers = new Headers()
-  const t = tokenGetter()
-  if (t) headers.set('Authorization', `Bearer ${t}`)
-
-  return fetch('/api/upload', { method: 'POST', body: form, headers }).then(
-    async (res) => {
-      const text = await res.text()
-      let data: any = null
-      try {
-        data = text ? JSON.parse(text) : null
-      } catch {
-        /* non-JSON */
-      }
-      if (!res.ok) {
-        const msg = (data && data.error) || `HTTP ${res.status}`
-        throw new ApiError(res.status, msg)
-      }
-      return data as UploadResult
-    }
-  )
+  return upload<UploadResult>('/api/upload', form)
 }
 
 // --- image library (browse + delete locally-stored uploads) ---
@@ -432,6 +397,4 @@ export const deleteUpload = (name: string) =>
 // Spec #7: the SM.MS token is now held server-side (.env SM_MS_TOKEN or the
 // site-config img_host_token). The browser uploads through /api/upload, which
 // the backend proxies to SM.MS with the secret — the token never reaches the
-// client. The old direct-browser upload (uploadImageSmms) was removed so no
-// code path can leak the token to localStorage. `uploadImage` below is the
-// single safe path.
+// client. `uploadImage` above is the single safe path.

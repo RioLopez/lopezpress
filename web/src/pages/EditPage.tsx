@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks'
 import { PostEditor } from '../ui/PostEditor'
+import { RevisionList } from '../ui/RevisionList'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { getPost, updatePost, ApiError } from '../core/api'
+import { getPost, updatePost, errMessage, errStatus } from '../core/api'
 import { useNav } from '../core/router'
 import type { Post } from '../core/types'
 
@@ -18,7 +19,7 @@ export function EditPage({ id }: { id: string }) {
     getPost(id)
       .then(setPost)
       .catch((e) => {
-        if (e instanceof ApiError && e.status === 404) {
+        if (errStatus(e) === 404) {
           pushToast('error', t('post.notFound'))
         } else {
           pushToast('error', t('post.loadFailed'))
@@ -32,6 +33,7 @@ export function EditPage({ id }: { id: string }) {
   if (!post) return <p class="muted">{t('post.notFound')}</p>
 
   return (
+    <>
     <PostEditor
       id={id}
       initialTitle={post.title}
@@ -56,10 +58,12 @@ export function EditPage({ id }: { id: string }) {
           pushToast('success', t('editor.saved'))
           navigate(`/read/${id}`)
         } catch (e) {
-          pushToast('error', e instanceof ApiError ? e.message : t('editor.saveFailed'))
+          pushToast('error', errMessage(e, t('editor.saveFailed')))
           setBusy(false)
         }
       }}
     />
+    <RevisionList postId={id} onRestored={() => navigate(`/read/${id}`)} />
+    </>
   )
 }

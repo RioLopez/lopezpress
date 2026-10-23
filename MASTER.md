@@ -53,7 +53,7 @@
 
 1. **是什么**：LopezPress（原 Echo Content API），面向低配 VPS（1 vCPU / 1.5 GB / 5 GB）的可自托管内容站点。
 2. **怎么搭**：Go 单二进制 + SQLite 单文件（后端，`net/http` 标准库路由 + GORM + 纯 Go 驱动）+ Preact 单页（前端）。
-3. **做到哪了**：41 轮开发，7 个 P0 全修，P1 仅剩 1 项架构美化；已推 GitHub 私有仓库，距 v1.0 差"生产部署端到端验证"。
+3. **做到哪了**：61 轮开发，7 个 P0 全修。读者端（分页/归档/相关文章/面包屑/永久链接）、写作端（编辑器工具栏/修订历史/批量导入）、运营端（批量操作/审核/封禁闭环/统计趋势/每日自动备份/两层分类）均已就位；架构债已推进至 P6 收尾（门禁 + 分层边界 + 审计单点化 + 拆 `services.go` + 路由表声明化 + 迁移注册表 + 前端数据层 + `useQuery` 铺开到管理页，R1/R4/R5/R7/R8/R10 全归零、R2.files 4→1）；距 v1.0 只剩"生产部署端到端验证 + 推送"。
 
 ---
 
@@ -63,7 +63,7 @@
 |---|---|
 | 让 AI 接着干活 | 本文件 §6「自驱协议」→ `PROGRESS.md` 最新一轮 → `docs/TODO.md` |
 | 知道"现在还有什么没做" | `docs/TODO.md`（**唯一权威待办**） |
-| 知道"以前做过什么" | `PROGRESS.md`（第 1–41 轮，含每轮改了什么、怎么验的） |
+| 知道"以前做过什么" | `PROGRESS.md`（第 1–52 轮，含每轮改了什么、怎么验的） |
 | 改代码前别踩坑 | `HANDOVER.md` §0 + §7（陷阱）+ `AGENTS.md` §3 |
 | 看某个页面应该长什么样 | `docs/specs/NN-*.md`（EARS 验收语法） |
 | 看某个技术选型为什么这么定 | `docs/decisions/000N-*.md`（append-only，不可推翻只能 Superseded） |
@@ -76,7 +76,7 @@
 
 ---
 
-## 3. 文档总表（按族分组，共 54 份，不含 memory 日志）
+## 3. 文档总表（按族分组，共 71 份，不含 memory 日志）
 
 > 类别：**A = 指挥/约束 AI**（怎么干、不能干什么）；**B = 项目参考**（项目是什么样）。
 > 每个文件顶部都有 `> 类别 A/B` 横幅，单独打开也能自识别。
@@ -107,7 +107,7 @@
 | 文档 | 类 | 作用 |
 |---|---|---|
 | `HANDOVER.md` | A | 交接总览：技术栈真实状态、启动方式、§7 关键陷阱、未决决策、自测清单 |
-| `PROGRESS.md` | B | 轮次史（第 1–41 轮）+ 已知风险表 + 编译验证基线（每次重测都更新） |
+| `PROGRESS.md` | B | 轮次史（第 1–52 轮）+ 已知风险表 + 编译验证基线（每次重测都更新） |
 | `docs/TODO.md` | A | **唯一权威待办**：P0/P1/P2/P3 + 功能缺口 + 设计取舍 + 「实测没问题」清单 |
 | `docs/ARCHITECTURE.md` | B | 架构设计与分层理由 |
 | `docs/PROJECT_OVERVIEW.md` | B | 代码地图速查：路由 / API / 页面 / 改码红线 |
@@ -115,17 +115,18 @@
 | `README.md` | B | 快速上手：跑起来、演示账号、前端说明、文档导航 |
 | `api.md` | B | API 参考 |
 
-### 3.4 规格与决策（27 份，定义"应该是什么样"和"为什么"）
+### 3.4 规格与决策（40 份，定义"应该是什么样"和"为什么"）
 
 | 目录 | 数量 | 作用 |
 |---|---|---|
-| `docs/specs/01–22` | 21 + 模板 | 按页面/功能域切分的功能规范，EARS 语法（`WHEN … THEN …`），带状态机 Draft→In Progress→Done |
+| `docs/specs/01–35` | 34 + 模板 | 按页面/功能域切分的功能规范，EARS 语法（`WHEN … THEN …`），带状态机 Draft→In Progress→Done |
 | `docs/decisions/0001–0004` | 4 + 模板 | 跨页面重大决策，**append-only**：被推翻只能标 `Superseded by`，历史本身是价值 |
 
-### 3.5 审计与归档（3 份）
+### 3.5 审计与归档（4 份）
 
 | 文档 | 类 | 作用 |
 |---|---|---|
+| `docs/ARCH_REVIEW_2026-10-23.md` | B | **架构复审（第 53 轮）**：AI 生成痕迹（同题 2–9 种写法）+ 7 条架构边界问题 + 目标分层 + 8 阶段迁移路线 + before/after 指标。想看"代码组织哪里坏了、先动哪"就看它 |
 | `docs/AUDIT_2026-10-15.md` | B | 最近一次全栈深度审计的完整证据链（P0-1～P0-6 的来源） |
 | `docs/AUDIT_REPORT.md` | B | 10 项安全加固的落地记录 |
 | `docs/archive/2026-10-14-FUNCTIONAL_AUDIT.md` | B | 首轮审计快照，**已归档，勿再当待办** |
@@ -138,21 +139,24 @@
 | `deploy/LOCAL.md` | 本机部署与联调 |
 | `deploy/docker/README.md` | Docker Compose 方案（未在本机 docker build 过，无 Docker） |
 
-### 3.7 记忆层（12 份，gitignored，不计入上表 54 份）
+### 3.7 记忆层（12 份，gitignored，不计入上表 70 份）
 
 | 路径 | 作用 |
 |---|---|
 | `.workbuddy/memory/MEMORY.md` | 项目长期记忆：技术栈定稿、事实基线、关键陷阱（跨会话） |
 | `.workbuddy/memory/YYYY-MM-DD.md` | 每日工作日志（append-only）：改了什么、验证结果、遗留 |
 
-### 3.8 其他参考（2 份）
+### 3.8 其他参考（5 份）
 
 | 文档 | 类 | 作用 |
 |---|---|---|
 | `docs/DESIGN_SYSTEM.md` | B | 全站 UI 唯一标准：设计 Token、布局、组件 Do&Don't、博客排版、暗色、a11y |
+| `docs/FEATURE_DESIGN_MATRIX.md` | B | **全站 44 项功能 × 六维设计完整度矩阵** + 缺口清单 + 分四批补齐计划。想知道"哪个功能只是能跑、设计没写清"就看它 |
+| `docs/PRODUCT_REVIEW.md` | B | **买家视角产品审查**：真装一遍的实测记录、10 维评分、P0/P1 问题清单、出价建议、下轮优先修的 6 件事 |
+| `docs/COMPETITIVE_GAP.md` | B | **竞品对标**：与 WP/Ghost/Halo/Hugo 的 15 域矩阵、完全缺失 10 项、有但浅 12 项、补强顺序 |
 | `docs/NEXT_VERSION_BACKLOG.md` | B | v0.2 规划草稿（未承诺的功能池） |
 
-> **份数校验**：3.1(3) + 3.2(8) + 3.3(8) + 3.4(27) + 3.5(3) + 3.6(3) + 3.8(2) = **54**，与 §7 事实基线一致。
+> **份数校验**：3.1(3) + 3.2(8) + 3.3(8) + 3.4(40) + 3.5(4) + 3.6(3) + 3.8(5) = **71**，与 §7 事实基线一致。
 > 新增文档时改完表格请重算这一行，避免母文档自身失真。
 
 ---
@@ -170,6 +174,7 @@
 | `internal/config/recover.go` + spec 22 | 第 39 轮 | root 忘密码无路可走的死角（离线 CLI 恢复） |
 | `scripts/contract_check.py` | 第 33 轮 | 前后端 method+path 契约自动核对，防 `cover` 那类静默漂移复发 |
 | `scripts/doc_check.py` | 第 42 轮 | 机器校验母文档是否失真（份数 / 顶层文档是否被点名 / 批量目录是否索引 / A-B 横幅是否齐全），退出码非 0 即失败 |
+| `scripts/arch_check.py` + `arch_baseline.json` | 第 54 轮 | **架构棘轮**：R1 业务包禁传输符号（`ResponseWriter`/`*http.Request`/`ServeFile`/`http.Client`，状态码常量不计）/ R2 文件≤350 行·函数≤60 行 / R3 service 包 struct 堆积 / R4 handler 禁 `require*` / R5 handler 禁 `recordAudit` / R7 config 包禁 `add*Column` 克隆（迁移列只能在注册表）/ R8 前端禁裸 `fetch` / R9 注释重复 / R10 `ActionLog` 只能由 `services/audit.go` 构造。存量记基线，**只许降不许升**，回升即退出码 1 |
 | `~/.workbuddy/CREDENTIALS.md` | 第 40 轮 | 统一存放 token / 账号 / 工具用法（**仓库外**，防误提交泄露） |
 | **`MASTER.md`（本文件）** | 第 41 轮 | 用户不用记任何路径：一句"去母文档找"即可 |
 
@@ -219,6 +224,7 @@ go test -count=1 ./...   # 单测（跳过缓存）
 cd web && npx tsc --noEmit   # 前端类型
 npm run build       # 前端生产构建
 python scripts/doc_check.py  # 改过文档时必跑：母文档索引/份数/横幅是否仍一致
+python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许升（回升=退出码 1）
 ```
 
 行为改动还必须**真跑一次**并贴证据（状态码 / 日志 / 截图），不接受"应该可以"。
@@ -249,17 +255,18 @@ python scripts/doc_check.py  # 改过文档时必跑：母文档索引/份数/�
 
 ---
 
-## 7. 事实基线（第 39 轮实测，改动后请重测并更新）
+## 7. 事实基线（第 61 轮实测，改动后请重测并更新）
 
 | 指标 | 值 |
 |---|---|
-| 后端规模 | 48 个 `.go`，约 11.4k 行；6 个直接依赖（+10 indirect） |
-| 前端规模 | 43 个 `.ts(x)`，8,324 行；22 页面 / 9 公共组件；3 个依赖（`preact` / `wouter` / `marked`） |
-| 测试 | 29 个文件 / **120** 个 `Test*`（services 65 / handlers 24 / middleware 21 / config 6 / models 4） |
-| 路由 | 后端 **63** 条，前端接入 56 条，方法不匹配 **0**（`scripts/contract_check.py`） |
-| 构建产物 | 63 模块；JS 209.09 kB / gzip 64.54 kB；CSS 57.64 kB / gzip 10.85 kB |
+| 后端规模 | 93 个 `.go`，16,031 行；6 个直接依赖（+11 indirect） |
+| 前端规模 | 53 个 `.ts(x)`，9,868 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
+| 测试 | 41 个文件 / **176** 个 `Test*`（services 109 / handlers 26 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2） |
+| 路由 | 后端 **76** 条，前端接入 69 条，方法不匹配 **0**（`scripts/contract_check.py`） |
+| 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=26（仅状态码常量）/ R2.files=1 / R2.funcs=16 / R3=44 / R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
+| 构建产物 | 232.18 kB / gzip 71.62 kB；CSS 61.06 kB / gzip 11.45 kB |
 | Git | 分支 `main`，tag `v0.1.0`，远程 `RioLopez/lopezpress`（private） |
-| 文档 | 仓库内 54 份（含本文件，不含 memory 日志） |
+| 文档 | 仓库内 71 份（含本文件，不含 memory 日志） |
 
 ---
 
@@ -310,12 +317,12 @@ python scripts/doc_check.py  # 改过文档时必跑：母文档索引/份数/�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-22 21:05（第 42 轮：母文档加启动提示词 + 落盘协议 + 校验脚本） |
-| 对应提交 | 主题 `docs: make MASTER self-sustaining (prompts + breakpoint + doc_check)`（用 `git log --oneline` 核对，**不写 sha**，否则会陷入"记录自己"的死循环） |
-| 正在做 | 无进行中任务，工作树干净 |
-| 下一步第一件事 | 三选一待用户拍板：① 修 P2-6 可信代理闸门 ② 封禁库补 UI 发起入口 ③ 生产部署端到端验证 |
-| 未决问题 | ① GitHub PAT 权限偏大（含 `delete_repo`/`admin:org`），建议收紧到 `repo`+`workflow` ② `POST /api/admin/ban/{id}` 无前端入口，封禁库"只出不进" ③ 未 docker build、未在真实 VPS 端到端跑 |
-| 当前分支状态 | `main` 与 `origin/main` 一致；tag `v0.1.0` 之后尚未打新 tag |
+| 最后更新 | 2026-10-23 12:30（第 61 轮：P6 收尾——`useQuery` 扩展 `enabled`/`onError`/awaitable `reload`，`AdminPostsPage`/`AdminUsersPage` 迁移，剩余 10 页待铺开） |
+| 对应提交 | 当前 HEAD 仍是 MASTER 创建提交 `docs: make MASTER self-sustaining`——P0 起各轮**从未 commit**（用 `git log --oneline` 核对，**不写 sha**） |
+| 正在做 | 无进行中任务；P6 收尾已推进（`useQuery` 扩展 + `AdminPosts`/`AdminUsers` 迁移，`tsc`/`vite build`/`arch_check`/`contract_check` 全绿）。**下一步等用户说"继续"（剩余 10 页铺开）** |
+| 下一步第一件事 | ① **剩余 10 页 `useQuery` 铺开**（6 管理页与 `AdminUsers` 同构 + 4 读者页：`List` 有 401 跳转、`Read` 有并行请求）② **commit + 推送**：P0–P6 约 15 轮改动**全部未提交**、积压工作区（`git status` 138 个文件），最危险 ③ **P7 i18n 与守卫收敛**（`i18n.tsx` 1,775 行按域拆）④ 生产部署端到端验证（Docker 实测 + HTTPS，是 v1.0 最后一块） |
+| 未决问题 | ① GitHub PAT 权限偏大（含 `delete_repo`/`admin:org`），建议收紧 ② 未 docker build、未在真实 VPS 端到端跑 ③ 站点名仍是 `Echo`（DB 数据，需在站点设置里改）④ 一条 `draft` 脏数据（第 22 轮已废该状态）⑤ 有子级的分类被领养进预设时会被跳过（设计如此）⑥ WXR（WordPress XML）导入未做 |
+| 当前分支状态 | `main` 与 `origin/main` 平齐（HEAD == origin/main）；P0–P6（第 54–61 轮）约 15 轮改动**全部未提交**、积压工作区；tag `v0.1.0` 之后尚未打新 tag |
 
 ### 9.5 新会话开场自检（30 秒）
 
@@ -327,6 +334,7 @@ python scripts/doc_check.py  # 改过文档时必跑：母文档索引/份数/�
 
 ```bash
 python scripts/doc_check.py        # 退出码 0 = 母文档与实际一致
+python scripts/arch_check.py       # 退出码 0 = 没有架构规则回升
 ```
 
 它检查四件事：**① 文档总数**与 §3/§7 声明一致；**② 每个根目录 / `deploy/` / `docs/` 顶层的 `.md` 都在 §3 里被点名**；**③ 批量目录**（`specs/` `decisions/` `prompts/` `reference/` `archive/`）在 §3 中存在；**④ 每个 `.md` 顶部都有 `> 类别 A/B` 横幅**。

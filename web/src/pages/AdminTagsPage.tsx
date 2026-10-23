@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listTagsWithCount, deleteTag, ApiError } from '../core/api'
+import { useNav } from '../core/router'
+import { listTagsWithCount, deleteTag, updateTag, errMessage } from '../core/api'
 import type { TagWithCount } from '../core/types'
 import { TableState } from '../ui/TableState'
 
+// Spec 25: rename in place, filter locally, and make the count a link into the
+// public list's ?tag= filter. The filter is client-side on purpose — a blog has
+// tens of tags, not thousands, so a backend search endpoint would be dead
+// weight on a 1 GB VPS.
 export function AdminTagsPage() {
   const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
+  const [, navigate] = useNav()
   const [tags, setTags] = useState<TagWithCount[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
@@ -25,8 +34,32 @@ export function AdminTagsPage() {
     if (user?.role === 'admin' || user?.role === 'root') load()
   }, [user, load])
 
+  const visible = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return tags
+    return tags.filter((tg) => tg.name.toLowerCase().includes(q))
+  }, [tags, filter])
+
   if (user?.role !== 'admin' && user?.role !== 'root') {
     return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
+  }
+
+  const startEdit = (tg: TagWithCount) => {
+    setEditingId(tg.id)
+    setEditName(tg.name)
+  }
+
+  const saveEdit = async () => {
+    if (editingId === null || !editName.trim()) return
+    try {
+      await updateTag(editingId, editName.trim())
+      setEditingId(null)
+      setEditName('')
+      pushToast('success', t('admin.saved'))
+      load()
+    } catch (e) {
+      pushToast('error', errMessage(e, t('admin.failed')))
+    }
   }
 
   const del = async (tag: TagWithCount) => {
@@ -36,7 +69,7 @@ export function AdminTagsPage() {
       pushToast('success', t('admin.deleted'))
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     }
   }
 
@@ -45,29 +78,82 @@ export function AdminTagsPage() {
       <h1>{t('admin.tagsTitle')}</h1>
       <p class="muted">{t('admin.tagsSub')}</p>
 
-      <TableState loading={loading} isEmpty={tags.length === 0} loadingText={t('common.loading')} emptyText={t('admin.emptyTag')}>
-        <div class="table-scroll">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>{t('admin.name')}</th>
-              <th class="num">{t('admin.postCount')}</th>
-              <th class="actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {tags.map((tag) => (
-              <tr key={tag.id}>
-                <td><span class="post-tag-chip">{tag.name}</span></td>
-                <td class="num">{tag.count}</td>
-                <td class="actions">
-                  <button class="btn btn-danger btn-sm" onClick={() => del(tag)}>{t('list.del')}</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
+      <div class="admin-form">
+        <input
+          value={filter}
+          onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
+          placeholder={t('admin.filterPlaceholder')}
+        />
+      </div>
+
+      <TableState
+        loading={loading}
+        isEmpty={tags.length === 0}
+        loadingText={t('common.loading')}
+        emptyText={t('admin.emptyTag')}
+      >
+        {visible.length === 0 ? (
+          <p class="muted">{t('admin.noMatch')}</p>
+        ) : (
+          <div class="table-scroll">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>{t('admin.name')}</th>
+                  <th class="num">{t('admin.postCount')}</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((tag) => (
+                  <tr key={tag.id}>
+                    {editingId === tag.id ? (
+                      <td>
+                        <div class="admin-form admin-form--inline">
+                          <input
+                            value={editName}
+                            onInput={(e) => setEditName((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveEdit()
+                              if (e.key === 'Escape') setEditingId(null)
+                            }}
+                          />
+                          <button class="btn btn-primary btn-sm" onClick={saveEdit}>{t('admin.rename')}</button>
+                          <button class="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>{t('editor.cancel')}</button>
+                        </div>
+                      </td>
+                    ) : (
+                      <td><span class="post-tag-chip">{tag.name}</span></td>
+                    )}
+                    <td class="num">
+                      {tag.count > 0 ? (
+                        <a
+                          href="#"
+                          class="count-link"
+                          title={t('admin.viewPosts')}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            navigate(`/?tag=${encodeURIComponent(tag.name)}`)
+                          }}
+                        >
+                          {tag.count}
+                        </a>
+                      ) : (
+                        tag.count
+                      )}
+                    </td>
+                    <td class="actions">
+                      {editingId !== tag.id && (
+                        <button class="btn btn-ghost btn-sm" onClick={() => startEdit(tag)}>{t('admin.rename')}</button>
+                      )}
+                      <button class="btn btn-danger btn-sm" onClick={() => del(tag)}>{t('list.del')}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </TableState>
     </div>
   )

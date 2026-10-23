@@ -7,7 +7,7 @@ import { useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { changePassword, ApiError } from '../core/api'
+import { changePassword, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function ChangePasswordPage() {
@@ -52,7 +52,7 @@ export function ChangePasswordPage() {
       pushToast('success', t('password.changed'))
       navigate('/')
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('password.changeFailed'))
+      pushToast('error', errMessage(e, t('password.changeFailed')))
     } finally {
       setBusy(false)
     }

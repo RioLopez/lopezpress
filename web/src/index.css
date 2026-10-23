@@ -634,17 +634,75 @@ code.hl { background: var(--hl, #fff3a3); }
 }
 .archive-item-title { font-size: 15px; line-height: 1.4; }
 
-/* Lazy load sentinel (bottom-of-list infinite scroll) -------------------- */
-.lazy-load {
-  padding: 18px 0; text-align: center; font-size: 13px; color: var(--text-muted);
+/* Pagination (spec 24: classic numbered pager) ---------------------------- */
+.pager {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 6px; padding: 22px 0 6px; margin-top: 6px;
+  border-top: 1px solid var(--border);
 }
-.lazy-load-spinner {
-  display: inline-block; width: 14px; height: 14px;
-  border: 2px solid var(--border); border-top-color: var(--primary);
-  animation: spin .7s linear infinite; margin-right: 8px; vertical-align: -2px;
+.pager-btn, .pager-num {
+  font: inherit; font-size: 13px; line-height: 1;
+  padding: 7px 10px; border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-muted); cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.lazy-load-end { color: var(--text-muted); }
+.pager-btn:hover:not(:disabled), .pager-num:hover { color: var(--primary); border-color: var(--primary); }
+.pager-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pager-num { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+.pager-num--active {
+  background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700;
+}
+.pager-pages { display: inline-flex; align-items: center; gap: 4px; }
+.pager-gap { padding: 0 2px; color: var(--text-muted); }
+.pager-jump {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-muted); margin-left: 6px;
+}
+.pager-jump input {
+  width: 58px; padding: 6px 8px; font-size: 13px; text-align: center;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 6px);
+  background: var(--surface); color: var(--text);
+}
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Spec 25: the taxonomy post count doubles as a link into the filtered list. */
+.count-link { color: var(--primary); text-decoration: none; font-variant-numeric: tabular-nums; }
+.count-link:hover { text-decoration: underline; }
+
+/* Spec 26: admin post management (selection + batch action bar). ---------- */
+.col-check { width: 36px; text-align: center; }
+.col-check input { cursor: pointer; }
+.admin-table tr.row-selected { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.admin-post-title { cursor: pointer; }
+.admin-post-title:hover { color: var(--primary); }
+.batch-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 10px 12px; margin: 0 0 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); position: sticky; top: 0; z-index: 4;
+}
+.batch-count { font-size: 13px; margin-right: 4px; white-space: nowrap; }
+.batch-select, .batch-tags {
+  font: inherit; font-size: 13px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+}
+.batch-tags { width: 150px; }
+
+/* Spec 27: two-level categories (admin table + public sidebar). ------------ */
+.admin-table tr.row-child { background: color-mix(in srgb, var(--border) 22%, transparent); }
+.tree-indent { display: inline-block; width: 18px; color: var(--text-muted); }
+.tree-root { font-weight: 600; }
+.sidebar-item--child { padding-left: 14px; }
+.sidebar-item--child .sidebar-link { font-size: 13px; opacity: .9; }
+
+/* Spec 28: cover thumbnail in the post list (the field existed, nothing drew it). */
+.post-cover-thumb {
+  float: right; width: 104px; height: 70px; object-fit: cover;
+  border-radius: var(--radius-sm); margin: 2px 0 8px 14px;
+  border: 1px solid var(--border);
+}
 
 /* Edit page wrapper ------------------------------------------------------- */
 .editor-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; }
@@ -954,6 +1012,30 @@ tr.row-selected { transition: background .12s; }
 .dash-card-num { font-size: 34px; font-weight: 800; line-height: 1; }
 .dash-card-label { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
 .dash-cols { display: flex; gap: 24px; flex-wrap: wrap; }
+/* Spec 33: 30-day view trend. Inline SVG so no chart library is needed; the
+   fill is a theme variable, so dark mode follows automatically. */
+.dash-block { margin: 22px 0 6px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.dash-block h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.dash-chart-svg { display: block; width: 100%; height: 110px; overflow: visible; }
+.dash-bar { fill: var(--primary); opacity: .85; transition: opacity .15s var(--ease); }
+.dash-bar:hover { opacity: 1; }
+.dash-bar--zero { fill: var(--border); opacity: 1; }
+.dash-hint { margin: 10px 0 0; font-size: 12px; color: var(--text-muted); }
+
+/* Spec 35: related posts + breadcrumb on the reader page. */
+.read-crumbs { margin: 0 0 10px; font-size: 13px; color: var(--text-muted); }
+.read-crumbs a { color: var(--text-muted); text-decoration: none; }
+.read-crumbs a:hover { color: var(--primary); }
+.read-crumbs .sep { margin: 0 6px; opacity: .6; }
+.related-block { margin: 42px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
+.related-block h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.related-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.related-item {
+  display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); text-decoration: none; font-size: 14px; line-height: 1.5;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.related-item:hover { border-color: var(--primary); box-shadow: var(--shadow-sm); }
 .dash-col { flex: 1; min-width: 280px; }
 .dash-col h3 { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
 .dash-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); }

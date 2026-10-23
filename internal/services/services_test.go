@@ -29,14 +29,14 @@ func newTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Category{}, &models.Tag{}, &models.PostTag{}, &models.SiteConfig{}, &models.LoginLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Category{}, &models.Tag{}, &models.PostTag{}, &models.SiteConfig{}, &models.LoginLog{}, &models.PostView{}, &models.PostRevision{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
 	// Tests predating the registration gate rely on open registration; enable
 	// it for the test DB so Register works as before.
 	if err := db.Where("id = ?", 1).First(&models.SiteConfig{}).Error; err != nil {
-		_ = db.Create(&models.SiteConfig{ID: 1, SiteName: "Echo", SiteTitle: "Echo", ImgHostMode: "local", AllowRegister: true}).Error
+		_ = db.Create(&models.SiteConfig{ID: 1, SiteName: "Echo", SiteTitle: "Echo", ImgHostMode: "local", AllowRegister: true, PageSize: 10, PublicRead: true}).Error
 	}
 
 	cfg := config.Load()

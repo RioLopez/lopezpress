@@ -130,10 +130,18 @@ curl -X POST http://localhost/api/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
 
-# 获取文章列表
-TOKEN=$(curl -s -X POST http://localhost/api/login \
+# 登录拿 token（字段是 email，不是 username；密码见首启终端横幅或 .env 的 ADMIN_INITIAL_PASSWORD）
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+  -d '{"email":"admin@example.com","password":"<首启随机密码>"}' \
+  | sed -E 's/.*"token":"([^"]+)".*/\1/')
 
-curl http://localhost/api/posts -H "Authorization: Bearer $TOKEN"
+# 文章列表（匿名也能读，除非后台关掉了「公开阅读」）
+curl http://localhost:8080/api/posts?page=1
+
+# 带 token 调后台
+curl http://localhost:8080/api/admin/dashboard -H "Authorization: Bearer $TOKEN"
 ```
+
+> 本地直跑（不经过 Nginx）**不需要** `TRUSTED_PROXIES`；它只在反代后面才需要。
+> 反向代理场景见 `deploy/README.md`「同时配 TRUSTED_PROXIES」一节。

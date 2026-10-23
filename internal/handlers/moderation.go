@@ -26,9 +26,6 @@ import (
 // admin sees pending posts by plain users; root sees every pending post.
 // GET /api/admin/pending (auth, admin|root)
 func ListPending(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	posts, err := svc.ListPending(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
@@ -41,9 +38,6 @@ func ListPending(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/review/{id} (auth, admin|root)
 // Body: { "decision": "approve"|"reject", "note": "..." } (note required on reject)
 func ReviewPost(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	var in services.ReviewPostInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -55,33 +49,27 @@ func ReviewPost(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	// Audit is recorded by the service layer (RecordAction "review_post");
-	// not duplicated here to keep a single source of truth (P1-8).
+	// Audit is written by the service use case (s.audit); the handler never
+	// writes an audit row itself.
 	writeJSON(w, http.StatusOK, post)
 }
 
 // BanPost pulls a post into the banned vault (root-only).
 // POST /api/admin/ban/{id} (auth, root)
 func BanPost(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	post, err := svc.BanPost(r.Context(), userFromContext(r), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	// Audit recorded by service (RecordAction "ban_post").
+	// Audit written by the service use case (s.audit).
 	writeJSON(w, http.StatusOK, post)
 }
 
 // ListBanned returns every post in the banned vault (root-only).
 // GET /api/admin/banned (auth, root)
 func ListBanned(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	posts, err := svc.ListBanned(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
@@ -94,9 +82,6 @@ func ListBanned(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/banned/{id}/send-back (auth, root)
 // Body: { "note": "..." } (note required)
 func SendBackPost(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	var in struct {
 		Note string `json:"note"`
@@ -110,21 +95,18 @@ func SendBackPost(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	// Audit recorded by service (RecordAction "send_back_post").
+	// Audit written by the service use case (s.audit).
 	writeJSON(w, http.StatusOK, post)
 }
 
 // DeleteBannedPermanently hard-deletes a banned post from the vault.
 // DELETE /api/admin/banned/{id} (auth, root)
 func DeleteBannedPermanently(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	if err := svc.DeleteBannedPermanently(r.Context(), userFromContext(r), id); err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	// Audit recorded by service (RecordAction "delete_banned").
+	// Audit written by the service use case (s.audit).
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1,29 +1,26 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"gorm.io/gorm"
 
+	"lopezpress/internal/clientip"
 	"lopezpress/internal/config"
 	"lopezpress/internal/middleware"
 	"lopezpress/internal/models"
 	"lopezpress/internal/services"
 )
 
-// UserContextKey is the context key under which the WithAuth handler
-// stores the authenticated models.User. posts.go (and other handlers)
-// read it via userFromContext. It is exported so other code in the
-// handlers package can read the current user.
-const UserContextKey = "handlers.user"
-
-// 可注入的全局依赖：由 cmd/server 启动时通过 Init 注入，避免在业务包内 new 连接。
-// cfg is read by upload.go for the upload size cap; db/cfg are kept for
-// potential transport-layer needs, but all business logic now lives in the
-// package-level svc.
+// The authenticated user and the originating client IP live on the request
+// context under a key owned by the services package
+// (services.WithActor / services.ActorFromContext). Identity is a domain
+// concept — the service layer needs "who is acting, from where" to write an
+// audit row — so the key is not redeclared here.
+//
+// cfg is injectable: cmd/server wires it via Init. upload.go reads it for the
+// upload size cap; all business logic lives in the package-level svc.
 var cfg *config.Config
 
 // svc is the shared services.Service. Set once by Init before the router is
@@ -68,8 +65,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 
 // --- auth endpoints ---
 
-// Register creates a new user account.
-// POST /api/auth/register
 // Register creates a new user account and returns a signed JWT so the new
 // user is logged in immediately (spec 04 AC-2.2).
 // POST /api/auth/register
@@ -108,25 +103,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// clientIP extracts the best-effort client IP: prefer the first entry of
-// X-Forwarded-For (set by a reverse proxy), else fall back to RemoteAddr.
+// clientIP extracts the best-effort client IP. The trust rules (proxy headers
+// are only honoured when they arrive from a configured proxy) live in
+// internal/clientip — see spec 23 / TODO P2-6.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	// Strip the port from RemoteAddr (host:port or [ipv6]:port).
-	addr := r.RemoteAddr
-	if idx := strings.LastIndexByte(addr, ':'); idx >= 0 {
-		// Guard against IPv6 without brackets (rare in RemoteAddr).
-		if strings.Count(addr, ":") > 1 && !strings.HasPrefix(addr, "[") {
-			return addr
-		}
-		return addr[:idx]
-	}
-	return addr
+	return clientip.Client(r)
 }
 
 // Me returns the public view of the currently authenticated user.
@@ -226,8 +207,7 @@ func WithAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, UserContextKey, user)
+		ctx := services.WithActor(r.Context(), user, clientIP(r))
 		// Wrap so the limiter (which runs outermost) sees the user ID.
 		ctx = middleware.WithUserID(ctx, user.ID)
 
@@ -254,12 +234,42 @@ func isPasswordChangeWhitelisted(path string) bool {
 	return false
 }
 
-// userFromContext retrieves the authenticated user stored by WithAuth.
+// userFromContext retrieves the authenticated user stored by WithAuth. An
+// anonymous request (or one that never went through the auth middleware)
+// yields the zero user, which every caller already treats as "not logged in".
 func userFromContext(r *http.Request) models.User {
-	if u, ok := r.Context().Value(UserContextKey).(models.User); ok {
-		return u
+	return services.ActorFromContext(r.Context())
+}
+
+// RequireRole guards next so only a caller whose role appears in roles may
+// proceed. It is the single route-level privilege check (P4): the router's
+// route table declares each endpoint's allowed roles, and this middleware
+// enforces them — handlers no longer carry their own requireAdmin/requireRoot
+// checks.
+//
+// roles uses the models.Role* strings ("root", "admin", "user"); the role is
+// read from the authenticated user placed on the request context by WithAuth /
+// WithOptionalAuth. An anonymous request yields the zero user (Role ""), which
+// matches no entry and is rejected 403.
+func RequireRole(roles ...string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			u := userFromContext(r)
+			for _, role := range roles {
+				if u.Role == role {
+					next(w, r)
+					return
+				}
+			}
+			// Preserve the pre-P4 messages: root-only endpoints reported
+			// "root only", every other privileged endpoint "admin only".
+			msg := "admin only"
+			if len(roles) == 1 && roles[0] == models.RoleRoot {
+				msg = "root only"
+			}
+			writeError(w, http.StatusForbidden, msg)
+		}
 	}
-	return models.User{}
 }
 
 // WithOptionalAuth wraps next with "optional" JWT verification: if an
@@ -277,6 +287,13 @@ func WithOptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
 		if h == "" {
+			// Spec 27: when the site is locked to signed-in readers, an
+			// anonymous read is a 401 — the "login required" promise must be
+			// enforced on the API too, not only in the SPA's route guard.
+			if !svc.AllowAnonymous(r.Context()) {
+				writeError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
 			next(w, r)
 			return
 		}
@@ -296,10 +313,15 @@ func WithOptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 		// token can't keep browsing personal data.
 		if user.MustChangePassword {
 			user = models.User{}
+			// Spec 27: the downgrade produces an anonymous caller, so the same
+			// locked-site rule applies.
+			if !svc.AllowAnonymous(r.Context()) {
+				writeError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
 		}
 
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, UserContextKey, user)
+		ctx := services.WithActor(r.Context(), user, clientIP(r))
 		ctx = middleware.WithUserID(ctx, user.ID)
 		next(w, r.WithContext(ctx))
 	}

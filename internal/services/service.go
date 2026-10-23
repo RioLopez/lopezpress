@@ -1,0 +1,85 @@
+package services
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+
+	"gorm.io/gorm"
+
+	"lopezpress/internal/config"
+)
+
+// Service carries the shared dependencies (db + cfg) and implements every
+// business operation. Handlers are thin: they decode/encode JSON and map
+// ServiceErrors to HTTP status codes; they never touch gorm directly.
+type Service struct {
+	db  *gorm.DB
+	cfg *config.Config
+
+	// mailT is the per-user throttle state for login-failure notifications.
+	// Guarded by the fact that SendMail is the only writer and reads are
+	// confined to the single goroutine that spawned it; for simplicity the
+	// map is only touched from the request goroutine (single instance).
+	mailT *mailThrottler
+
+	// viewPruneMu / viewPruneDay throttle the post_views retention sweep to
+	// once per UTC day per process (spec 23).
+	viewPruneMu  sync.Mutex
+	viewPruneDay string
+
+	// publicRead caches site_configs.public_read so the anonymous-read gate
+	// does not hit the database on every read (spec 27). Invalidated by
+	// UpdateSiteConfig.
+	publicReadMu  sync.RWMutex
+	publicRead    bool
+	publicReadSet bool
+}
+
+// New builds a Service backed by db and cfg.
+func New(db *gorm.DB, cfg *config.Config) *Service {
+	return &Service{db: db, cfg: cfg, mailT: newMailThrottler()}
+}
+
+// --- error plumbing: map domain errors to HTTP status codes ---
+
+// ServiceError is the typed error returned by every Service method. Handlers
+// map Status to a concrete HTTP code (400/401/403/404/409/500) and use Msg
+// for the JSON "error" body.
+type ServiceError struct {
+	Status int    // HTTP status code
+	Msg    string // human-readable message for the client
+}
+
+func (e *ServiceError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("[%d] %s", e.Status, e.Msg)
+}
+
+// newErr is a small constructor.
+func newErr(status int, msg string) *ServiceError {
+	return &ServiceError{Status: status, Msg: msg}
+}
+
+// StatusOf extracts the HTTP status from a ServiceError. Non-ServiceError
+// values (e.g. raw gorm errors that leaked through) map to 500.
+func StatusOf(err error) int {
+	var se *ServiceError
+	if errors.As(err, &se) {
+		return se.Status
+	}
+	return http.StatusInternalServerError
+}
+
+// MsgOf extracts the client-facing message. It unwraps ServiceError; for any
+// other error it returns a generic message so internals are not leaked.
+func MsgOf(err error) string {
+	var se *ServiceError
+	if errors.As(err, &se) {
+		return se.Msg
+	}
+	return "internal server error"
+}

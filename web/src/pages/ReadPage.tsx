@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { getPost, deletePost, getPostPrevNext, ApiError } from '../core/api'
+import { getPost, deletePost, getPostPrevNext, getRelatedPosts, reportView, errMessage, errStatus } from '../core/api'
 import type { Post, PostNav, FontSize } from '../core/types'
 import { useAuth } from '../core/auth'
 import { renderMD, wordCount, extractTOC } from '../core/md'
@@ -34,6 +34,10 @@ export function ReadPage({ id }: { id: string }) {
   )
   // Scroll-spy: id of the heading currently crossing the top of the viewport.
   const [activeHeading, setActiveHeading] = useState<string | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+  // Spec 35: related posts. Loaded after the article so the body never waits
+  // for it; an empty list simply hides the block.
+  const [related, setRelated] = useState<Post[]>([])
   // Back-to-top: shows once the page scrolled past this many px.
   const [showTop, setShowTop] = useState(false)
   // Lightbox: src of enlarged image, or null when closed.
@@ -118,10 +122,22 @@ export function ReadPage({ id }: { id: string }) {
     getPost(id)
       .then((p) => {
         setPost(p)
+        setRelated([])
         getPostPrevNext(id).then(setNav).catch(() => {})
+        // Spec 35: fired in parallel with the rest; the article body is
+        // already on screen by the time this resolves.
+        getRelatedPosts(id).then(setRelated).catch(() => setRelated([]))
+        // Spec 23: counting is an explicit report now — the GET above no
+        // longer touches view_count. Only published posts are countable
+        // (the endpoint 404s for anything else, which reportView swallows).
+        if (p.status === 'published') {
+          reportView(p.id).then((r) => {
+            if (r) setPost((cur) => (cur ? { ...cur, view_count: r.view_count } : cur))
+          })
+        }
       })
       .catch((e) => {
-        if (e instanceof ApiError && e.status === 404) {
+        if (errStatus(e) === 404) {
           pushToast('error', t('post.notFound'))
         } else {
           pushToast('error', t('post.loadFailed'))
@@ -196,7 +212,7 @@ export function ReadPage({ id }: { id: string }) {
       pushToast('success', t('post.deleted'))
       navigate('/')
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('post.deleteConfirm', { t: post.title }))
+      pushToast('error', errMessage(e, t('post.deleteConfirm', { t: post.title })))
     }
   }
 
@@ -217,6 +233,20 @@ export function ReadPage({ id }: { id: string }) {
     <article class={`read-page read-page--${fontSize}`}>
       <div class="read-progress" style={{ width: `${progress}%` }} aria-hidden="true" />
       <header class="read-head">
+        <nav class="read-crumbs" aria-label="breadcrumb">
+          <a onClick={(e) => { e.preventDefault(); navigate('/') }} href="/">{t('read.home')}</a>
+          {post.category && (
+            <>
+              <span class="sep">/</span>
+              <a
+                onClick={(e) => { e.preventDefault(); navigate(`/?category=${post.category!.id}`) }}
+                href={`/?category=${post.category.id}`}
+              >
+                {post.category.name}
+              </a>
+            </>
+          )}
+        </nav>
         <div class="read-badges">
           {post.pinned && <span class="badge-pinned">{t('post.pinned')}</span>}
           {post.status !== 'published' && (
@@ -267,6 +297,24 @@ export function ReadPage({ id }: { id: string }) {
               {t('read.reset')}
             </button>
           </div>
+          {/* Spec 29: the shareable form of this article. Hidden when the row
+              predates slugs, so we never copy a dead link. */}
+          {post.slug && (
+            <button
+              class="btn btn-ghost btn-sm"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(`${window.location.origin}/p/${post.slug}`)
+                  setLinkCopied(true)
+                  setTimeout(() => setLinkCopied(false), 1500)
+                } catch {
+                  /* clipboard unavailable: nothing useful to show */
+                }
+              }}
+            >
+              {linkCopied ? t('read.linkCopied') : t('read.permanentLink')}
+            </button>
+          )}
         </div>
         {canEdit && (
           <div class="read-actions">
@@ -318,6 +366,28 @@ export function ReadPage({ id }: { id: string }) {
         class="read-body md-body"
         dangerouslySetInnerHTML={{ __html: renderMD(post.body || '') }}
       />
+      {related.length > 0 && (
+        <section class="related-block">
+          <h2>{t('read.related')}</h2>
+          <div class="related-list">
+            {related.map((r) => (
+              <a
+                key={r.id}
+                class="related-item"
+                href={r.slug ? `/p/${r.slug}` : `/read/${r.id}`}
+                onClick={(e) => {
+                  // Same SPA contract as the rest of the reader: never do a
+                  // full page load just to move between posts.
+                  e.preventDefault()
+                  navigate(r.slug ? `/p/${r.slug}` : `/read/${r.id}`)
+                }}
+              >
+                {r.title}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
       <div class="read-footer">
         <div class="read-nav">
           <button

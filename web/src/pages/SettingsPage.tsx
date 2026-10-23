@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
-import { updateMe, uploadImage, listUploads, deleteUpload, ApiError } from '../core/api'
+import { updateMe, uploadImage, listUploads, deleteUpload, errMessage } from '../core/api'
 import type { LocalUpload } from '../core/types'
 
 const fmtBytes = (n: number) =>
@@ -28,7 +28,7 @@ function ImageLibrary() {
       await uploadImage(file)
       await refresh()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('imgUpload.failed'))
+      pushToast('error', errMessage(e, t('imgUpload.failed')))
     } finally {
       setUploading(false)
     }
@@ -42,7 +42,7 @@ function ImageLibrary() {
         pushToast('info', t('imageLib.deleted'))
         refresh()
       })
-      .catch((e) => pushToast('error', e instanceof ApiError ? e.message : t('imageLib.deleteFailed')))
+      .catch((e) => pushToast('error', errMessage(e, t('imageLib.deleteFailed'))))
       .finally(() => setBusy(null))
   }
 
@@ -117,7 +117,7 @@ export function SettingsPage() {
       await refresh()
       pushToast('success', t('profile.saved'))
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('profile.saveFailed'))
+      pushToast('error', errMessage(e, t('profile.saveFailed')))
     } finally {
       setSaving(false)
     }
@@ -129,7 +129,7 @@ export function SettingsPage() {
       const r = await uploadImage(file)
       if (r.url) setAvatar(r.url)
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('imgUpload.failed'))
+      pushToast('error', errMessage(e, t('imgUpload.failed')))
     } finally {
       setUploading(false)
     }

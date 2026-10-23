@@ -5,7 +5,7 @@ import { AuthProvider, useAuth } from './core/auth'
 import { AppProvider } from './core/app'
 import { I18nProvider, useI18n } from './core/i18n'
 import { ThemeProvider } from './core/theme'
-import { SiteProvider } from './core/site'
+import { SiteProvider, useSite } from './core/site'
 import { Layout } from './ui/Layout'
 import { AdminLayout } from './ui/AdminLayout'
 import { Toasts } from './ui/Toast'
@@ -17,10 +17,12 @@ import { ArchivePage } from './pages/ArchivePage'
 import { CreatePage } from './pages/CreatePage'
 import { EditPage } from './pages/EditPage'
 import { ReadPage } from './pages/ReadPage'
+import { SlugPage } from './pages/SlugPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { PersonalCenterPage } from './pages/PersonalCenterPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminCategoriesPage } from './pages/AdminCategoriesPage'
+import { AdminPostsPage } from './pages/AdminPostsPage'
 import { AdminTagsPage } from './pages/AdminTagsPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { AdminBackupPage } from './pages/AdminBackupPage'
@@ -37,6 +39,18 @@ function Guarded({ children }: { children: any }) {
   const { hasToken } = useAuth()
   if (!hasToken) return <Redirect to="/login" />
   return children as any
+}
+
+// Spec 27: reader-facing routes (list / archive / article) are readable
+// anonymously ONLY when the admin enabled site_config.public_read. Authoring
+// routes keep using Guarded — a signed-out visitor can never reach them.
+// The API enforces the same switch (anonymous reads 401 when locked), so this
+// guard is UX, not the security boundary.
+function Readable({ children }: { children: any }) {
+  const { hasToken } = useAuth()
+  const { config } = useSite()
+  if (hasToken || config.public_read) return children as any
+  return <Redirect to="/login" />
 }
 
 // Admin pages: require a JWT *and* the admin-or-root role, then render inside
@@ -79,11 +93,11 @@ function AppView() {
           would appear under every page. */}
       <Route
         path="/"
-        component={() => <Guarded><ListPage /></Guarded>}
+        component={() => <Readable><ListPage /></Readable>}
       />
       <Route
         path="/archive"
-        component={() => <Guarded><ArchivePage /></Guarded>}
+        component={() => <Readable><ArchivePage /></Readable>}
       />
       <Route
         path="/create"
@@ -98,7 +112,15 @@ function AppView() {
       <Route
         path="/read/:id"
         component={(p: any) => (
-          <Guarded><ReadPage id={p.params.id} /></Guarded>
+          <Readable><ReadPage id={p.params.id} /></Readable>
+        )}
+      />
+      {/* Spec 29: permanent links. /read/{uuid} stays valid forever, so both
+          shapes address the same post. */}
+      <Route
+        path="/p/:slug"
+        component={(p: any) => (
+          <Readable><SlugPage slug={p.params.slug} /></Readable>
         )}
       />
       <Route
@@ -120,6 +142,10 @@ function AppView() {
       <Route
         path="/admin"
         component={() => <AdminGuarded><AdminDashboardPage /></AdminGuarded>}
+      />
+      <Route
+        path="/admin/posts"
+        component={() => <AdminGuarded><AdminPostsPage /></AdminGuarded>}
       />
       <Route
         path="/admin/categories"

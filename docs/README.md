@@ -61,7 +61,7 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 ### 2.1 specs/（按页面 / 按功能域）
 
 > 状态三档：`已实现（spec 未写）`＝代码已在跑、规范待补；`已实现（spec 已写）`＝代码与规范均已就位；`已废弃`。
-> 截至 2026-10-15（第 25 轮后），01–21 号 spec 全部为「已实现（spec 已写）」。
+> 截至 2026-10-23（第 52 轮），**01–35 号 spec 全部为「已实现（spec 已写）」**。
 > 注：13 号未使用（编号跳空）；21 号为事后补录（第 25 轮口述需求直接实现，事后按本规范补齐）。
 
 | 编号 | 页面 / 功能域 | 路由 | 状态 | spec 文件 |
@@ -86,6 +86,20 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 | 19 | 写文章编辑器（取代 03） | `/create`, `/edit/:id` | 已实现（spec 已写） | `specs/19-write-editor.md` |
 | 20 | 文章可见范围（第 25 轮扩为五值状态） | `/create`, `/edit/:id`, `/me` | 已实现（spec 已写） | `specs/20-visibility.md` |
 | 21 | 三层角色 + 内容审核 + root 封禁库 | `/admin/review`, `/admin/banned` | 已实现（spec 已写） | `specs/21-roles-moderation.md` |
+| 22 | root 密码离线恢复 | CLI | 已实现（spec 已写） | `specs/22-root-password-recovery.md` |
+| 23 | 浏览量指纹去重 + 上报接口 | `POST /api/posts/{id}/view` | 已实现 | `specs/23-post-views.md` |
+| 24 | 首页纯分页 + 每页条数配置 | `/` | 已实现 | `specs/24-pagination.md` |
+| 25 | 标签改名 + 计数跳转 | `/admin/tags` | 已实现 | `specs/25-tag-rename.md` |
+| 26 | 后台文章管理 + 批量操作 | `/admin/posts` | 已实现 | `specs/26-admin-posts-batch.md` |
+| 27 | 公开阅读开关 + 两层分类树 | `/admin/site`, `/admin/categories` | 已实现 | `specs/27-read-access-and-category-tree.md` |
+| 28 | 读者链路（归档分页/robots/封面/空态） | `/archive`, `/` | 已实现 | `specs/28-reader-flows.md` |
+| 29 | 文章永久链接（slug） | `/p/:slug` | 已实现 | `specs/29-permalinks.md` |
+| 30 | 封禁闭环（列表内发起封禁） | `/admin/posts` | 已实现 | `specs/30-ban-closure.md` |
+| 31 | 修订历史与回滚 | `/edit/:id` | 已实现 | `specs/31-revisions.md` |
+| 32 | Markdown 批量导入 | `/admin/posts` | 已实现 | `specs/32-markdown-import.md` |
+| 33 | 仪表盘统计（趋势/待审/Top5） | `/admin` | 已实现 | `specs/33-dashboard-insights.md` |
+| 34 | 每日自动备份 | `/admin/backup` | 已实现 | `specs/34-auto-backup.md` |
+| 35 | 相关文章 + 面包屑 | `/read/:id` | 已实现 | `specs/35-related-and-breadcrumb.md` |
 
 > 模板：`specs/_TEMPLATE.md`。新页面加编号 + 一行索引。
 
