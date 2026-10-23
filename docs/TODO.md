@@ -76,7 +76,12 @@
   **旗舰页示范**：`PersonalCenterPage` 623→**52 行**——三个区块拆到 `pages/personal/{MyHomepage,ContentManage,SecurityCenter}.tsx`（共享 `Pager`+`PAGE_SIZE`），列表三态机换成 `useQuery`（乐观更新用暴露的 `setData`）。**其余页面（AdminUsers 525 / AdminPosts 353 等）的 `useQuery` 铺开是下一增量**（`load` 回调+刷新、toast-on-error 形态与旗舰页略异，逐个冒烟）。
 - [x] **AR-7 i18n 与守卫收敛** ✅ 2026-10-23 第 62 轮完成
   `i18n.tsx` 1,775 行 → **113 行**入口 + `core/locales/{nav,auth,center,reader,editor,admin,site,common}.ts` 8 个域文件（机械拆，`type Texts` 交叉组合，键值零改动）；`t()` 未命中在 dev `console.warn`、prod 回退英文（不再原样回显 key）。新建 `core/roles.ts`（`isAdmin`/`isRoot`/`isAdminOnly` 三个 helper，对应后端 `services/roles.go`）。守卫收敛到路由表：`AdminGuarded` 增加 `roles` 参数（默认 `['admin','root']`），`/admin/banned` 在路由层声明 `roles={['root']}`；删 7 个 admin 页面（Categories/Posts/Review/Tags/Trash/Users/Backup）+ BanVault 各自的重复 `user?.role !== 'admin' && ...` 守卫。**`role ===` 字面量 25→3**（仅 roles.ts 实现）+ 4 处注释；`window.confirm` 仅剩 `app.tsx` 的 `confirmDialog` 底层实现（页面 0 处）。验收：`tsc --noEmit` + `vite build`（产物 230.30kB）全绿，arch_check/contract_check/doc_check 全过。
-- [ ] **AR-8 前端最小测试**：vitest 覆盖 `format` / `md` 清洗 / `api` 错误映射三个纯函数模块（1 个 devDependency，不进产物）。
+- [x] **AR-8 前端最小测试** ✅ 2026-10-23 第 63 轮完成
+  引入 `vitest@^2.1.9`（1 个 devDependency，与 vite 5 兼容，不进产物）。新增 3 个纯函数测试模块（显式 `import { describe,it,expect } from 'vitest'`，因 tsconfig `types:["vite/client"]` 不含 vitest globals）：`format.test.ts`（fmtDate/fmtDay，6 用例）、`md.test.ts`（escapeHTML/highlight/extractTOC，11 用例，只测无 UI 依赖纯函数，不碰 `DOMParser`）、`http.test.ts`（ApiError/errMessage/errStatus，5 用例）。共 **22 用例全绿**。
+  `package.json` 加 `"test": "vitest run"`；新建 `vitest.config.ts`（`environment:'node'`，不加载 preact 插件/代理）。
+  验收：`npm test` 22/22、`tsc --noEmit`、`vite build`（产物 230.30kB，`.test.ts` 不进产物）全绿，arch_check/contract_check/doc_check 全过。
+  **坑 1**：`extractTOC(src: string | null | undefined)` 参数不带 `?`，是必填形参（类型允许 undefined 但不允许省略），测试须传 `undefined` 而非 `extractTOC()`。
+  **坑 2**：本机 WorkBuddy 沙箱经 `NODE_OPTIONS` 注入 fs shim，拦截 vitest 写 `%TEMP%` 的 vite-node ssr 缓存（EPERM，随机漏跑一个测试文件）——验证时用 `NODE_OPTIONS= npm test` 清空注入；用户在真实终端跑 `npm test` 无此问题。
 
 ## 🔴 P0 — 必须修（2026-10-15 深度审计新增）
 
