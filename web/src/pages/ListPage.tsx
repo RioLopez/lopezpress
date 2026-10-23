@@ -4,12 +4,13 @@ import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPostsPaged, deletePost, listCategories, errMessage, errStatus } from '../core/api'
-import type { PostStatus } from '../core/types'
+import type { Post, PostStatus } from '../core/types'
 import { renderMD, stripHTML, highlight } from '../core/md'
 import { Sidebar } from '../ui/Sidebar'
 import { Pagination } from '../ui/Pagination'
-import { useNav } from '../core/router'
+import { useNavSearch } from '../core/router'
 import { useQuery } from '../core/useQuery'
+import { isAdminOnly, isRoot } from '../core/roles'
 
 // Spec 24: classic pagination. The page number lives in the URL (?page=N) and
 // the page SIZE is decided by the server from site_config.page_size — the
@@ -25,9 +26,8 @@ interface UrlFilters {
   tag: string | null
 }
 
-function parseUrl(location: string): UrlFilters {
-  const qs = location.includes('?') ? location.slice(location.indexOf('?') + 1) : ''
-  const p = new URLSearchParams(qs)
+function parseUrl(search: string): UrlFilters {
+  const p = new URLSearchParams(search)
   const rawPage = parseInt(p.get('page') ?? '', 10)
   const rawCat = parseInt(p.get('category') ?? '', 10)
   return {
@@ -50,9 +50,12 @@ export function ListPage() {
   const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
-  const [location, navigate] = useNav()
+  const [, urlSearch, navigate] = useNavSearch()
 
-  const url = parseUrl(location)
+  // wouter's useLocation is pathname-only; the query string arrives as a
+  // separate value (see useNavSearch). Parsing it off `location` would
+  // silently drop every deep-linkable filter.
+  const url = parseUrl(urlSearch)
   const page = url.page
   const activeCategory = url.category
   const activeTag = url.tag
@@ -126,6 +129,19 @@ export function ListPage() {
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
 
   const items = pageData?.items ?? []
+
+  // Who may act on a card: mirrors the backend UpdatePost/DeletePost guards
+  // (author, or root, or an admin over a plain user's post) plus the banned
+  // freeze (only root edits; deletes go through the root-only vault).
+  // Without this the links rendered for everyone — anonymous visitors
+  // included — and every click died on a 403.
+  const canEditPost = (p: Post): boolean => {
+    if (!user) return false
+    if (p.author?.id === user.id || isRoot(user.role)) return true
+    return isAdminOnly(user.role) && p.author?.role === 'user'
+  }
+  const canDeletePost = (p: Post): boolean =>
+    p.status !== 'banned' && canEditPost(p)
   // A deep link may point past the end (post deleted, filters changed). That
   // is not an error state — show the message plus the pager so the reader can
   // get back (spec 24 AC-1.4).
@@ -262,14 +278,20 @@ export function ListPage() {
                       <span>{t('list.author')}: {p.author?.username || '—'}</span>
                       <span>{new Date(p.created_at).toLocaleDateString(localeTag)}</span>
                       <span>{p.view_count} {t('list.views')}</span>
-                      <span class="post-actions">
-                        <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/edit/${p.id}`) }}>
-                          {t('list.edit')}
-                        </a>
-                        <a href="#" onClick={(e) => { e.preventDefault(); remove(p.id) }}>
-                          {t('list.del')}
-                        </a>
-                      </span>
+                      {(canEditPost(p) || canDeletePost(p)) && (
+                        <span class="post-actions">
+                          {canEditPost(p) && (
+                            <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/edit/${p.id}`) }}>
+                              {t('list.edit')}
+                            </a>
+                          )}
+                          {canDeletePost(p) && (
+                            <a href="#" onClick={(e) => { e.preventDefault(); remove(p.id) }}>
+                              {t('list.del')}
+                            </a>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </li>
                 ))}
