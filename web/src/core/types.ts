@@ -6,7 +6,11 @@ export type Role = 'user' | 'admin' | 'root'
 // "pending" = awaiting review (author + admin + root), "rejected" = sent back
 // for revisions (author + admin + root, carries a note), "banned" = in the
 // root-only ban vault (root sees it; the author and other admins do NOT).
-export type PostStatus = 'published' | 'private' | 'pending' | 'rejected' | 'banned'
+// `draft` is a legacy status no longer produced by this build (import maps
+// `draft: true` → private), but rows written by older versions may still
+// carry it, so it stays in the type and the status-label map rather than
+// crashing the admin table with a missing-key warning.
+export type PostStatus = 'published' | 'private' | 'pending' | 'rejected' | 'banned' | 'draft'
 
 export interface UserPublic {
   id: string

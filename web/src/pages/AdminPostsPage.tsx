@@ -4,8 +4,8 @@ import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
 import { useDebounce } from '../core/debounce'
-import { listPostsPaged, listCategories, deletePost, batchPosts, banPost, importMarkdown, errMessage } from '../core/api'
-import type { PostStatus, Category } from '../core/types'
+import { listPostsPaged, listCategories, listTags, deletePost, batchPosts, banPost, importMarkdown, errMessage } from '../core/api'
+import type { PostStatus, Category, Tag } from '../core/types'
 import { Pagination } from '../ui/Pagination'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
@@ -20,7 +20,7 @@ import { isRoot } from '../core/roles'
 // public reading list, so it must not follow site_config.page_size.
 const ADMIN_PAGE_SIZE = 20
 
-const STATUSES: PostStatus[] = ['published', 'private', 'pending', 'rejected', 'banned']
+const STATUSES: PostStatus[] = ['published', 'private', 'pending', 'rejected', 'banned', 'draft']
 
 export function AdminPostsPage() {
   const { user } = useAuth()
@@ -31,8 +31,10 @@ export function AdminPostsPage() {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState<PostStatus | ''>('')
   const [category, setCategory] = useState<number | null>(null)
+  const [tag, setTag] = useState<string>('')
   const [search, setSearch] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [tagInput, setTagInput] = useState('')
@@ -50,13 +52,15 @@ export function AdminPostsPage() {
         page,
         size: ADMIN_PAGE_SIZE,
         category: category == null ? undefined : category,
+        tag: tag || undefined,
       }),
-    [status, debouncedSearch, page, category],
+    [status, debouncedSearch, page, category, tag],
     { onError: (e) => pushToast('error', errMessage(e, t('admin.failed'))) },
   )
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => {})
+    listTags().then(setTags).catch(() => {})
   }, [])
 
   const items = data?.items ?? []
@@ -67,7 +71,7 @@ export function AdminPostsPage() {
   // prevents "silently acting on rows the admin can no longer see".
   useEffect(() => {
     setSelected(new Set())
-  }, [page, status, debouncedSearch, category])
+  }, [page, status, debouncedSearch, category, tag])
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -196,6 +200,18 @@ export function AdminPostsPage() {
             <option key={c.id} value={String(c.id)}>{c.name}</option>
           ))}
         </select>
+        <select
+          value={tag}
+          onInput={(e) => {
+            setTag((e.target as HTMLSelectElement).value)
+            setPage(1)
+          }}
+        >
+          <option value="">{t('list.allTags')}</option>
+          {tags.map((tg) => (
+            <option key={tg.id} value={tg.name}>{tg.name}</option>
+          ))}
+        </select>
       </div>
 
       <div class="admin-form">
@@ -317,7 +333,7 @@ export function AdminPostsPage() {
                     <button class="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${p.id}`)}>
                       {t('list.edit')}
                     </button>
-                    {isRootUser && p.status !== 'banned' && (
+                    {isRootUser && p.status !== 'banned' && p.author_id !== user?.id && (
                       <button class="btn btn-danger btn-sm" onClick={() => banOne(p.id)}>
                         {t('admin.banPost')}
                       </button>

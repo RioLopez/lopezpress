@@ -3,7 +3,7 @@ import { useI18n } from '../../core/i18n'
 import { useNav } from '../../core/router'
 import { useApp } from '../../core/app'
 import { listPostsPaged, updatePost, errMessage } from '../../core/api'
-import type { Post } from '../../core/types'
+import type { Post, PostStatus } from '../../core/types'
 import { fmtDay } from '../../core/format'
 import { useQuery } from '../../core/useQuery'
 import { Pager, PAGE_SIZE } from './Pager'
@@ -21,7 +21,7 @@ export function ContentManage() {
   // status so the user can roll back within a short window; at most one
   // pending undo is kept, and flipping again clears it.
   const [busyId, setBusyId] = useState<string | null>(null)
-  const undoRef = useRef<{ id: string; prev: 'published' | 'private' } | null>(null)
+  const undoRef = useRef<{ id: string; prev: PostStatus } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [undoAvailable, setUndoAvailable] = useState(false)
 
@@ -106,6 +106,7 @@ export function ContentManage() {
     if (post.status === 'pending') return t('admin.statusLabel.pending')
     if (post.status === 'rejected') return t('admin.statusLabel.rejected')
     if (post.status === 'banned') return t('admin.statusLabel.banned')
+    if (post.status === 'draft') return t('admin.statusLabel.draft')
     return t('list.published')
   }
   // The visibility toggle only applies to the two author-controlled states.

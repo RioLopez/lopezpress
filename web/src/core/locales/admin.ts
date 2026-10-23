@@ -56,6 +56,7 @@ export type AdminTexts = {
       pending: string
       rejected: string
       banned: string
+      draft: string
     }
     // user management
     usersTitle: string
@@ -248,6 +249,7 @@ export const adminZh: AdminTexts = {
       pending: '待审核',
       rejected: '已打回',
       banned: '已封禁',
+      draft: '草稿',
     },
     usersTitle: '用户管理',
     usersSub: '查看并启用/禁用所有账号',
@@ -434,6 +436,7 @@ export const adminEn: AdminTexts = {
       pending: 'Pending review',
       rejected: 'Sent back',
       banned: 'Banned',
+      draft: 'Draft',
     },
     usersTitle: 'Manage Users',
     usersSub: 'View and enable/disable all accounts',
