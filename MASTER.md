@@ -255,16 +255,16 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 ---
 
-## 7. 事实基线（第 61 轮实测，改动后请重测并更新）
+## 7. 事实基线（第 72 轮实测，2026-10-24；改动后请重测并更新）
 
 | 指标 | 值 |
 |---|---|
-| 后端规模 | 93 个 `.go`，16,031 行；6 个直接依赖（+11 indirect） |
-| 前端规模 | 53 个 `.ts(x)`，9,868 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
-| 测试 | 41 个文件 / **176** 个 `Test*`（services 109 / handlers 26 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2） |
+| 后端规模 | 96 个 `.go`，16,627 行；6 个直接依赖（+11 indirect） |
+| 前端规模 | 65 个 `.ts(x)`，10,260 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
+| 测试 | 44 个文件 / **183** 个 `Test*`（services 113 / handlers 29 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2）+ 前端 vitest 3 文件 22 用例 |
 | 路由 | 后端 **76** 条，前端接入 69 条，方法不匹配 **0**（`scripts/contract_check.py`） |
-| 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=26（仅状态码常量）/ R2.files=1 / R2.funcs=16 / R3=44 / R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
-| 构建产物 | 232.18 kB / gzip 71.62 kB；CSS 61.06 kB / gzip 11.45 kB |
+| 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=26（仅状态码常量，观察项）/ R2.files=1 / R2.funcs=16 / **R3=0**（散落在 `dto.go` 外的 struct）/ R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
+| 构建产物 | JS 234.81 kB / gzip 72.98 kB；CSS 61.57 kB / gzip 11.51 kB |
 | Git | 分支 `main`，tag `v0.1.0`，远程 `RioLopez/lopezpress`（private） |
 | 文档 | 仓库内 71 份（含本文件，不含 memory 日志） |
 
@@ -317,12 +317,12 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-23 12:30（第 61 轮：P6 收尾——`useQuery` 扩展 `enabled`/`onError`/awaitable `reload`，`AdminPostsPage`/`AdminUsersPage` 迁移，剩余 10 页待铺开） |
-| 对应提交 | 当前 HEAD 仍是 MASTER 创建提交 `docs: make MASTER self-sustaining`——P0 起各轮**从未 commit**（用 `git log --oneline` 核对，**不写 sha**） |
-| 正在做 | 无进行中任务；P6 收尾已推进（`useQuery` 扩展 + `AdminPosts`/`AdminUsers` 迁移，`tsc`/`vite build`/`arch_check`/`contract_check` 全绿）。**下一步等用户说"继续"（剩余 10 页铺开）** |
-| 下一步第一件事 | ① **剩余 10 页 `useQuery` 铺开**（6 管理页与 `AdminUsers` 同构 + 4 读者页：`List` 有 401 跳转、`Read` 有并行请求）② **commit + 推送**：P0–P6 约 15 轮改动**全部未提交**、积压工作区（`git status` 138 个文件），最危险 ③ **P7 i18n 与守卫收敛**（`i18n.tsx` 1,775 行按域拆）④ 生产部署端到端验证（Docker 实测 + HTTPS，是 v1.0 最后一块） |
-| 未决问题 | ① GitHub PAT 权限偏大（含 `delete_repo`/`admin:org`），建议收紧 ② 未 docker build、未在真实 VPS 端到端跑 ③ 站点名仍是 `Echo`（DB 数据，需在站点设置里改）④ 一条 `draft` 脏数据（第 22 轮已废该状态）⑤ 有子级的分类被领养进预设时会被跳过（设计如此）⑥ WXR（WordPress XML）导入未做 |
-| 当前分支状态 | `main` 与 `origin/main` 平齐（HEAD == origin/main）；P0–P6（第 54–61 轮）约 15 轮改动**全部未提交**、积压工作区；tag `v0.1.0` 之后尚未打新 tag |
+| 最后更新 | 2026-10-24 01:10（第 72 轮：外部渗透报告核实——11 项报出 → 9 真 / 5 假阳性，落地 9 项安全加固，隔离冒烟 15/15） |
+| 对应提交 | 主题 `fix(security): harden author payload, upload, token revocation, headers`（本轮提交，用 `git log --oneline -3` 核对，**不写 sha**） |
+| 正在做 | 无进行中任务；代码 + 文档已落盘，`go build/vet/test`、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check` 全绿 |
+| 下一步第一件事 | ① **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`（存不下来）；`PostEditor` 把 `pending` 误显为「公开」 ② **nginx 改动需实测**（本轮补了 `/uploads` `/feed` `/sitemap.xml` `/robots.txt` 4 个 location + 静态 location 安全头），有 VPS 才能验证 ③ 浏览器真机回归（改密后会话保持、dev 下 `/uploads` 图片能显示） |
+| 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ `rio` 账号下 2 篇文章（`rio的测试1` / `浏览器自动化测试文章`）疑似测试残迹，**留给用户自行删除**（属真实账号数据，AI 不动）④ `data/uploads/` 两个 418KB PNG 未被任何文章引用 ⑤ WXR（WordPress XML）导入未做 |
+| 当前分支状态 | 本轮提交后与 `origin/main` 平齐（本机 `git push` 直连不通，推送走 `github-auto-upload`）；tag `v0.1.0` 之后尚未打新 tag |
 
 ### 9.5 新会话开场自检（30 秒）
 

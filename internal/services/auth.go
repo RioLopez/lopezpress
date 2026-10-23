@@ -66,24 +66,30 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 // is recorded in login_log, and a successful login updates the user's
 // last_login_ip / last_login_at (spec 14).
 func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*AuthResult, error) {
-	if in.Email == "" || in.Password == "" {
-		return nil, newErr(http.StatusBadRequest, "email and password are required")
+	// The identifier is normally sent in "email" (it may be either a username
+	// or an email); a client may also send it explicitly in "username".
+	identifier := in.Email
+	if identifier == "" {
+		identifier = in.Username
+	}
+	if identifier == "" || in.Password == "" {
+		return nil, newErr(http.StatusBadRequest, "email (or username) and password are required")
 	}
 
-	recordFail := func(userID, identifier string, code int, msg string) (*AuthResult, error) {
-		s.RecordLogin(ctx, userID, identifier, meta.IP, meta.UA, false)
+	recordFail := func(userID, id string, code int, msg string) (*AuthResult, error) {
+		s.RecordLogin(ctx, userID, id, meta.IP, meta.UA, false)
 		return nil, newErr(code, msg)
 	}
 
 	var user models.User
 	// Match by username OR email so the client can send either in the same field.
 	if err := s.db.WithContext(ctx).
-		Where("username = ? OR email = ?", in.Email, in.Email).
+		Where("username = ? OR email = ?", identifier, identifier).
 		First(&user).Error; err != nil {
-		return recordFail("", in.Email, http.StatusUnauthorized, "invalid credentials")
+		return recordFail("", identifier, http.StatusUnauthorized, "invalid credentials")
 	}
 	if user.Disabled {
-		return recordFail(user.ID, in.Email, http.StatusForbidden, "account is disabled")
+		return recordFail(user.ID, identifier, http.StatusForbidden, "account is disabled")
 	}
 	if !models.VerifyPassword(in.Password, user.PasswordHash) {
 		// Security notification: notify the account owner of a failed attempt
@@ -91,14 +97,14 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 		s.SendMail(ctx, user, MailLoginFailure, map[string]string{
 			"ip": meta.IP, "time": time.Now().Format("2006-01-02 15:04 UTC"), "ua": meta.UA,
 		})
-		return recordFail(user.ID, in.Email, http.StatusUnauthorized, "invalid credentials")
+		return recordFail(user.ID, identifier, http.StatusUnauthorized, "invalid credentials")
 	}
 
 	// Success: record audit + update last-login fields (best-effort).
 	// Detect a "new location" (IP or browser differs from the previous login)
 	// and notify the owner, then persist the new last-login state.
 	s.notifyNewLocation(ctx, user, meta)
-	s.RecordLogin(ctx, user.ID, in.Email, meta.IP, meta.UA, true)
+	s.RecordLogin(ctx, user.ID, identifier, meta.IP, meta.UA, true)
 	_ = s.db.WithContext(ctx).Model(&user).Updates(map[string]any{
 		"last_login_ip": meta.IP,
 		"last_login_at": time.Now(),

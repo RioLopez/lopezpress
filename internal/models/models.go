@@ -149,6 +149,36 @@ func (p *Post) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// SanitizeAuthor blanks the author fields that must never leave the server
+// through a post payload. Post.Author is a DISPLAY object (id, username,
+// display_name, avatar, role); the account's email, login-audit trail and
+// account-state flags are only ever served by /api/auth/me (own profile) and
+// the admin user list — never by a post that an anonymous visitor can read.
+//
+// It copies the User rather than blanking in place: GORM may hand the same
+// *User pointer to several posts in one Preload, so a shared in-place edit
+// would be a silent cross-post mutation. The copy keeps each post independent.
+func (p *Post) SanitizeAuthor() {
+	if p.Author == nil {
+		return
+	}
+	a := *p.Author
+	a.Email = ""
+	a.LastLoginIP = ""
+	a.LastLoginAt = nil
+	a.Disabled = false
+	a.MustChangePassword = false
+	a.TokenVersion = 0
+	p.Author = &a
+}
+
+// SanitizePostAuthors applies SanitizeAuthor to every post in the slice.
+func SanitizePostAuthors(posts []Post) {
+	for i := range posts {
+		posts[i].SanitizeAuthor()
+	}
+}
+
 // PostRevision is one saved-before-edit snapshot of a post (spec 31).
 // Only the fields that are painful to lose are kept: title, body, status and
 // who changed it. Tags/category/cover are cheap to re-set and are not

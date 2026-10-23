@@ -100,6 +100,9 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
 	s.audit(ctx, user, "create_post", "post:"+created.ID, "title="+created.Title+"; status="+created.Status)
+	// The author is the caller themselves; still strip the account-internal
+	// fields so no post payload ever carries an email / login-IP.
+	created.SanitizeAuthor()
 	return created, nil
 }
 
@@ -124,6 +127,7 @@ func (s *Service) GetPost(ctx context.Context, user models.User, id string) (mod
 		// Same 404 as "not found" so we never leak the post's existence.
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	post.SanitizeAuthor()
 	return post, nil
 }
 
@@ -181,6 +185,7 @@ func (s *Service) ListArchive(ctx context.Context, user models.User) ([]models.P
 	for i := range posts {
 		posts[i].Body = ""
 	}
+	models.SanitizePostAuthors(posts)
 	return posts, nil
 }
 
@@ -222,6 +227,7 @@ func (s *Service) ListArchivePage(ctx context.Context, page, size int) (PostPage
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	models.SanitizePostAuthors(posts)
 	return PostPage{Items: posts, Total: total, Page: page, PageSize: size}, nil
 }
 
@@ -245,6 +251,7 @@ func (s *Service) FeedPosts(ctx context.Context, limit int) ([]models.Post, erro
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	models.SanitizePostAuthors(posts)
 	return posts, nil
 }
 
@@ -258,6 +265,7 @@ func (s *Service) GetPostPublic(ctx context.Context, id string) (models.Post, er
 		Where("id = ? AND status = ?", id, "published").First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	post.SanitizeAuthor()
 	return post, nil
 }
 

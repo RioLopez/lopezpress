@@ -11,7 +11,7 @@ import { changePassword, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function ChangePasswordPage() {
-  const { user } = useAuth()
+  const { user, adoptToken } = useAuth()
   const { pushToast } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
@@ -48,7 +48,10 @@ export function ChangePasswordPage() {
     }
     setBusy(true)
     try {
-      await changePassword({ current_password: current, new_password: next })
+      const res = await changePassword({ current_password: current, new_password: next })
+      // The change revoked the old token; adopt the fresh one so this
+      // session stays valid (and the must_change flag clears in `user`).
+      await adoptToken(res.token)
       pushToast('success', t('password.changed'))
       navigate('/')
     } catch (e) {

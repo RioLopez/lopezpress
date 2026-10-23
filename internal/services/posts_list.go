@@ -145,5 +145,9 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	// Strip the author's account-internal fields (email, login IP/time,
+	// account flags) before the page leaves the service. This is the public
+	// list an anonymous visitor hits, so it must never carry them.
+	models.SanitizePostAuthors(posts)
 	return PostPage{Items: posts, Total: total, Page: q.Page, PageSize: q.PageSize}, nil
 }

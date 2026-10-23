@@ -16,9 +16,13 @@ type RegisterInput struct {
 }
 
 // LoginInput is the decoded payload for POST /api/auth/login. The Email
-// field may carry either the username or the email (per existing behaviour).
+// field may carry either the username or the email (per existing behaviour),
+// and an explicit "username" key is also accepted as a fallback identifier —
+// so a client can post the same field names it registered with, and the login
+// limiter (which already reads both keys) never disagrees with the handler.
 type LoginInput struct {
 	Email    string `json:"email"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 

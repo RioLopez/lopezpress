@@ -156,6 +156,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
 	s.audit(ctx, me, "update_post", "post:"+post.ID, "title="+post.Title+"; status="+post.Status)
+	post.SanitizeAuthor()
 	return post, nil
 }
 

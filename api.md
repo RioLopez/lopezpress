@@ -40,12 +40,12 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
 | POST | `/api/auth/register` | 公开 | 注册（受 `allow_register` 开关限制） |
-| POST | `/api/auth/login` | 公开 | 登录，返回 `{token, user}` |
+| POST | `/api/auth/login` | 公开 | 登录，返回 `{token, user}`。`email` 与 `username` 等价，任一填了即可（字段名仍叫 `email`） |
 | GET | `/api/auth/register/open` | 公开 | 注册是否开放 |
 | GET | `/api/auth/me` | 登录 | 当前用户 |
 | PUT | `/api/auth/me` | 登录 | 改资料 |
 | POST | `/api/auth/logout` | 登录 | 登出 |
-| POST | `/api/auth/change-password` | 登录 | 改密码（`current_password` + `new_password`） |
+| POST | `/api/auth/change-password` | 登录 | 改密码（`current_password` + `new_password`）。**返回 `{message, token, expires}`**：bump `token_version` 后旧 token 全部失效，新 token 供当前会话无缝续用 |
 | POST | `/api/auth/logout-all` | 登录 | 全设备登出（bump token version） |
 | GET | `/api/me/stats` | 登录 | 我的统计 |
 | GET | `/api/me/login-history` | 登录 | 我的登录记录 |
@@ -90,7 +90,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/tags/with-count` | 登录 | 带文章数 |
 | PUT | `/api/tags/{id}` | admin | 改名（保留文章关联） |
 | DELETE | `/api/tags/{id}` | admin | 删除（解除关联） |
-| POST | `/api/upload` | 登录 | 上传图片 → `{url}` |
+| POST | `/api/upload` | 登录 | 上传图片 → `{url}`。扩展名白名单 **+ magic bytes 内容校验**（`http.DetectContentType` 只认 png/jpeg/gif/webp），HTML 伪装成 `.png` 返回 400 |
 | GET | `/api/uploads` | 登录 | 图片库 |
 | DELETE | `/api/uploads/{name}` | admin | 删除图片 |
 
@@ -120,7 +120,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | POST | `/api/users` | admin | 新建用户（不可造 root） |
 | PUT | `/api/users/{id}` | admin | 改用户（不可提升为 root） |
 | PUT | `/api/users/{id}/disabled` | admin | 启用/禁用 |
-| POST | `/api/users/{id}/reset-password` | admin | 重置密码（`canManageUser` 守卫） |
+| POST | `/api/users/{id}/reset-password` | admin | 重置密码（`canManageUser` 守卫）。重置后 bump 目标 `token_version`，其所有旧会话立即失效 |
 | DELETE | `/api/users/{id}` | admin | 删除 |
 | GET | `/api/users/{id}/logins` | admin | 该用户登录记录 |
 | GET | `/api/site-config` | 公开 | 公开配置（品牌、`page_size`、`public_read`） |
@@ -236,10 +236,21 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 ---
 
+## 3.1 响应裁剪约定（第 72 轮加）
+
+文章类响应里的 `author` 对象是**裁剪过的** `User`：只保留 `id` / `username` / `display_name` / `avatar` / `bio` / `role`，`email` / `last_login_ip` / `last_login_at` / `disabled` / `must_change_password` / `token_version` 一律置空（`models.Post.SanitizeAuthor`）。
+
+- 覆盖所有出站文章载荷：`/api/posts`（列表）、`/api/posts/{id}`、`/public`、`/nav`、`/archive*`、`/feed`、`/permalinks/{slug}`、写接口回显。
+- **例外**：`GET /api/admin/posts/pending`（审核队列）**保留** `email`，审核员需要据此识别作者；该端点本身 admin 限权。
+- 不裁剪 `username` / `role`：作者主页链接与角色徽章要用。
+
+---
+
 ## 4. 变更日志
 
 | 轮次 | 变更 |
 |---|---|
+| 72 | 安全加固：① 文章载荷裁剪 author 敏感字段（见 §3.1）② `change-password` 响应新增 `token`/`expires`，旧 token 立刻失效 ③ `login` 支持 `username` 当标识 ④ `upload` 加 magic-bytes 内容校验 ⑤ 全站响应加安全头（`X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`/CSP/HSTS） |
 | 52 | 新增 `GET /api/posts/{id}/related`、`GET/POST /api/admin/backup/auto`；dashboard 增加 `pending_total`/`view_trend`/`top_posts` |
 | 51 | 新增 `GET /api/posts/{id}/revisions`、`POST .../revisions/{revID}/restore`、`POST /api/admin/import/markdown` |
 | 48 | 新增 `GET /api/permalinks/{slug}`；封禁补前端入口（端点本已存在） |

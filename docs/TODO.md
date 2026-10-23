@@ -1,6 +1,6 @@
 > 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
 
-# lopezpress 待办清单（2026-10-15 建立 · 2026-10-22 第 38 轮校准）
+# lopezpress 待办清单（2026-10-15 建立 · 2026-10-24 第 72 轮校准）
 
 > 来源：功能逻辑审计 + 二轮严格自查 + **2026-10-15 全栈深度审计**（均基于读实现，非猜测）。
 > 完成后把 `[ ]` 改 `[x]`。
@@ -16,7 +16,7 @@
 > **第 43 轮新增待办（产品功能，用户已拍板，尚未实现）**：
 > - [x] **F-1 后台文章管理页 `/admin/posts` + 批量操作** ✅ 第 44 轮完成（spec 26）
 > - [x] **F-2 后台分区导航**（内容 / 用户 / 系统三组）✅ 第 44 轮完成
-> - [ ] **F-3 前台首页去掉编辑/删除按钮**（F-1 已建好，但普通用户 role=user 目前只能从首页进编辑；需先在个人中心 `/me` 给自己的文章加编辑入口，再撤首页按钮。顺带修一个现存缺陷：首页按钮对**所有人**显示，非作者点了必 403）
+> - [x] **F-3 前台首页编辑/删除按钮越权显示** ✅ 第 69–70 轮完成：个人中心「内容管理」先给作者编辑入口（第 69 轮），首页 `ListPage` 再加 `canEditPost`/`canDeletePost` 条件渲染（第 70 轮）——不再对所有人显示，非作者不会再点出 403。
 > - [x] **F-4 `/archive` 全量加载** ✅ 第 47 轮完成（spec 28）：`GET /api/posts/archive/paged`（默认 50 / 上限 200 / body 恒空），前端改用服务端分页。
 > - [ ] **F-5 站点名仍是 `Echo`**（`site_configs.site_name`，DB 现值），改名 LopezPress 属数据修正，非代码问题。
 > - [ ] **F-6 一条 `draft` 状态脏数据**（文章「封面测试」，第 22 轮已废 draft 五态），五态之外的状态永不显示也管不到，需清理或迁移为 published/private。
@@ -31,6 +31,22 @@
 > - [ ] **F-12 WXR（WordPress XML）导入**：Markdown 批量导入已覆盖自建站迁移；WXR 格式脏、体积大，暂未做。
 > - [ ] **F-13 编辑器内 slug 编辑框**：接口已支持（`PUT /api/posts/{id}` 带 `slug`），前端 `PostEditor` 表单未加输入框。
 > - [x] **隐藏 bug：保存站点设置 500** ✅ 第 46 轮发现并修：`site_configs.site_url` 列在旧库中缺失（AutoMigrate 不碰已存在的表）。修法为迁移 `0008` + 启动时的 `checkSchemaDrift` 漂移告警。
+
+## 🔒 安全（2026-10-24 第 72 轮：外部渗透报告核实后新增）
+
+> 报告 11 项 → 9 真 / 5 假阳性。假阳性理由见 `PROGRESS.md` 第 72 轮，**不要重复排查**。
+
+- [x] **S-1 文章载荷泄露作者 `email`/`last_login_ip`**（HIGH 级）：`models.Post.SanitizeAuthor()` 覆盖 9 个出站口，仅 `ListPending` 保留 email。
+- [x] **S-2 全站缺安全响应头**：`middleware.SecurityHeaders`（nosniff / `X-Frame-Options` / Referrer-Policy / CSP / HSTS 仅 https）。
+- [x] **S-3 上传只验扩展名**：加 `http.DetectContentType` magic-bytes 校验，HTML 伪装 `.png` → 400。
+- [x] **S-4 改密码不失效旧 token**：`ChangePassword` bump `token_version` 并回发新 token；前端 `adoptToken()` 续用会话。
+- [x] **S-5 管理员重置密码踢不动会话**：`ResetPassword` bump 目标 `token_version`。
+- [x] **S-6 登录只认 `email` 字段**：`LoginInput.Username` + 统一 identifier。
+- [x] **S-7 dev 下 `/uploads` 返回 `index.html`**：`vite.config.ts` 补 4 条 proxy。
+- [x] **S-8 生产 nginx 漏反代**（报告未测出）：`/uploads/` `/feed` `/sitemap.xml` `/robots.txt` 各自 `location`。
+- [x] **S-9 nginx 静态 location 丢安全头**（报告未测出）：`add_header` 不继承，需重复声明。
+- [ ] **S-10 普通用户编辑器暴露「私密」选项但存不下来**（`CreatePost` 强制 pending）——**等用户拍板**：隐藏选项 or 明确提示「先过审核」。
+- [ ] **S-11 `PostEditor` 把 `pending` 误显示为「公开」**——**等用户拍板**。
 
 ## 🏗️ 架构债（2026-10-23 第 53 轮架构复审新增）
 

@@ -24,6 +24,10 @@ interface AuthContextValue {
   register: (u: string, e: string, p: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
+  // adoptToken swaps in a server-issued token (e.g. the fresh one returned by
+  // a password change, which also bumps the token version and so revokes the
+  // previous token). It persists the token and re-verifies the user.
+  adoptToken: (token: string) => Promise<void>
   token: string
   hasToken: boolean
 }
@@ -89,6 +93,18 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
     }
   }
 
+  // Replace the stored token with a server-issued one and re-verify, so a
+  // session that just rotated its token (password change) keeps working and
+  // the user object reflects the post-change state (e.g. cleared flag).
+  const doAdoptToken = async (t: string) => {
+    localStorage.setItem(TOKEN_KEY, t)
+    try {
+      setUser(await getMe())
+    } catch {
+      /* keep the current user; the next request will re-validate */
+    }
+  }
+
   const value: AuthContextValue = {
     user,
     loading,
@@ -96,6 +112,7 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
     register: doRegister,
     logout: doLogout,
     refresh: doRefresh,
+    adoptToken: doAdoptToken,
     token: user ? localStorage.getItem(TOKEN_KEY) || '' : '',
     hasToken: !!localStorage.getItem(TOKEN_KEY),
   }

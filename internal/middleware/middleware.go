@@ -122,6 +122,33 @@ func CORS(origins string) Middleware {
 	}
 }
 
+// SecurityHeaders sets the baseline hardening headers on every response.
+//
+//   - X-Content-Type-Options: nosniff — stops a browser from MIME-sniffing a
+//     user-uploaded file (e.g. an HTML file that slipped past the extension
+//     check) into an executable document.
+//   - X-Frame-Options: DENY + CSP frame-ancestors 'none' — no clickjacking.
+//   - Referrer-Policy — never leak a full URL to third parties.
+//   - Content-Security-Policy — the API only ever serves JSON and images; a
+//     locked-down policy keeps any crafted response inert if opened directly.
+//   - Strict-Transport-Security — only when the request actually arrived over
+//     HTTPS (directly or via a trusted X-Forwarded-Proto), so a plain-HTTP dev
+//     deployment is never told to force HTTPS.
+func SecurityHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hdr := w.Header()
+		hdr.Set("X-Content-Type-Options", "nosniff")
+		hdr.Set("X-Frame-Options", "DENY")
+		hdr.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		hdr.Set("Content-Security-Policy",
+			"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			hdr.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // JSONError writes a JSON error response with the given status code.
 // The response body is {"error":"msg"}.
 func JSONError(w http.ResponseWriter, code int, msg string) {

@@ -78,6 +78,7 @@
 | 第五十三轮（架构复审） | 同题异构取证 + 目标分层 + 8 阶段路线 | ✅ 只读，未改代码 | 见 `docs/ARCH_REVIEW_2026-10-23.md` |
 | 第五十四轮（P0 立规矩） | `scripts/arch_check.py` 棘轮门禁 + `models.All()` 治漂移漏表 | ✅ 门禁全绿 | 见 §4 |
 | 第五十五轮（P1 分层） | service 层传输符号 12 处 → 0 + `internal/imghost` 抽出 | ✅ 门禁全绿 + 7 组真跑冒烟 | 见 §4 |
+| 第七十二轮（渗透报告核实 + 安全加固） | 作者敏感字段裁剪 / 安全头 / 上传内容校验 / 改密废旧 token / nginx 4 个 location | ✅ 门禁全绿 + 隔离冒烟 15/15 | 见 §4 |
 
 > 第 43–52 轮为功能轮次，详情见 §4 对应小节；本节自第 53 轮起只收录"改了架构或门禁"的里程碑轮。
 
@@ -1117,6 +1118,79 @@
 
 ---
 
+### 补记：第 62–71 轮（2026-10-23，补齐 §4 缺口）
+
+> 这 10 轮当时只写了 `.workbuddy/memory/2026-10-23.md`，§4 漏记，此处按 memory 事实回填（不臆造）。
+
+| 轮次 | 主题 | 关键产出 |
+|---|---|---|
+| 62 | P0–P6 提交推送 + P7（AR-7）i18n 按域拆 + 守卫收敛 | `i18n.tsx` 1775→113 行拆 8 个 locale 文件；新建 `core/roles.ts`；`role ===` 25→3 |
+| 63 | AR-8 前端最小测试 | 引入 `vitest`（1 devDependency），3 个纯函数测试 22 用例 |
+| 64 | AR-1c 上传 413 + A3 审核权限收敛 + `useQuery` 铺开 9 页 | `ReadPage` 因并行 nav/related/reportView 保留手写 |
+| 65 | CSS 可维护性 | 放弃按域拆（会打乱覆盖层顺序），改为文件头「域导航索引」 |
+| 66 | R3 真正收敛 | 24 个散落 DTO 全部收进 `dto.go`（44 个 struct = API 契约单一入口），R3 44→0 |
+| 67 | B7 参数解析统一 | `handlers/query.go` 新增 `parseInts`/`parseID`；顺带修 `categories.go` 4 处静默吞错 |
+| 68 | 找 bug：draft 脏数据 + 标签筛选 + 后台 footer | 封禁 400 + `missing key` 修复；文章管理加「全部标签」；footer 贴底 |
+| 69 | 用户/权限/个人中心逻辑梳理 | 个人中心只显示自己的文章；用户名/邮箱可改；后台权限可视化矩阵 |
+| 70 | 后台全功能真机走查 + 3 个前端 bug | wouter query 失效（`useNavSearch`）、按钮越权渲染（`canEditPost`）、硬刷新掉登录（`setTokenGetter` 提到模块加载）→ 提交 `f157437` 并推送 |
+| 71 | 排查「私密文章被别人看到」 | 后端 9 个读取入口 + 匿名/登录实测证明**不泄漏**；根因是浏览器残留 admin token；另记 2 个真实产品缺陷（编辑器暴露「私密」但存不下来、`pending` 误显为「公开」） |
+
+---
+
+### 第七十二轮 — 渗透测试报告核实 + 9 项安全加固（2026-10-24）
+
+**输入**：用户提供一份外部渗透测试报告，要求「阅读报告解决问题」。逐项复现核实，**不接受报告结论为真**。
+
+#### 核实结果：11 项报出 → 9 真 / 5 假阳性
+
+| # | 报告项 | 判定 | 处置 |
+|---|---|---|---|
+| 1 | 匿名文章载荷泄露作者 `email` / `last_login_ip` | 🔴 **真（HIGH，最严重）** | `Post.SanitizeAuthor()` |
+| 2 | 全站缺安全响应头（nosniff / frame / referrer / CSP / HSTS） | 🟡 真（MED） | 新增 `middleware.SecurityHeaders` |
+| 3 | 上传只校验扩展名，HTML 改后缀可过 | 🟡 真（MED） | `http.DetectContentType` magic bytes |
+| 4 | 改密码后旧 token 仍有效 | 🟡 真（LOW） | `ChangePassword` bump `token_version` + 回发新 token |
+| 5 | 管理员重置密码踢不动目标会话 | 🟡 真 | `ResetPassword` bump 目标 `token_version` |
+| 6 | 登录只认 `email` 字段 | 🟢 真（易用性） | `LoginInput.Username` + 统一 identifier |
+| 7 | dev 下 `/uploads/*` 返回 `index.html` | 🟢 真 | `vite.config.ts` proxy 补 4 条 |
+| 8 | **报告未测出**：nginx 生产 `/uploads` `/feed` `/sitemap.xml` `/robots.txt` 全掉进 SPA fallback | 🔴 **真（生产事故级）** | `deploy/nginx.conf` 补 4 个 location |
+| 9 | **报告未测出**：nginx 静态 location 内 `add_header` 覆盖导致安全头丢失 | 🟡 真 | 静态 location 重复声明 4 头（nginx `add_header` 不继承） |
+| — | `?author=` 用 username 查不到 | ❌ 假阳性 | 参数语义本就是 `user.id`，前端传的也是 id |
+| — | CORS `*` 过宽 | ❌ 假阳性 | 仅 dev 默认；prod `ValidateSecurity` 直接拒绝 `*` |
+| — | `PUT /api/auth/me` 报 invalid body | ❌ 假阳性 | curl 转义问题，同 payload 走 PowerShell 生效 |
+| — | 限流偶发 500 | ❌ 无法复现 | 未采信 |
+| — | `/api/uploads` 任意登录用户可列 | ❌ 设计如此 | 站点设置「图片库」功能需要 |
+
+#### 修复要点（为什么这样做）
+
+- **`SanitizeAuthor` 必须复制而非原地改**：GORM 一次 `Preload` 可能把**同一个 `*User` 指针**挂到多篇文章上，原地置空会造成跨文章静默污染。所以整体 `a := *p.Author` 后重新赋值。
+- **覆盖 9 个出站口**：`CreatePost` / `UpdatePost` / `GetPost` / `GetPostBySlug` / `GetPostPublic` / `ListPostsPage` / `ListArchive` / `ListArchivePage` / `FeedPosts` / `GetPostPrevNext`。
+- **例外留了 `ListPending`**：审核队列要 `email` 识别作者，且该端点 admin 限权——裁剪不能一刀切。
+- **改密回发新 token**：只 bump 不发新 token 会把用户自己踢下线（体验倒退）；`auth.tsx` 新增 `adoptToken()` 写 localStorage 后 `getMe()` 重校验，`ChangePasswordPage` 与 `SecurityCenter` 改密成功后调用。
+- **上传加 magic bytes 而非引入图片解码库**：标准库 `http.DetectContentType` 嗅探前 512 字节，零新依赖，符合「6 个直接依赖」的约束。
+
+#### 验证（全部实测，非推断）
+
+| 门禁 | 结果 |
+|---|---|
+| `go build ./...` / `go vet ./...` | exit 0 / exit 0 |
+| `go test ./...` | 44 文件 / **183** 个 `Test*` 全绿（services 113 / handlers 29 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2） |
+| `tsc --noEmit` / `vite build` | exit 0；JS 234.81 kB / gzip 72.98 kB，CSS 61.57 kB / gzip 11.51 kB |
+| `arch_check.py` | OK，R1–R10 全部零增长（R3=0 / R1b=26 观察项不变） |
+| `contract_check.py` | 方法不匹配 0；前端 69 / 后端 76 |
+| `doc_check.py` | PASS，71 份一致 |
+
+**隔离冒烟 15/15 PASS**（复制 DB 到 18081、临时 uploads/backups 目录、独立二进制，避免污染 `data/app.db`）：匿名列表 `author` 无 `email`/IP 但保留 `username`/`role`、4 个安全头到位、HTML 伪装 `.png` 被 400 拒、真 png 200、改密返回新 token、旧 token 401、新 token 200。
+
+**新增回归测试** `internal/services/author_sanitize_test.go`：`TestPublicPostPayloadStripsAuthorSecrets`（公开列表/单篇无 email+IP、`ListPending` 保留 email）、`TestChangePasswordRevokesOldTokens`（旧 token 401 / 新 token 200）。
+
+#### 测试痕迹清理
+
+备份 `data/app.db.bak-preclean-20261024` 后清除：账号 `securitest001`（被改邮箱 `sec001_new@test.com`）/ `seepriv2` / `otherguy`；其 5 篇测试文章 + 3 条修订 + 1 篇孤儿 `私密复现文章`（author 已不存在）；`uploads/` 下 2 个 43 字节 HTML 注入载荷（`<html><script>alert(1)</script></html>` 伪装成 `.png`）。清理后 users 3 / posts 15 / 孤儿 0。
+
+**未动**：`rio` 账号及其 2 篇文章（可能是用户真实数据）、`data/uploads/` 两个 418KB 真实 PNG（未被任何文章引用，但属有效图片）。
+
+---
+
 ## 五、已知风险 & 待解决问题
 | 等级 | 问题 | 影响 | 状态 |
 |------|------|------|------|
@@ -1128,6 +1202,9 @@
 | 🟢 低 | 全文搜索 LIKE `%...%`，千级以上文章变慢 | 性能瓶颈 | 纯 Go 驱动无 FTS5，暂保留 LIKE；若换支持 FTS5 的驱动再升级 |
 | 🟢 低 | `JWT_SECRET` 生产环境需覆盖 | 安全 | `.env.example` 已注明 |
 | 🟢 低 | `/archive` 一次性拉全部已发布文章（已剥 body，但含 author/category/tags） | 文章上万时单响应偏大 | 已知，接受（低配站规模有限）；量大时改按年分页 |
+| 🔴 高 | 文章载荷随 `Preload(Author)` 泄露 `email`/`last_login_ip` | 匿名可批量收集全站作者账号信息 | ✅ 第 72 轮修复（`SanitizeAuthor`，9 个出站口） |
+| 🟡 中 | 普通用户编辑器暴露「私密」选项，但 `CreatePost` 对非 root 强制 `pending` | 用户以为存成私密，实则进审核，通过后变公开 | ⏳ 待用户拍板（隐藏选项 or 明确提示） |
+| 🟢 低 | `PostEditor` 把后端 `pending` 误显示为「公开」 | 编辑页状态徽章误导作者 | ⏳ 待用户拍板 |
 
 ---
 

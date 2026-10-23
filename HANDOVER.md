@@ -335,10 +335,39 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 ---
 
+### 7.17 Preload 出来的关联对象会整份序列化（第 72 轮，HIGH 级泄漏）
+
+- `Post.Author *User` 一旦被 `Preload("Author")` 加载，`models.User` 的 **JSON tag 会连同 `email` / `last_login_ip` / `last_login_at` / `disabled` / `must_change_password` / `token_version` 一起吐给前端**。匿名 `GET /api/posts` 曾经就是这样泄露全站作者账号信息。
+- 修法：`models.Post.SanitizeAuthor()` 复制一份再置空，**必须复制**——一次 Preload 可能把同一个 `*User` 指针挂到多篇文章上，原地改会跨文章静默污染。
+- 完整覆盖的 9 个出站口见 `PROGRESS.md` 第 72 轮；**唯一例外**是 `ListPending`（审核队列要 email 识别作者，且 admin 限权）。
+- 新增任何"带 author 的返回路径"，**先想想它是否会绕过裁剪**。回归测试：`services/author_sanitize_test.go`。
+
+### 7.18 改密码必须 bump `token_version`，但要回发新 token（第 72 轮）
+
+- 只改 `password_hash` 不改 `token_version` = **旧 token 永久有效**（改密码毫无安全收益）。
+- 但只 bump 不回发新 token = 用户改完自己的密码当场被踢下线（体验倒退）。
+- 正确做法：`bump` + 用新版本 `SignToken` 签发，响应里带 `{token, expires}`，前端 `adoptToken()` 写回 localStorage 再 `getMe()` 重校验。`ResetPassword` 走另一条：只 bump，目标用户下次登录自然失效。
+
+### 7.19 上传必须验内容，不能只验扩展名（第 72 轮）
+
+- 旧实现只查后缀 ∈ `{png,jpg,jpeg,gif,webp}`，`<html><script>alert(1)</script></html>` 改名 `.png` 直接落 `data/uploads/` 并被 nginx 静态托管 → 存储型 XSS 素材。
+- 用标准库 `http.DetectContentType`（前 ≤512 字节 magic bytes）拦，**不引入图片解码库**（守住「6 个直接依赖」）。仅允许 `image/png|jpeg|gif|webp`。
+- nginx 侧 `X-Content-Type-Options: nosniff` 是第二道闸，两道都要有。
+
+### 7.20 nginx `add_header` 不继承——安全头会凭空消失（第 72 轮）
+
+- `add_header` 在 `location` 里一旦出现，**server 级声明的所有安全头在该 location 内全部失效**（nginx 的继承规则，不是 bug）。
+- 本仓库 `deploy/nginx.conf` 的静态资源 location 因此需要**重复声明** 4 个安全头；同理 SPA fallback 会把 `/uploads/` `/feed` `/sitemap.xml` `/robots.txt` 全吃成 `index.html`，必须各自 `location` 反代到 8080。
+- 结论：**改 nginx 后不能只看浏览器，要 `curl -I` 逐个 location 验头**。
+
+---
+
 ## 8. 已知问题 & 待修复清单
 
 | 等级 | 问题 | 位置 / 状态 |
 |------|------|------------|
+| 🟡 | 普通用户编辑器暴露「公开/私密」两个 radio，但 `CreatePost` 对非 root 一律强制 `pending` | `PostEditor.tsx` + `services/posts.go`；用户以为存成私密、实则进审核，通过后变公开。**待拍板**：隐藏该选项 or 明确提示「先过审核」 |
+| 🟢 | `PostEditor` 把后端返回的 `pending` 误显示为「公开」 | `PostEditor.tsx` 初始化逻辑 `status==='private'?'private':'published'`，**待拍板** |
 | 🟡 | 编辑器草稿仅 localStorage，不跨设备 | `PostEditor.tsx`（30 天 TTL，可接受）；服务端修订历史只管已保存版本 |
 | 🟡 | 第 25 轮未写独立功能 spec（用户口述需求直接实现） | `docs/specs/` 暂无 21 号；规则与端点已记入 HANDOVER §5.3/§7.7，建议后补 spec |
 | 🟢 | 登录限流器账号桶 key：`email` 优先、回退 `username`（7.2 已加固） | `login_limiter.go` + 单测 |
