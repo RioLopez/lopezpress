@@ -127,22 +127,6 @@ func (s *Service) backupDir() string {
 
 // --- backup import (restore) ---
 
-// ImportData is the decoded payload for POST /api/backup/import: the same
-// shape ExportBackup produces. All slices are empty-safe (nil ok). The
-// schema_version / app_version fields (spec #6) let the importer reject
-// dumps from an incompatible app before touching the database.
-type ImportData struct {
-	SchemaVersion  int               `json:"schema_version"`
-	AppVersion     string            `json:"app_version"`
-	ExportedAt     string            `json:"exported_at"`
-	Users          []models.User     `json:"users"`
-	PasswordHashes map[string]string `json:"password_hashes,omitempty"`
-	Categories     []models.Category `json:"categories"`
-	Tags           []models.Tag      `json:"tags"`
-	Posts          []models.Post     `json:"posts"`
-	PostTags       []models.PostTag  `json:"post_tags"`
-}
-
 // validateImportPayload enforces the spec #6 schema gate before any write.
 // It returns a 400 ServiceError describing the first incompatibility found.
 // Older dumps without the metadata fields are still accepted (the fields

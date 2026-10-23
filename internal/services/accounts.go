@@ -11,13 +11,6 @@ import (
 	"lopezpress/internal/models"
 )
 
-type CreateUserInput struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
-}
-
 // CreateUser creates an account on behalf of an admin. It is NOT subject to
 // the allow_register gate (admins can always provision users).
 //
@@ -73,12 +66,6 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 	}
 	s.audit(ctx, actor, "create_user", "user:"+u.ID, "username="+in.Username+"; role="+u.Role)
 	return u, nil
-}
-
-// UpdateUserInput is the decoded payload for PUT /api/users/{id}.
-type UpdateUserInput struct {
-	Role     string `json:"role"`
-	Disabled *bool  `json:"disabled"`
 }
 
 // UpdateUser changes role/disabled for a user with hierarchical protection.
@@ -209,12 +196,6 @@ func (s *Service) ResetPassword(ctx context.Context, actor models.User, id, pass
 	}
 	s.audit(ctx, actor, "reset_password", "user:"+id, "")
 	return nil
-}
-
-// ChangePasswordInput is the decoded payload for POST /api/auth/change-password.
-type ChangePasswordInput struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
 }
 
 // ChangePassword lets the caller change their own password. It verifies the

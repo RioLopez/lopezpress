@@ -123,14 +123,6 @@ func randomName(ext string) string {
 	return fmt.Sprintf("%d-%s%s", time.Now().UnixMilli(), hex.EncodeToString(buf), ext)
 }
 
-// UploadImageInfo describes one locally-stored upload in the image library.
-type UploadImageInfo struct {
-	Name    string    `json:"name"`     // file name (relative to the upload dir)
-	URL     string    `json:"url"`      // public /uploads/<name> URL
-	Size    int64     `json:"size"`     // bytes
-	ModTime time.Time `json:"mod_time"` // last modified
-}
-
 // ListLocalUploads lists the files currently in the local upload directory,
 // sorted newest-first. Remote (SM.MS) images are not managed here — deleting
 // them would leave broken links, so the library only governs files this

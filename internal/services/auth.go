@@ -61,12 +61,6 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 	}, nil
 }
 
-// LoginMeta carries request context (IP / User-Agent) used for the audit log.
-type LoginMeta struct {
-	IP string
-	UA string
-}
-
 // Login verifies credentials (by username OR email) and returns a signed JWT
 // along with the public view of the user. Every attempt (success or failure)
 // is recorded in login_log, and a successful login updates the user's

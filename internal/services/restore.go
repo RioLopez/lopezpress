@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -172,13 +171,6 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 	}
 	s.audit(ctx, actor, "restore_snapshot", "snapshot:"+name, "ok")
 	return BackupStats{Users: users, Posts: posts, Categories: cats, Tags: tags}, nil
-}
-
-// SnapshotInfo describes one VACUUM INTO snapshot file on disk.
-type SnapshotInfo struct {
-	Name    string    `json:"name"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"mod_time"`
 }
 
 // ListSnapshots returns the available snapshot-*.db files, newest first.

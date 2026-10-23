@@ -48,14 +48,6 @@ func ClampBackupKeep(n int) int {
 	return n
 }
 
-// AutoBackupStatus is what the settings page shows about the daily snapshot.
-type AutoBackupStatus struct {
-	Enabled bool   `json:"enabled"`
-	Keep    int    `json:"keep"`
-	LastAt  string `json:"last_at"` // RFC3339, empty when never run
-	Files   int    `json:"files"`
-}
-
 // MaybeAutoBackup takes today's snapshot when the feature is on and today's
 // file does not exist yet. It is safe to call on every boot and on a coarse
 // timer: the happy path is one os.Stat.

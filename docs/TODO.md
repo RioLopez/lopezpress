@@ -39,7 +39,8 @@
 > **顺序不能乱**：先 P0 立规矩（否则后面每轮都会长出新写法），再搬代码。
 
 - [x] **AR-0 立机械门禁 `scripts/arch_check.py`（零行为变化，最高性价比）** ✅ 2026-10-23 第 54 轮完成
-  已实现 **7 项计数 + 1 条待补**（R6 错误构造 / R7 迁移注册表需 AST 级检查，随 AR-2/AR-5 落地）：R1 传输符号、R2.files/R2.funcs 文件与函数长度、R3 service 包 struct 堆积、R4 handler 内 `require*`、R5 handler 内 `recordAudit`、R8 前端裸 `fetch`、R9 注释块内重复行。
+  已实现 **7 项计数 + 1 条待补**（R6 错误构造需 AST 级检查，随 AR-2 落地）：R1 传输符号、R2.files/R2.funcs 文件与函数长度、R3 service 包 struct 堆积、R4 handler 内 `require*`、R5 handler 内 `recordAudit`、R8 前端裸 `fetch`、R9 注释块内重复行。
+  **R3 口径演进**：第 66 轮将 24 个散落在 15 个业务文件的 DTO 全部收敛进 `dto.go`（现 44 个 struct = 全 API 契约单一入口），R3 门禁口径从「services 包 struct 总数」改为「散落在 `dto.go` 之外的 struct」（更精准拦「DTO 漂移」），R3 从 44 → **0**；`dto.go` 因纯声明文件超 350 行，加 R2.files 豁免（声明文件长度=API 面，非逻辑堆积）。
   基线存 `scripts/arch_baseline.json`，棘轮语义（只拦变多）。
   已接入 `AGENTS.md` §4 验证门禁（改代码必跑）。已顺手修两个小缺陷：`checkSchemaDrift` 改由新增的 `models.All()` 驱动（原先手写 9/11，漏 `PostRevision` 与 `SchemaMigration`，且与 AutoMigrate 的清单是两份独立副本）；4 处 doc comment 重复（`router.New`、`Service.Register`、`ImportBackup`、`handlers.Register`）。`GetPostPublic` 的 "Increments view_count" 注释已在此前轮次修正，无需再动。
   门禁：`go build/vet/test` 全绿（29 个包/8 个测试包）；`arch_check.py` 退出 0。

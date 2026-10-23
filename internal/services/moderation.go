@@ -11,17 +11,6 @@ import (
 
 // --- review workflow + banned vault (spec: content moderation) ---
 
-// ReviewPostInput is the decoded payload for the review endpoint.
-// Action is "approve" (publish) or "reject" (send back to the author with a
-// note). Note is the reviewer's free-text comment, required for reject and
-// optional for approve.
-type ReviewPostInput struct {
-	// Action is the review decision: "approve" | "reject". The JSON tag is
-	// "decision" (the wire name used by the admin UI).
-	Action string `json:"decision"` // "approve" | "reject"
-	Note   string `json:"note"`
-}
-
 // ReviewPost approves or rejects a post that is currently in the pending
 // queue (or, for reject, a previously rejected post being re-reviewed).
 //
