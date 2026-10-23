@@ -58,17 +58,16 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 	}
 
 	// Review scope: who may review this post depends on the author's role.
+	// Centralised in canReviewPost (root reviews anything; an admin reviews
+	// only plain-user content) so the three-tier rule lives in one place.
 	var author models.User
 	if err := s.db.WithContext(ctx).Where("id = ?", post.AuthorID).First(&author).Error; err != nil {
-		// Author already deleted — only root may still act.
-		if actor.Role != models.RoleRoot {
-			return models.Post{}, newErr(http.StatusForbidden, "only the root can review this post")
-		}
-	} else if author.Role == models.RoleAdmin || author.Role == models.RoleRoot {
-		// admin-authored (or root-authored) posts require root review.
-		if actor.Role != models.RoleRoot {
-			return models.Post{}, newErr(http.StatusForbidden, "admin posts can only be reviewed by the root")
-		}
+		// Author already deleted — fall through with a zero-value author, which
+		// canReviewPost treats as "not a plain user", i.e. root-only.
+		author = models.User{}
+	}
+	if !canReviewPost(actor, author, post) {
+		return models.Post{}, newErr(http.StatusForbidden, "only the root can review this post")
 	}
 
 	now := time.Now()

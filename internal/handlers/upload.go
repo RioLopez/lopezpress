@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -21,6 +22,14 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 
 	const maxFormBytes = 1 << 20 // 1 MB of non-file form fields
 	if err := r.ParseMultipartForm(maxFormBytes); err != nil {
+		// MaxBytesReader above truncates an oversized body *during* parsing, so
+		// the explicit header.Size check below would never fire for a real
+		// over-limit upload. Surface that as 413, not a misleading 400.
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "file too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid multipart form")
 		return
 	}
