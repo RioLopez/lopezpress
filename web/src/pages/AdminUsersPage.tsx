@@ -1,29 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import {
-  listUsers,
-  setUserDisabled,
-  updateUser,
-  createUser,
-  resetPassword,
-  deleteUser,
-  listUserLogins,
-  batchSetUserDisabled,
-  ApiError,
-} from '../core/api'
+import { listUsers, setUserDisabled, updateUser, createUser, resetPassword, deleteUser, listUserLogins, batchSetUserDisabled, errMessage } from '../core/api'
 import type { LoginLog, UserWithDisabled } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
+import { useQuery } from '../core/useQuery'
 
 export function AdminUsersPage() {
   const { user, hasToken } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
-  const [users, setUsers] = useState<UserWithDisabled[]>([])
-  const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchBusy, setBatchBusy] = useState(false)
@@ -35,31 +24,27 @@ export function AdminUsersPage() {
   const [logs, setLogs] = useState<LoginLog[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listUsers()
-      .then(setUsers)
-      .catch(() => pushToast('error', t('admin.failed')))
-      .finally(() => setLoading(false))
-  }, [pushToast, t])
-
-  useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'root') load()
-  }, [user, load])
+  const isAdmin = user?.role === 'admin' || user?.role === 'root'
+  const { data, loading, reload } = useQuery(
+    () => listUsers(),
+    [],
+    { enabled: isAdmin, onError: () => pushToast('error', t('admin.failed')) },
+  )
+  const users = data ?? []
 
   // Prune selection whenever the user list changes so we never act on a
   // removed row.
   useEffect(() => {
     setSelected((prev) => {
-      const ids = new Set(users.map((u) => u.id))
+      const ids = new Set((data ?? []).map((u) => u.id))
       const next = new Set(Array.from(prev).filter((id) => ids.has(id)))
       return next.size === prev.size ? prev : next
     })
-  }, [users])
+  }, [data])
 
   const allSelected = useMemo(
-    () => users.length > 0 && users.every((u) => selected.has(u.id)),
-    [users, selected],
+    () => (data?.length ?? 0) > 0 && (data ?? []).every((u) => selected.has(u.id)),
+    [data, selected],
   )
 
   const toggleSelect = (id: string, on: boolean) => {
@@ -103,9 +88,9 @@ export function AdminUsersPage() {
     try {
       await setUserDisabled(u.id, next)
       pushToast('success', t('admin.saved'))
-      load()
+      reload()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }
@@ -120,9 +105,9 @@ export function AdminUsersPage() {
     try {
       await updateUser(u.id, { role })
       pushToast('success', t('admin.saved'))
-      load()
+      reload()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     }
   }
 
@@ -133,9 +118,9 @@ export function AdminUsersPage() {
     try {
       await deleteUser(u.id)
       pushToast('success', t('admin.deleted'))
-      load()
+      reload()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }
@@ -161,9 +146,9 @@ export function AdminUsersPage() {
         )
       }
       setSelected(new Set())
-      load()
+      reload()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBatchBusy(false)
     }
@@ -317,7 +302,7 @@ export function AdminUsersPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={() => {
             setCreateOpen(false)
-            load()
+            reload()
           }}
         />
       )}
@@ -374,7 +359,7 @@ function CreateUserModal({
       pushToast('success', t('admin.saved'))
       onCreated()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusy(false)
     }
@@ -447,7 +432,7 @@ function ResetPasswordModal({
       pushToast('success', t('admin.saved'))
       onDone()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusy(false)
     }

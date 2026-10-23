@@ -90,7 +90,7 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	for _, p := range posts {
-		link := base + "/read/" + p.ID
+		link := permalink(base, p.Slug, p.ID)
 		feed.Channel.Items = append(feed.Channel.Items, rssItem{
 			Title:       p.Title,
 			Link:        link,
@@ -122,7 +122,7 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 		{Loc: base + "/archive", ChangeFreq: "weekly"},
 	}
 	for _, p := range posts {
-		loc := base + "/read/" + p.ID
+		loc := permalink(base, p.Slug, p.ID)
 		last := p.UpdatedAt
 		if last.IsZero() {
 			last = p.CreatedAt
@@ -194,4 +194,36 @@ func writeXML(w http.ResponseWriter, contentType string, v any) {
 	}
 	w.Write([]byte(xml.Header))
 	w.Write(out)
+}
+
+// permalink prefers the slug form (spec 29) and falls back to the UUID route
+// for rows created before slugs existed. One helper so RSS and sitemap can
+// never advertise two different shapes of the same URL.
+func permalink(base, slug, id string) string {
+	if slug != "" {
+		return base + "/p/" + slug
+	}
+	return base + "/read/" + id
+}
+
+// Robots serves /robots.txt (spec 28).
+//
+// A blog without a robots.txt is not broken, but the file is also the only
+// place to declare the sitemap and to keep /admin + /api out of crawlers. It
+// follows the public_read switch: a locked site tells crawlers to stay away
+// instead of advertising URLs that answer 401.
+func Robots(w http.ResponseWriter, r *http.Request) {
+	cfg, err := svc.GetSiteConfig(r.Context(), false)
+	base := feedBaseURL(r, "")
+	locked := false
+	if err == nil {
+		base = feedBaseURL(r, cfg.SiteURL)
+		locked = !cfg.PublicRead
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if locked {
+		_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
+		return
+	}
+	_, _ = w.Write([]byte("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\n\nSitemap: " + base + "/sitemap.xml\n"))
 }

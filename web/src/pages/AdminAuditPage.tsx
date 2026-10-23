@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
-import { listActions, ApiError } from '../core/api'
+import { listActions, errMessage } from '../core/api'
 import type { ActionLog } from '../core/types'
 
 // Admin audit trail page: who did what on the site (content + admin ops).
@@ -17,7 +17,7 @@ export function AdminAuditPage() {
     let cancelled = false
     listActions(limit)
       .then((d) => { if (!cancelled) setRows(d) })
-      .catch((e) => { if (!cancelled) pushToast('error', e instanceof ApiError ? e.message : 'load failed') })
+      .catch((e) => { if (!cancelled) pushToast('error', errMessage(e, 'load failed')) })
     return () => { cancelled = true }
   }, [limit])
 

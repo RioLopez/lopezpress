@@ -13,24 +13,38 @@ import re, io
 
 src = io.open('internal/router/router.go', encoding='utf-8').read()
 routes = set()
+# Direct registrations (special cases: /, /health, login limiter).
 for m in re.finditer(r'mux\.Handle(?:Func)?\("(GET|POST|PUT|DELETE) ([^"]+)"', src):
     routes.add((m.group(1), m.group(2)))
+# Route-table declaration (P4): {method: "GET", path: "/path", ...}.
+for m in re.finditer(r'\{method:\s*"(GET|POST|PUT|DELETE)",\s*path:\s*"([^"]+)"', src):
+    routes.add((m.group(1), m.group(2)))
+
+
+def _strip_query(p):
+    # Drop the query string and any trailing, unterminated `${...}` fragment.
+    # The latter comes from a nested-backtick template literal such as
+    # `/api/posts/archive/paged${qs ? `?${qs}` : ''}` — the outer path regex
+    # stops at the inner backtick, leaving `${qs ? ` behind.
+    p = re.split(r'\$\{', p)[0]
+    return p.split('?')[0]
+
 
 fe = io.open('web/src/core/api.ts', encoding='utf-8').read()
 fe_calls = []
 # request<T>('path' | `path`, ... { method: 'X' ... })  —— 兼容单引号与反引号
 for m in re.finditer(r"request<[^>]*>\(\s*[`']([^`']+)[`'](?:,\s*\{[^}]*?method:\s*'(\w+)')?", fe):
     path, method = m.group(1), (m.group(2) or 'GET')
-    p = re.sub(r'\$\{[^}]*\}', '{id}', path).split('?')[0]
+    p = _strip_query(re.sub(r'\$\{[^}]*\}', '{id}', path))
     fe_calls.append((method, p))
-# raw fetch('path' / fetch(`path`)  —— downloadBackup / uploadImage
-for m in re.finditer(r"fetch\(\s*[`']([^`']+)[`']", fe):
-    p = re.sub(r'\$\{[^}]*\}', '{id}', m.group(1)).split('?')[0]
-    if not p.startswith('http'):  # skip absolute SM.MS urls
-        fe_calls.append(('GET', p))  # method refined below for known POSTs
-# uploadImage posts FormData to /api/upload
-if "'/api/upload'" in fe or '`/api/upload' in fe:
-    fe_calls = [('POST', p) if p == '/api/upload' else (mth, p) for mth, p in fe_calls]
+# upload<T>('path', form) — multipart POST (uploadImage / importMarkdown).
+for m in re.finditer(r"upload<[^>]*>\(\s*[`']([^`']+)[`']", fe):
+    p = _strip_query(re.sub(r'\$\{[^}]*\}', '{id}', m.group(1)))
+    fe_calls.append(('POST', p))
+# download('path') — binary GET (downloadBackup).
+for m in re.finditer(r"\bdownload\(\s*[`']([^`']+)[`']", fe):
+    p = _strip_query(re.sub(r'\$\{[^}]*\}', '{id}', m.group(1)))
+    fe_calls.append(('GET', p))
 
 def norm(p):
     return re.sub(r'\{[^}]+\}', '{id}', p)

@@ -12,6 +12,10 @@ type Texts = {
     settings: string
     admin: string
     backToContent: string
+    // Spec 26: admin sidebar is grouped instead of 10 flat items.
+    groupContent: string
+    groupUsers: string
+    groupSystem: string
     dashboard: string
     site: string
   }
@@ -124,9 +128,19 @@ type Texts = {
     del: string
     empty: string
     emptyLoggedOut: string
+    // Spec 28: filtered result differs from "no posts at all".
+    noResults: string
+    clearFilters: string
     deleteConfirm: string
     prevPage: string
     nextPage: string
+    // Spec 24: classic pager labels.
+    pagination: string
+    firstPage: string
+    lastPage: string
+    jumpTo: string
+    jumpPage: string
+    pageOutOfRange: string
     pageOf: string
     allCategories: string
     categoryLabel: string
@@ -237,6 +251,14 @@ type Texts = {
     badFormat: string
     noFile: string
   }
+  rev: {
+    title: string
+    empty: string
+    restore: string
+    confirm: string
+    restored: string
+    chars: string
+  }
   admin: {
     categoriesTitle: string
     categoriesSub: string
@@ -246,6 +268,34 @@ type Texts = {
     categoryPlaceholder: string
     add: string
     rename: string
+    // Spec 25: taxonomies get a local filter box + clickable counts.
+    filterPlaceholder: string
+    noMatch: string
+    viewPosts: string
+    // Spec 27: two-level categories + preset tree
+    parentCategory: string
+    topLevel: string
+    applyPreset: string
+    presetApplied: string
+    presetHint: string
+    // Spec 26: admin post management + batch actions
+    // NOTE: `status` / `selectAll` already exist in this section (user
+    // management) and are reused; only the post-specific strings live here.
+    postsTitle: string
+    importMd: string
+    importDone: string
+    postsSub: string
+    time: string
+    selected: string
+    clearSelection: string
+    batchPublish: string
+    batchPrivate: string
+    batchDelete: string
+    batchApply: string
+    batchConfirm: string
+    batchDonePosts: string
+    batchSkipped: string
+    tagsPlaceholder: string
     name: string
     postCount: string
     deleteConfirmCat: string
@@ -358,6 +408,19 @@ type Texts = {
     dashboardSub: string
     statPosts: string
     statViews: string
+    statPending: string
+    trendTitle: string
+    trendHint: string
+    trendEmpty: string
+    topPosts: string
+    topEmpty: string
+    autoBackupTitle: string
+    autoBackupOn: string
+    autoBackupOff: string
+    autoBackupLast: string
+    autoBackupNever: string
+    autoBackupRun: string
+    autoBackupRunDone: string
     recentPosts: string
     recentLogins: string
     // round 24: three-tier roles + review / ban vault
@@ -385,6 +448,9 @@ type Texts = {
     sendBackTitle: string
     sendBackHint: string
     sendBackDone: string
+    // Spec 30: ban a post from the admin list (root only)
+    banPost: string
+    banPostConfirm: string
     deleteBanned: string
     deleteBannedConfirm: string
   }
@@ -407,6 +473,16 @@ type Texts = {
     smms: string
     token: string
     tokenHint: string
+    // Spec 24: public list pagination
+    display: string
+    pageSize: string
+    pageSizeHint: string
+    publicRead: string
+    publicReadHint: string
+    autoBackup: string
+    autoBackupHint: string
+    backupKeep: string
+    backupKeepHint: string
     register: string
     registerOpen: string
     // security notifications (SMTP)
@@ -498,6 +574,11 @@ type Texts = {
     copyCode: string
     codeCopied: string
     tocTitle: string
+    related: string
+    home: string
+    // Spec 29: permanent link
+    permanentLink: string
+    linkCopied: string
     tocOpen: string
     tocClose: string
     backToTop: string
@@ -521,7 +602,7 @@ type Texts = {
 }
 
 const zh: Texts = {
-  nav: { list: '全部文章', create: '写文章', archive: '归档', settings: '设置', admin: '管理', backToContent: '返回内容', dashboard: '仪表盘', site: '站点设置' },
+  nav: { list: '全部文章', create: '写文章', archive: '归档', settings: '设置', admin: '管理', backToContent: '返回内容', dashboard: '仪表盘', site: '站点设置', groupContent: '内容', groupUsers: '用户', groupSystem: '系统' },
   menu: { profile: '个人中心', account: '账号设置', logout: '退出登录', loginOrRegister: '登录 / 注册', confirmLogout: '确定退出登录吗？' },
   center: {
     title: '个人中心',
@@ -625,9 +706,17 @@ const zh: Texts = {
     del: '删除',
     empty: '暂无文章。点击上方按钮写第一篇。',
     emptyLoggedOut: '请先登录。',
+    noResults: '没有找到匹配的文章，换个关键词或分类试试。',
+    clearFilters: '清除筛选',
     deleteConfirm: '确定删除这篇文章吗？',
     prevPage: '上一页',
     nextPage: '下一页',
+    pagination: '分页',
+    firstPage: '首页',
+    lastPage: '末页',
+    jumpTo: '跳至',
+    jumpPage: '页',
+    pageOutOfRange: '这一页没有内容，链接可能已经过期。',
     pageOf: '第 {page} / {total} 页',
     allCategories: '全部分类',
     categoryLabel: '分类',
@@ -736,6 +825,14 @@ const zh: Texts = {
     badFormat: '仅支持 JPG / PNG / WEBP / GIF',
     noFile: '请选择图片文件',
   },
+  rev: {
+    title: '历史版本',
+    empty: '还没有历史版本（首次保存后开始记录）',
+    restore: '恢复此版本',
+    confirm: '用这个版本覆盖当前内容？当前内容也会存进历史，可以再回退。',
+    restored: '已恢复到该版本',
+    chars: '字符',
+  },
   admin: {
     categoriesTitle: '分类管理',
     categoriesSub: '创建、编辑和删除文章分类',
@@ -745,6 +842,29 @@ const zh: Texts = {
     categoryPlaceholder: '分类名称…',
     add: '添加',
     rename: '重命名',
+    filterPlaceholder: '按名称筛选…',
+    noMatch: '没有匹配项',
+    viewPosts: '查看该分类/标签下的文章',
+    parentCategory: '父级分类',
+    topLevel: '（顶级分类）',
+    applyPreset: '应用预设分类',
+    presetApplied: '已创建 {created} 个、归位 {reparented} 个分类',
+    presetHint: '预设为「技术笔记 / 系统与网络 / 生活随笔」三层结构；同名分类只归位、不重建',
+    postsTitle: '文章管理',
+    importMd: '导入 Markdown',
+    importDone: '导入完成：新建 {created} 篇，跳过 {skipped} 个',
+    postsSub: '筛选、编辑、批量处理全站文章',
+    time: '发布时间',
+    selected: '已选 {n} 篇',
+    clearSelection: '取消选择',
+    batchPublish: '发布',
+    batchPrivate: '转为私密',
+    batchDelete: '删除',
+    batchApply: '应用',
+    batchConfirm: '将对 {n} 篇文章执行「{action}」，确定吗？',
+    batchDonePosts: '已处理 {n} 篇',
+    batchSkipped: '{n} 篇被跳过（无权限或不存在）',
+    tagsPlaceholder: '标签，逗号分隔',
     name: '名称',
     postCount: '文章数',
     deleteConfirmCat: '确定删除分类「{t}」吗？该分类下的文章将变为无分类状态。',
@@ -852,6 +972,19 @@ const zh: Texts = {
     dashboardSub: '站点概览与管理入口',
     statPosts: '文章总数',
     statViews: '总浏览量',
+    statPending: '待审核',
+    trendTitle: '近 30 天浏览量',
+    trendHint: '同一访客同一天只看同一篇计一次，已扣除作者本人与爬虫',
+    trendEmpty: '近 30 天还没有阅读记录',
+    topPosts: '最多阅读',
+    topEmpty: '还没有读过任何文章',
+    autoBackupTitle: '自动备份',
+    autoBackupOn: '已开启：每天自动快照一次',
+    autoBackupOff: '未开启',
+    autoBackupLast: '上次快照',
+    autoBackupNever: '还没有快照',
+    autoBackupRun: '立即快照',
+    autoBackupRunDone: '已生成快照：{file}',
     recentPosts: '最近文章',
     recentLogins: '最近登录',
     roleRoot: '超级管理员',
@@ -878,6 +1011,8 @@ const zh: Texts = {
     sendBackTitle: '发回原作者修改',
     sendBackHint: '文章会从封禁库移出，作者可修改后重新提交。',
     sendBackDone: '已发回原作者',
+    banPost: '封禁',
+    banPostConfirm: '封禁后这篇文章只有你能看到，确定吗？',
     deleteBanned: '永久删除',
     deleteBannedConfirm: '确定永久删除「{t}」吗？该操作不可撤销。',
   },
@@ -900,6 +1035,15 @@ const zh: Texts = {
     smms: 'SM.MS',
     token: 'SM.MS Token',
     tokenHint: '服务端保存，浏览器不再可见',
+    display: '显示设置',
+    pageSize: '首页每页文章数',
+    pageSizeHint: '读者不可自行修改，保证分页链接对所有人一致',
+    publicRead: '公开阅读',
+    publicReadHint: '开启后未登录访客也能浏览文章；关闭则必须登录才能看',
+    autoBackup: '每日自动备份',
+    autoBackupHint: '开启后每天生成一份数据库快照，出错可一键回到某一天；占用等于数据库文件大小',
+    backupKeep: '快照保留份数',
+    backupKeepHint: '超过份数的最旧快照会被自动删除（1–90 天）',
     register: '公开注册',
     registerOpen: '允许访客自行注册账号',
     mail: '安全通知（SMTP 邮件）',
@@ -990,6 +1134,10 @@ const zh: Texts = {
     copyCode: '复制代码',
     codeCopied: '已复制',
     tocTitle: '本文目录',
+    related: '相关文章',
+    home: '首页',
+    permanentLink: '复制永久链接',
+    linkCopied: '已复制',
     tocOpen: '展开',
     tocClose: '收起',
     backToTop: '回到顶部',
@@ -1013,7 +1161,7 @@ const zh: Texts = {
 }
 
 const en: Texts = {
-  nav: { list: 'All Posts', create: 'New Post', archive: 'Archive', settings: 'Settings', admin: 'Admin', backToContent: 'Back to content', dashboard: 'Dashboard', site: 'Site' },
+  nav: { list: 'All Posts', create: 'New Post', archive: 'Archive', settings: 'Settings', admin: 'Admin', backToContent: 'Back to content', dashboard: 'Dashboard', site: 'Site', groupContent: 'Content', groupUsers: 'Users', groupSystem: 'System' },
   menu: { profile: 'Profile', account: 'Account settings', logout: 'Sign out', loginOrRegister: 'Sign in / Register', confirmLogout: 'Sign out?' },
   center: {
     title: 'Personal Center',
@@ -1117,9 +1265,17 @@ const en: Texts = {
     del: 'Delete',
     empty: 'No posts yet. Click the button above to write your first one.',
     emptyLoggedOut: 'Please sign in first.',
+    noResults: 'No posts match these filters. Try another keyword or category.',
+    clearFilters: 'Clear filters',
     deleteConfirm: 'Delete this post?',
     prevPage: 'Previous',
     nextPage: 'Next',
+    pagination: 'Pagination',
+    firstPage: 'First',
+    lastPage: 'Last',
+    jumpTo: 'Go to',
+    jumpPage: 'page',
+    pageOutOfRange: 'This page has no content — the link may be out of date.',
     pageOf: 'Page {page} of {total}',
     allCategories: 'All categories',
     categoryLabel: 'Category',
@@ -1228,6 +1384,14 @@ const en: Texts = {
     badFormat: 'Only JPG / PNG / WEBP / GIF are allowed',
     noFile: 'Please select an image file',
   },
+  rev: {
+    title: 'Revision history',
+    empty: 'No earlier versions yet (recorded from the first save)',
+    restore: 'Restore this version',
+    confirm: 'Overwrite the current content with this version? The current text is kept in history too.',
+    restored: 'Version restored',
+    chars: 'chars',
+  },
   admin: {
     categoriesTitle: 'Manage Categories',
     categoriesSub: 'Create, edit and delete post categories',
@@ -1237,6 +1401,29 @@ const en: Texts = {
     categoryPlaceholder: 'Category name…',
     add: 'Add',
     rename: 'Rename',
+    filterPlaceholder: 'Filter by name…',
+    noMatch: 'No matches',
+    viewPosts: 'View the posts in this category/tag',
+    parentCategory: 'Parent category',
+    topLevel: '(top level)',
+    applyPreset: 'Apply preset categories',
+    presetApplied: 'Created {created}, re-parented {reparented}',
+    presetHint: 'Preset: 技术笔记 / 系统与网络 / 生活随笔. Existing names are adopted, never recreated',
+    postsTitle: 'Posts',
+    importMd: 'Import Markdown',
+    importDone: 'Imported {created} post(s), skipped {skipped}',
+    postsSub: 'Filter, edit and bulk-manage every post',
+    time: 'Published',
+    selected: '{n} selected',
+    clearSelection: 'Clear selection',
+    batchPublish: 'Publish',
+    batchPrivate: 'Make private',
+    batchDelete: 'Delete',
+    batchApply: 'Apply',
+    batchConfirm: 'Apply "{action}" to {n} post(s)?',
+    batchDonePosts: '{n} post(s) updated',
+    batchSkipped: '{n} skipped (no permission or missing)',
+    tagsPlaceholder: 'Tags, comma separated',
     name: 'Name',
     postCount: 'Posts',
     deleteConfirmCat: 'Delete category "{t}"? Posts in this category will become uncategorized.',
@@ -1344,6 +1531,19 @@ const en: Texts = {
     dashboardSub: 'Site overview and management',
     statPosts: 'Total posts',
     statViews: 'Total views',
+    statPending: 'Awaiting review',
+    trendTitle: 'Views, last 30 days',
+    trendHint: 'One read per visitor per post per day; the author and crawlers are excluded',
+    trendEmpty: 'No reads in the last 30 days yet',
+    topPosts: 'Most read',
+    topEmpty: 'No post has been read yet',
+    autoBackupTitle: 'Automatic backup',
+    autoBackupOn: 'On: one snapshot per day',
+    autoBackupOff: 'Off',
+    autoBackupLast: 'Last snapshot',
+    autoBackupNever: 'No snapshot yet',
+    autoBackupRun: 'Snapshot now',
+    autoBackupRunDone: 'Snapshot written: {file}',
     recentPosts: 'Recent posts',
     recentLogins: 'Recent logins',
     roleRoot: 'Super admin',
@@ -1370,6 +1570,8 @@ const en: Texts = {
     sendBackTitle: 'Send back to author',
     sendBackHint: 'The post leaves the vault and the author can revise and resubmit.',
     sendBackDone: 'Sent back to the author',
+    banPost: 'Ban',
+    banPostConfirm: 'A banned post is visible to you only. Continue?',
     deleteBanned: 'Delete permanently',
     deleteBannedConfirm: 'Permanently delete "{t}"? This cannot be undone.',
   },
@@ -1392,6 +1594,15 @@ const en: Texts = {
     smms: 'SM.MS',
     token: 'SM.MS Token',
     tokenHint: 'Stored on the server; never exposed to the browser',
+    display: 'Display',
+    pageSize: 'Posts per page',
+    pageSizeHint: 'Readers cannot change this, so a pagination link means the same thing for everyone',
+    publicRead: 'Public reading',
+    publicReadHint: 'When on, visitors can read without signing in; when off, reading requires a login',
+    autoBackup: 'Daily automatic backup',
+    autoBackupHint: 'One database snapshot per day so any day can be restored; costs disk equal to the database size',
+    backupKeep: 'Snapshots to keep',
+    backupKeepHint: 'Older snapshots beyond this count are deleted automatically (1–90 days)',
     register: 'Public registration',
     registerOpen: 'Allow visitors to self-register',
     mail: 'Security notifications (SMTP)',
@@ -1482,6 +1693,10 @@ const en: Texts = {
     copyCode: 'Copy code',
     codeCopied: 'Copied',
     tocTitle: 'On this page',
+    related: 'Related posts',
+    home: 'Home',
+    permanentLink: 'Copy permalink',
+    linkCopied: 'Copied',
     tocOpen: 'Expand',
     tocClose: 'Collapse',
     backToTop: 'Back to top',

@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { ApiError } from '../core/api'
+import { errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function LoginPage() {
@@ -32,7 +32,7 @@ export function LoginPage() {
       pushToast('success', `${t('auth.welcomeBack')}${u.username}`)
       navigate('/')
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('auth.loginFailed'))
+      pushToast('error', errMessage(e, t('auth.loginFailed')))
     } finally {
       setBusy(false)
     }

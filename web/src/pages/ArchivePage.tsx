@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
+import { useCallback, useEffect, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
-import { listArchive, ApiError } from '../core/api'
-import type { Post } from '../core/types'
+import { listArchivePaged, errStatus } from '../core/api'
+import type { Post, PostPage } from '../core/types'
+import { Pagination } from '../ui/Pagination'
 
-// Group posts by month ("YYYY-MM", derived from created_at). Keeps the group
-// order stable by preserving the already-descending backend order.
+// Spec 28: the archive is paginated now. Before this it fetched EVERY
+// published post in one response (body stripped, but three relations
+// preloaded) — fine for a dozen posts, unusable at a thousand on 1 vCPU.
+
+const ARCHIVE_PAGE_SIZE = 50
+
 function groupByMonth(posts: Post[]): { month: string; items: Post[] }[] {
   const groups: { month: string; items: Post[] }[] = []
   for (const p of posts) {
@@ -20,39 +24,44 @@ function groupByMonth(posts: Post[]): { month: string; items: Post[] }[] {
 }
 
 export function ArchivePage() {
-  const { user } = useAuth()
   const { pushToast } = useApp()
   const { t, locale } = useI18n()
   const [, navigate] = useNav()
-  const [groups, setGroups] = useState<{ month: string; items: Post[] }[]>([])
+  const [data, setData] = useState<PostPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [page, setPage] = useState(1)
+
+  const load = useCallback(
+    (q: number) => {
+      setLoading(true)
+      listArchivePaged({ page: q, size: ARCHIVE_PAGE_SIZE })
+        .then((res) => {
+          setData(res)
+          setError(false)
+        })
+        .catch((e) => {
+          if (errStatus(e) === 401) {
+            navigate('/login')
+            return
+          }
+          setError(true)
+          pushToast('error', t('post.loadFailed'))
+        })
+        .finally(() => setLoading(false))
+    },
+    [pushToast, t, navigate],
+  )
 
   useEffect(() => {
-    let active = true
-    listArchive()
-      .then((posts) => {
-        if (!active) return
-        setGroups(groupByMonth(posts))
-        setError(false)
-      })
-      .catch((e) => {
-        if (!active) return
-        if (e instanceof ApiError && e.status === 401) {
-          navigate('/login')
-          return
-        }
-        setError(true)
-        pushToast('error', t('post.loadFailed'))
-      })
-      .finally(() => active && setLoading(false))
-    return () => {
-      active = false
-    }
-  }, [pushToast, t, navigate])
+    load(page)
+  }, [page, load])
 
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
-  const totalPosts = groups.reduce((n, g) => n + g.items.length, 0)
+  const items = data?.items ?? []
+  const groups = groupByMonth(items)
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / (data?.page_size || ARCHIVE_PAGE_SIZE)))
 
   return (
     <div class="archive-page">
@@ -65,7 +74,7 @@ export function ArchivePage() {
           <p class="muted">{t('common.loading')}</p>
         ) : error ? (
           <p class="muted">{t('archive.loadFailed')}</p>
-        ) : groups.length === 0 ? (
+        ) : total === 0 ? (
           <div class="empty-state">
             <div class="empty-icon">
               <div class="empty-icon-doc">
@@ -74,11 +83,11 @@ export function ArchivePage() {
                 <div class="empty-icon-line empty-icon-line--short" />
               </div>
             </div>
-            <p class="empty-text">{user ? t('archive.empty') : t('archive.emptyLoggedOut')}</p>
+            <p class="empty-text">{t('archive.empty')}</p>
           </div>
         ) : (
           <div class="archive-groups">
-            <p class="list-count">{t('archive.total', { n: String(totalPosts) })}</p>
+            <p class="list-count">{t('archive.total', { n: String(total) })}</p>
             {groups.map((g) => (
               <section key={g.month} class="archive-group">
                 <h2 class="archive-group-title">{g.month}</h2>
@@ -94,6 +103,7 @@ export function ArchivePage() {
                 </ul>
               </section>
             ))}
+            <Pagination page={page} totalPages={totalPages} onPage={setPage} />
           </div>
         )}
       </div>

@@ -7,19 +7,10 @@ import (
 	"lopezpress/internal/services"
 )
 
-// recordAudit is a thin wrapper that appends an action_log row. It pulls the
-// actor from the request context (set by WithAuth) and the client IP from the
-// request, so every admin handler can call it on success without threading
-// those through service signatures.
-func recordAudit(r *http.Request, action, target, detail string) {
-	svc.RecordAction(r.Context(), services.ActionInput{
-		Actor:  userFromContext(r),
-		Action: action,
-		Target: target,
-		Detail: detail,
-		IP:     clientIP(r),
-	})
-}
+// Audit rows are written by the service layer, next to the write they describe
+// (internal/services/audit.go). Handlers deliberately have no audit API: that
+// is what makes "every write path is audited" a property of the code rather
+// than a checklist item a new endpoint can forget.
 
 // --- site config (spec 05) ---
 
@@ -42,15 +33,18 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 		"footer_text":  cfg.FooterText,
 		"icp_no":       cfg.IcpNo,
 		"friend_links": cfg.FriendLinks,
+		// Spec 24: the public list needs the server-decided page size so it
+		// can render ?page=N without ever sending `size` itself.
+		"page_size": cfg.PageSize,
+		// Spec 27: the SPA's route guard needs to know whether anonymous
+		// reading is allowed before it can decide to bounce to /login.
+		"public_read": cfg.PublicRead,
 	})
 }
 
 // GetAdminSiteConfig returns the FULL site config (incl. token + flags).
 // GET /api/admin/site-config (auth, admin)
 func GetAdminSiteConfig(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	cfg, err := svc.GetSiteConfig(r.Context(), true)
 	if err != nil {
 		writeServiceError(w, err)
@@ -62,9 +56,6 @@ func GetAdminSiteConfig(w http.ResponseWriter, r *http.Request) {
 // UpdateSiteConfig persists the full site config.
 // PUT /api/admin/site-config (auth, admin)
 func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	var in map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -73,12 +64,21 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	// Map the JSON body onto the model. friend_links arrives as a raw JSON
 	// string (the client serialises the array itself).
 	cfg := services.SiteConfigFromMap(in)
+	// Spec 34: the daily-backup policy is a root-only setting. A non-root
+	// admin saving the settings form must not be able to switch it off (or
+	// silently reset the retention) just because their payload omitted it, so
+	// their submission inherits the stored values.
+	if !services.IsRoot(userFromContext(r)) {
+		if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
+			cfg.AutoBackup = cur.AutoBackup
+			cfg.BackupKeep = cur.BackupKeep
+		}
+	}
 	out, err := svc.UpdateSiteConfig(r.Context(), cfg)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "update_site_config", "site_config", "")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -101,16 +101,12 @@ func RegistrationOpen(w http.ResponseWriter, r *http.Request) {
 // the operator can fix a misconfigured SMTP server.
 // POST /api/admin/mail/test (auth, admin)
 func SendTestMail(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	actor := userFromContext(r)
 	err := svc.SendTestMail(r.Context(), actor)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "send_test_mail", "mail:"+actor.Email, "")
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
 }
 
@@ -119,9 +115,6 @@ func SendTestMail(w http.ResponseWriter, r *http.Request) {
 // CreateUser provisions a new account on behalf of an admin.
 // POST /api/users (auth, admin)
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	var in services.CreateUserInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -132,16 +125,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "create_user", "user:"+u.ID, "username="+in.Username+"; role="+u.Role)
 	writeJSON(w, http.StatusCreated, toUserRow(u))
 }
 
 // UpdateUser changes role/disabled for a user.
 // PUT /api/users/{id} (auth, admin)
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	var in services.UpdateUserInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -153,16 +142,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "update_user", "user:"+id, "role="+in.Role)
 	writeJSON(w, http.StatusOK, toUserRow(u))
 }
 
 // ResetPassword sets a new password for a user.
 // POST /api/users/{id}/reset-password (auth, admin)
 func ResetPassword(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	var in struct {
 		Password string `json:"password"`
@@ -175,31 +160,23 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "reset_password", "user:"+id, "")
 	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
 // DeleteUser removes a user (self + last-admin + posts guards in service).
 // DELETE /api/users/{id} (auth, admin)
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	if err := svc.DeleteUser(r.Context(), userFromContext(r), id); err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "delete_user", "user:"+id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListUserLogins returns a user's recent login history.
 // GET /api/users/{id}/logins?limit=50 (auth, admin)
 func ListUserLogins(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	limit := parseLimit(r.URL.Query(), "limit", 50, 100)
 	logs, err := svc.ListUserLogins(r.Context(), id, limit)
@@ -249,9 +226,6 @@ func GetAuthor(w http.ResponseWriter, r *http.Request) {
 // GetDashboard aggregates admin dashboard widgets.
 // GET /api/admin/dashboard (auth, admin)
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	data, err := svc.GetDashboard(r.Context())
 	if err != nil {
 		writeServiceError(w, err)

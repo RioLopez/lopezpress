@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"lopezpress/internal/clientip"
 	"lopezpress/internal/models"
 )
 
@@ -28,21 +31,25 @@ import (
 //     low on a low-spec machine.
 //   - Rate limiting uses an in-memory token bucket per identity; no Redis.
 type Config struct {
-	Port             string
-	JWTSecret        string
-	JWTExpiryHours   int
-	DBPath           string
-	DBMaxOpen        int
-	DBMaxIdle        int
-	LogLevel         string
-	RateLimitRPS     float64
-	RateLimitBurst   int
-	UploadDir        string // where uploaded images are stored on disk
-	UploadMaxBytes   int64 // per-file upload size cap
-	BackupDir        string // where JSON backup dumps are written
+	Port                 string
+	JWTSecret            string
+	JWTExpiryHours       int
+	DBPath               string
+	DBMaxOpen            int
+	DBMaxIdle            int
+	LogLevel             string
+	RateLimitRPS         float64
+	RateLimitBurst       int
+	UploadDir            string // where uploaded images are stored on disk
+	UploadMaxBytes       int64  // per-file upload size cap
+	BackupDir            string // where JSON backup dumps are written
 	AdminInitialPassword string // optional; if set, used as admin's initial password on first boot
-	CORSOrigins      string // comma-separated allowed origins; "*" allows all (dev default)
-	SmmsToken        string // SM.MS image-host token held server-side (spec #7); optional
+	CORSOrigins          string // comma-separated allowed origins; "*" allows all (dev default)
+	SmmsToken            string // SM.MS image-host token held server-side (spec #7); optional
+	// TrustedProxies is the comma-separated IP/CIDR allow-list whose
+	// X-Forwarded-For headers are believed (spec 23 / TODO P2-6). Empty
+	// falls back to loopback only — see internal/clientip.
+	TrustedProxies string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -53,9 +60,9 @@ func Load() *Config {
 		JWTExpiryHours: envIntOr("JWT_EXPIRY_HOURS", 1),
 		DBPath:         envOr("DB_PATH", "data/app.db"),
 		// Small pool on purpose (see budget notes above).
-		DBMaxOpen:  envIntOr("DB_MAX_OPEN", 4),
-		DBMaxIdle:  envIntOr("DB_MAX_IDLE", 2),
-		LogLevel:   envOr("LOG_LEVEL", "warn"),
+		DBMaxOpen: envIntOr("DB_MAX_OPEN", 4),
+		DBMaxIdle: envIntOr("DB_MAX_IDLE", 2),
+		LogLevel:  envOr("LOG_LEVEL", "warn"),
 		// General per-identity rate limit. Kept generous for the common
 		// case: a single signed-in admin browsing the console fires a burst
 		// of parallel requests on page mount (session + each tab + review
@@ -80,6 +87,10 @@ func Load() *Config {
 		// longer carries this secret; /api/upload proxies to SM.MS when it
 		// is set. Falls back to the site-config token when empty.
 		SmmsToken: os.Getenv("SM_MS_TOKEN"),
+		// Proxy trust list for client-IP resolution (spec 23 / P2-6).
+		// Empty -> internal/clientip trusts loopback only (nginx on the same
+		// host). Set it in prod when the proxy lives on another host.
+		TrustedProxies: envOr("TRUSTED_PROXIES", clientip.DefaultTrustedProxySpec),
 	}
 }
 
@@ -256,11 +267,11 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 	// migrations in runManualMigrations own column-level schema changes for
 	// pre-existing tables; AutoMigrate here is strictly for creating
 	// brand-new tables on a fresh database.
-	allModels := []interface{}{
-		&models.User{}, &models.Post{}, &models.Category{},
-		&models.Tag{}, &models.PostTag{}, &models.SiteConfig{},
-		&models.LoginLog{}, &models.ActionLog{}, &models.SchemaMigration{},
-	}
+	//
+	// models.All() is the single entity list: the drift check below uses the
+	// same one, so a new table cannot be added to one path and forgotten in
+	// the other (that is exactly how PostRevision escaped the drift check).
+	allModels := models.All()
 	existing := map[string]bool{}
 	if err := collectExistingTables(db, existing); err != nil {
 		return nil, "", fmt.Errorf("collect existing tables: %w", err)
@@ -277,9 +288,35 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 		}
 	}
 
+	// Spec 31: presets MUST be seeded before the demo data — otherwise the
+	// demo's own 技术/随笔/教程 rows win the "categories are empty" check and
+	// the designed two-level tree never appears on a fresh install.
+	seedPresetCategories(db)
 	seededPwd := seedDemoData(db, cfg.AdminInitialPassword)
 	seedSiteConfig(db)
+	checkSchemaDrift(db)
 	return db, seededPwd, nil
+}
+
+// seedPresetCategories fills the shipped two-level category tree on a fresh
+// database only (spec 27). An existing install keeps whatever the owner built;
+// they can still apply the preset explicitly from the admin page, which is
+// idempotent and never renames or deletes anything.
+func seedPresetCategories(db *gorm.DB) {
+	var n int64
+	if err := db.Model(&models.Category{}).Count(&n).Error; err != nil || n > 0 {
+		return
+	}
+	for _, root := range models.PresetCategories {
+		parent := models.Category{Name: root.Name}
+		if err := db.Create(&parent).Error; err != nil {
+			continue
+		}
+		for _, childName := range root.Children {
+			pid := parent.ID
+			_ = db.Create(&models.Category{Name: childName, ParentID: &pid}).Error
+		}
+	}
 }
 
 // seedSiteConfig ensures the single-row SiteConfig (id=1) exists with safe
@@ -291,11 +328,13 @@ func seedSiteConfig(db *gorm.DB) {
 		return // already seeded
 	}
 	cfg = models.SiteConfig{
-		ID:           1,
-		SiteName:     "Echo",
-		SiteTitle:    "Echo",
-		ImgHostMode:  "local",
+		ID:            1,
+		SiteName:      "LopezPress",
+		SiteTitle:     "LopezPress",
+		ImgHostMode:   "local",
 		AllowRegister: false,
+		PageSize:      10,
+		PublicRead:    true,
 	}
 	_ = db.Create(&cfg).Error
 }
@@ -334,14 +373,16 @@ func seedDemoData(db *gorm.DB, initialPassword string) string {
 	var count int64
 	db.Model(&models.Post{}).Count(&count)
 	if count == 0 {
-		// Seed categories.
-		cats := []models.Category{
-			{Name: "技术"},
-			{Name: "随笔"},
-			{Name: "教程"},
-		}
-		for i := range cats {
-			_ = db.Create(&cats[i]).Error
+		// Reuse the preset tree when it exists (it normally does — presets are
+		// seeded first); only fall back to the legacy trio on an install that
+		// somehow has none. Creating a second, parallel set of categories was
+		// exactly the bug that hid the preset tree on a fresh database.
+		var cats []models.Category
+		if err := db.Order("id ASC").Find(&cats).Error; err != nil || len(cats) == 0 {
+			cats = []models.Category{{Name: "技术"}, {Name: "随笔"}, {Name: "教程"}}
+			for i := range cats {
+				_ = db.Create(&cats[i]).Error
+			}
 		}
 
 		// Seed tags.
@@ -358,18 +399,18 @@ func seedDemoData(db *gorm.DB, initialPassword string) string {
 
 		posts := []models.Post{
 			{
-				Title: "欢迎来到内容平台",
-				Body:  "这是一篇示例文章，展示 **Markdown 渲染效果**。\n\n## 特性\n\n- 标题、列表、代码块\n- 图片链接（本地 / 图床）\n- 引用块与分隔线\n\n> 好的内容，不需要华丽的装饰。\n\n```go\npackage main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello, echo\")\n}\n```\n\n---\n\n如果你正在读这篇种子文章，说明后端初始化成功了。去写你自己的第一篇文章吧！",
+				Title:    "欢迎来到内容平台",
+				Body:     "这是一篇示例文章，展示 **Markdown 渲染效果**。\n\n## 特性\n\n- 标题、列表、代码块\n- 图片链接（本地 / 图床）\n- 引用块与分隔线\n\n> 好的内容，不需要华丽的装饰。\n\n```go\npackage main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello, lopezpress\")\n}\n```\n\n---\n\n如果你正在读这篇种子文章，说明后端初始化成功了。去写你自己的第一篇文章吧！",
 				AuthorID: user.ID,
 			},
 			{
-				Title: "Go 后端最佳实践",
-				Body:  "从项目结构、错误处理到数据库访问，聊聊 Go Web 服务的工程化经验。\n\n## 项目结构\n\n```\ninternal/\n  config/    # 配置加载\n  models/    # GORM 模型\n  services/  # 业务逻辑（厚层）\n  handlers/  # HTTP 薄层\n  middleware/ # 中间件\n```\n\n错误处理的原则：**把业务错误包装成 `*ServiceError`**，不要将 `gorm` 原始错误泄漏给前端。\n\n### 连接池\n\n低配 VPS（1 GB RAM）上，SQLite 的 `MaxOpenConns` 刻意设为 4，`MaxIdleConns` 设为 2。更大的值只会白白消耗内存。\n\n---\n\n*本文是项目示例文章，仅供演示 Markdown 渲染。*",
+				Title:    "Go 后端最佳实践",
+				Body:     "从项目结构、错误处理到数据库访问，聊聊 Go Web 服务的工程化经验。\n\n## 项目结构\n\n```\ninternal/\n  config/    # 配置加载\n  models/    # GORM 模型\n  services/  # 业务逻辑（厚层）\n  handlers/  # HTTP 薄层\n  middleware/ # 中间件\n```\n\n错误处理的原则：**把业务错误包装成 `*ServiceError`**，不要将 `gorm` 原始错误泄漏给前端。\n\n### 连接池\n\n低配 VPS（1 GB RAM）上，SQLite 的 `MaxOpenConns` 刻意设为 4，`MaxIdleConns` 设为 2。更大的值只会白白消耗内存。\n\n---\n\n*本文是项目示例文章，仅供演示 Markdown 渲染。*",
 				AuthorID: user.ID,
 			},
 			{
-				Title: "前后端分离架构",
-				Body:  "REST API + 独立前端：职责清晰、可独立部署、易于扩展。\n\n## 为什么选择 Preact\n\nPreact 是 React 的轻量替代，核心约 **3 KB**（gzip），API 完全兼容。本项目还用了：\n\n| 依赖 | 用途 | 体积 |\n|------|------|------|\n| `wouter` | URL 路由 | ~4 KB |\n| `marked` | Markdown 渲染 | ~34 KB |\n| 手写 i18n / 主题 | 无额外依赖 | 0 KB |\n\n## 设计原则\n\n1. **厚薄分层**：业务逻辑进 `services` / `core`，页面只做布局。\n2. **低资源**：不用 Redis、不用 ORM 之外的重型库。\n3. **简约视觉**：矩形、无圆角、无阴影、不用 emoji。\n\n> \"少即是多。\" — Mies van der Rohe\n\n---\n\n*本系统面向低配 VPS 设计，追求小而美。*",
+				Title:    "前后端分离架构",
+				Body:     "REST API + 独立前端：职责清晰、可独立部署、易于扩展。\n\n## 为什么选择 Preact\n\nPreact 是 React 的轻量替代，核心约 **3 KB**（gzip），API 完全兼容。本项目还用了：\n\n| 依赖 | 用途 | 体积 |\n|------|------|------|\n| `wouter` | URL 路由 | ~4 KB |\n| `marked` | Markdown 渲染 | ~34 KB |\n| 手写 i18n / 主题 | 无额外依赖 | 0 KB |\n\n## 设计原则\n\n1. **厚薄分层**：业务逻辑进 `services` / `core`，页面只做布局。\n2. **低资源**：不用 Redis、不用 ORM 之外的重型库。\n3. **简约视觉**：矩形、无圆角、无阴影、不用 emoji。\n\n> \"少即是多。\" — Mies van der Rohe\n\n---\n\n*本系统面向低配 VPS 设计，追求小而美。*",
 				AuthorID: user.ID,
 			},
 		}
@@ -408,278 +449,59 @@ func min(a, b int) int {
 	return b
 }
 
-// runManualMigrations applies one-shot schema changes that AutoMigrate cannot
-// perform (column drops). Each migration is gated by a row in
-// schema_migrations so it runs exactly once.
+// checkSchemaDrift logs (never fixes) any model column that is missing from the
+// live schema.
 //
-// Spec #8: drop the deprecated posts.scheduled_at column. Scheduled
-// publishing was removed when the visibility model collapsed to
-// public/private; the column is dead and is dropped via the
-// create-table / copy / drop / rename dance (SQLite cannot ALTER TABLE DROP
-// COLUMN on older toolchains, and the copy approach is version-agnostic).
-func runManualMigrations(db *gorm.DB) error {
-	if exists := db.Migrator().HasTable(&models.SchemaMigration{}); !exists {
-		if err := db.Migrator().CreateTable(&models.SchemaMigration{}); err != nil {
-			return fmt.Errorf("create schema_migrations: %w", err)
-		}
-	}
-
-	if err := dropScheduledAt(db); err != nil {
-		return err
-	}
-	if err := addSmtpColumns(db); err != nil {
-		return err
-	}
-	// Role model (spec: three-tier roles). Promote the oldest admin to root
-	// and guarantee exactly one root across the whole database.
-	if err := promoteFirstAdminToRoot(db); err != nil {
-		return err
-	}
-	// Content moderation (spec: review + banned vault). Add the post review
-	// metadata columns idempotently.
-	if err := addReviewColumns(db); err != nil {
-		return err
-	}
-	return nil
-}
-
-// addSmtpColumns ensures the site_configs table carries the SMTP settings
-// columns added for security notifications. New databases get them from
-// AutoMigrate; already-migrated databases have the table but lack the
-// columns, so we add them idempotently via a probe (ALTER TABLE ADD COLUMN is
-// not idempotent in SQLite).
-func addSmtpColumns(db *gorm.DB) error {
-	const version = "0002_add_smtp_columns"
-	var count int64
-	if err := db.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&count).Error; err != nil {
-		return fmt.Errorf("check smtp migration gate: %w", err)
-	}
-	if count > 0 {
-		return nil // already applied
-	}
-
-	// Fresh databases do not yet have the site_configs table (AutoMigrate runs
-	// after runManualMigrations). There is nothing to add here; the table
-	// will be created with all columns by AutoMigrate. Record the version so
-	// the gate is consistent for the fresh-DB path.
-	var tableCount int64
-	if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='site_configs'").Scan(&tableCount).Error; err != nil {
-		return fmt.Errorf("probe site_configs: %w", err)
-	}
-	if tableCount == 0 {
-		return recordMigration(db, version)
-	}
-
-	probe := func(col string) (bool, error) {
-		var n int64
-		if err := db.Raw("SELECT COUNT(*) FROM pragma_table_info('site_configs') WHERE name = ?", col).Scan(&n).Error; err != nil {
-			return false, err
-		}
-		return n > 0, nil
-	}
-
-	stmts := []struct {
-		col string
-		ddl string
-	}{
-		{"smtp_host", `ALTER TABLE site_configs ADD COLUMN smtp_host VARCHAR(128)`},
-		{"smtp_port", `ALTER TABLE site_configs ADD COLUMN smtp_port INTEGER`},
-		{"smtp_user", `ALTER TABLE site_configs ADD COLUMN smtp_user VARCHAR(128)`},
-		{"smtp_pass", `ALTER TABLE site_configs ADD COLUMN smtp_pass TEXT`},
-	}
-	for _, s := range stmts {
-		exists, err := probe(s.col)
-		if err != nil {
-			return fmt.Errorf("probe %s: %w", s.col, err)
-		}
-		if exists {
+// This is the durable guard for the class of bug that produced 0008: because
+// AutoMigrate is deliberately never run against existing tables (see §7.1),
+// a column added to a model without a matching hand-written migration simply
+// does not exist, and the failure only shows up later as a 500 on one
+// endpoint. A startup WARN makes that immediately visible instead.
+func checkSchemaDrift(db *gorm.DB) {
+	// Driven by models.All(), not a hand-copied list: the previous list had 9
+	// of 11 entities, so post_revisions was never checked for missing columns.
+	for _, m := range models.All() {
+		if !db.Migrator().HasTable(m) {
 			continue
 		}
-		if err := db.Exec(s.ddl).Error; err != nil {
-			return fmt.Errorf("add %s: %w", s.col, err)
+		typ := reflect.TypeOf(m)
+		if typ.Kind() == reflect.Ptr {
+			typ = typ.Elem()
 		}
-	}
-	return recordMigration(db, version)
-}
-
-// dropScheduledAt removes posts.scheduled_at on databases that still carry it.
-func dropScheduledAt(db *gorm.DB) error {
-	const version = "0001_drop_scheduled_at"
-	var count int64
-	if err := db.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&count).Error; err != nil {
-		return fmt.Errorf("check migration gate: %w", err)
-	}
-	if count > 0 {
-		return nil // already applied
-	}
-
-	// Probe whether the column actually exists (fresh databases created after
-	// the model no longer declares it will not).
-	var colCount int64
-	if err := db.Raw("SELECT COUNT(*) FROM pragma_table_info('posts') WHERE name = 'scheduled_at'").Scan(&colCount).Error; err != nil {
-		return fmt.Errorf("probe scheduled_at: %w", err)
-	}
-	if colCount == 0 {
-		// Nothing to drop; still record the version so the gate is consistent.
-		return recordMigration(db, version)
-	}
-
-	// Copy → drop → rename (SQLite-inplace is not universally available).
-	steps := []string{
-		`CREATE TABLE posts_new (
-			id TEXT PRIMARY KEY,
-			title VARCHAR(200) NOT NULL,
-			body TEXT,
-			status VARCHAR(16) DEFAULT 'published',
-			author_id VARCHAR(36),
-			category_id INTEGER,
-			pinned BOOLEAN DEFAULT 0,
-			cover VARCHAR(512),
-			view_count INTEGER DEFAULT 0,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME
-		)`,
-		`INSERT INTO posts_new (id, title, body, status, author_id, category_id, pinned, cover, view_count, created_at, updated_at, deleted_at)
-		 SELECT id, title, body, status, author_id, category_id, pinned, cover, view_count, created_at, updated_at, deleted_at FROM posts`,
-		`DROP TABLE posts`,
-		`ALTER TABLE posts_new RENAME TO posts`,
-		// Re-create indexes that GORM auto-created on the original table.
-		`CREATE INDEX idx_posts_author_id ON posts (author_id)`,
-		`CREATE INDEX idx_posts_deleted_at ON posts (deleted_at)`,
-	}
-	for i, stmt := range steps {
-		if err := db.Exec(stmt).Error; err != nil {
-			return fmt.Errorf("step %d: %w", i+1, err)
-		}
-	}
-	return recordMigration(db, version)
-}
-
-// promoteFirstAdminToRoot introduces the three-tier role model. On databases
-// created before the root role existed, the oldest "admin" account becomes the
-// single "root"; on brand-new databases this is a no-op (the seeder already
-// created root directly). It also enforces the invariant that there is at most
-// one root in the whole table: if several roots somehow coexist, every root
-// except the oldest is demoted to admin so the single-root guarantee holds.
-func promoteFirstAdminToRoot(db *gorm.DB) error {
-	const version = "0003_root_migration"
-	var count int64
-	if err := db.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&count).Error; err != nil {
-		return fmt.Errorf("check root migration gate: %w", err)
-	}
-	if count > 0 {
-		return nil // already applied
-	}
-
-	// Fresh databases do not have the users table yet (AutoMigrate runs after
-	// runManualMigrations). Nothing to promote; record the version so the gate
-	// is consistent for the fresh-DB path.
-	var tableCount int64
-	if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'").Scan(&tableCount).Error; err != nil {
-		return fmt.Errorf("probe users table: %w", err)
-	}
-	if tableCount == 0 {
-		return recordMigration(db, version)
-	}
-
-	// If a root already exists, we only need to enforce uniqueness.
-	var roots []models.User
-	if err := db.Model(&models.User{}).Where("role = ?", models.RoleRoot).
-		Order("created_at ASC, id ASC").Find(&roots).Error; err != nil {
-		return fmt.Errorf("list roots: %w", err)
-	}
-	if len(roots) >= 1 {
-		// Demote any extra roots (keep the oldest) so the single-root invariant
-		// holds even on a manually-corrupted database.
-		for i := 1; i < len(roots); i++ {
-			if err := db.Model(&models.User{}).Where("id = ?", roots[i].ID).
-				Update("role", models.RoleAdmin).Error; err != nil {
-				return fmt.Errorf("demote extra root: %w", err)
+		table := commonTableName(m)
+		for i := 0; i < typ.NumField(); i++ {
+			f := typ.Field(i)
+			if f.Anonymous || f.Tag.Get("gorm") == "-" {
+				continue
+			}
+			if !isColumnField(f.Type) {
+				continue // relations (slices / structs) are not columns
+			}
+			name := db.NamingStrategy.ColumnName("", f.Name)
+			if !db.Migrator().HasColumn(m, name) {
+				log.Printf("WARN schema drift: %s.%s is missing — add a hand-written migration (AutoMigrate never alters existing tables)", table, name)
 			}
 		}
-		return recordMigration(db, version)
 	}
-
-	// No root exists yet: promote the oldest admin. "created_at, id ASC" picks
-	// the account that was provisioned first — the de-facto founder of the site.
-	var admin models.User
-	err := db.Where("role = ?", models.RoleAdmin).
-		Order("created_at ASC, id ASC").First(&admin).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// No admin either (empty table on a fresh DB that AutoMigrate will seed
-		// right after). Record the gate; the seeder will create root directly.
-		return recordMigration(db, version)
-	}
-	if err != nil {
-		return fmt.Errorf("find oldest admin: %w", err)
-	}
-	if err := db.Model(&models.User{}).Where("id = ?", admin.ID).
-		Update("role", models.RoleRoot).Error; err != nil {
-		return fmt.Errorf("promote to root: %w", err)
-	}
-	return recordMigration(db, version)
 }
 
-// addReviewColumns ensures the posts table carries the review-moderation
-// columns (review_note / reviewed_by / reviewed_at) added for the content
-// review workflow and the banned vault. New databases get them from
-// AutoMigrate; already-migrated databases have the table but lack the columns,
-// so we add them idempotently via a probe (ALTER TABLE ADD COLUMN is not
-// idempotent in SQLite).
-func addReviewColumns(db *gorm.DB) error {
-	const version = "0004_add_review_columns"
-	var count int64
-	if err := db.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&count).Error; err != nil {
-		return fmt.Errorf("check review migration gate: %w", err)
-	}
-	if count > 0 {
-		return nil // already applied
-	}
-
-	// Fresh databases do not have the posts table yet (AutoMigrate runs after
-	// runManualMigrations). Nothing to add; record the version for consistency.
-	var tableCount int64
-	if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='posts'").Scan(&tableCount).Error; err != nil {
-		return fmt.Errorf("probe posts table: %w", err)
-	}
-	if tableCount == 0 {
-		return recordMigration(db, version)
-	}
-
-	probe := func(col string) (bool, error) {
-		var n int64
-		if err := db.Raw("SELECT COUNT(*) FROM pragma_table_info('posts') WHERE name = ?", col).Scan(&n).Error; err != nil {
-			return false, err
+// isColumnField reports whether a struct field maps to a database column
+// (relations and time.Time pointers do not follow the slice/struct skip rule).
+func isColumnField(t reflect.Type) bool {
+	timeType := reflect.TypeOf(time.Time{})
+	switch t.Kind() {
+	case reflect.Slice, reflect.Map:
+		return false
+	case reflect.Struct:
+		return t == timeType
+	case reflect.Ptr:
+		elem := t.Elem()
+		if elem == timeType {
+			return true
 		}
-		return n > 0, nil
+		return elem.Kind() != reflect.Struct
 	}
-
-	stmts := []struct {
-		col string
-		ddl string
-	}{
-		{"review_note", `ALTER TABLE posts ADD COLUMN review_note TEXT`},
-		{"reviewed_by", `ALTER TABLE posts ADD COLUMN reviewed_by VARCHAR(36)`},
-		{"reviewed_at", `ALTER TABLE posts ADD COLUMN reviewed_at DATETIME`},
-	}
-	for _, s := range stmts {
-		exists, err := probe(s.col)
-		if err != nil {
-			return fmt.Errorf("probe %s: %w", s.col, err)
-		}
-		if exists {
-			continue
-		}
-		if err := db.Exec(s.ddl).Error; err != nil {
-			return fmt.Errorf("add %s: %w", s.col, err)
-		}
-	}
-	return recordMigration(db, version)
-}
-
-func recordMigration(db *gorm.DB, version string) error {
-	return db.Create(&models.SchemaMigration{Version: version, AppliedAt: time.Now()}).Error
+	return true
 }
 
 // collectExistingTables populates a set of table names that already exist in
@@ -724,6 +546,12 @@ func commonTableName(m interface{}) string {
 		return "login_logs"
 	case *models.SchemaMigration:
 		return "schema_migrations"
+	case *models.ActionLog:
+		return "action_logs"
+	case *models.PostView:
+		return "post_views"
+	case *models.PostRevision:
+		return "post_revisions"
 	}
 	return ""
 }

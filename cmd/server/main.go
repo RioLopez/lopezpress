@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"lopezpress/internal/clientip"
 	"lopezpress/internal/config"
 	"lopezpress/internal/handlers"
 	"lopezpress/internal/middleware"
@@ -34,6 +35,14 @@ func main() {
 	// opening the database, so a bad production setup fails fast.
 	if err := cfg.ValidateSecurity(); err != nil {
 		log.Fatalf("security config invalid: %v", err)
+	}
+
+	// Trusted-proxy list for client-IP resolution (spec 23 / P2-6). Parsed
+	// before anything else so a typo in TRUSTED_PROXIES fails at startup
+	// rather than silently degrading every IP-based decision to the proxy's
+	// address.
+	if err := clientip.Init(cfg.TrustedProxies); err != nil {
+		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
 	}
 
 	if *resetRoot {
@@ -73,6 +82,33 @@ func main() {
 	// dependencies into the thin handlers package.
 	svc := services.New(db, cfg)
 	handlers.Init(db, cfg, svc)
+
+	// Spec 29: posts created before the slug column existed get their
+	// permanent link here (idempotent, one indexed query per boot).
+	if n, err := svc.BackfillSlugs(context.Background()); err != nil {
+		log.Printf("WARN slug backfill failed: %v", err)
+	} else if n > 0 {
+		log.Printf("slug backfill: %d post(s) received a permanent link", n)
+	}
+
+	// Spec 34: daily snapshot. Runs on boot and then on a coarse timer; every
+	// check costs one os.Stat once today's file exists, so a 30-minute tick is
+	// free compared to the request traffic around it.
+	runAutoBackup := func() {
+		if name, err := svc.MaybeAutoBackup(context.Background()); err != nil {
+			log.Printf("WARN auto backup failed: %v", err)
+		} else if name != "" {
+			log.Printf("auto backup: wrote %s", name)
+		}
+	}
+	runAutoBackup()
+	go func() {
+		t := time.NewTicker(30 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			runAutoBackup()
+		}
+	}()
 
 	// Build the per-identity rate limiter from the loaded config.
 	limiter := middleware.NewLimiter(middleware.LimiterConfig{

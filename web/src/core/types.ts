@@ -25,6 +25,8 @@ export interface UserPublic {
 export interface Category {
   id: number
   name: string
+  // Spec 27: null = top level; a number = this category's parent.
+  parent_id: number | null
   created_at: string
 }
 
@@ -34,6 +36,8 @@ export interface Tag {
 }
 
 export interface Post {
+  // Spec 29: human-readable permanent link segment ("" for legacy rows).
+  slug: string
   id: string
   title: string
   body: string
@@ -96,6 +100,17 @@ export interface ListPostsQuery {
   order?: 'asc' | 'desc'
 }
 
+// Spec 31: one saved-before-edit snapshot.
+export interface Revision {
+  id: number
+  post_id: string
+  title: string
+  body: string
+  status: string
+  editor_id: string
+  created_at: string
+}
+
 export interface PostPage {
   items: Post[]
   total: number
@@ -132,6 +147,7 @@ export interface EditorValues {
 export interface CategoryWithCount {
   id: number
   name: string
+  parent_id: number | null
   count: number
 }
 
@@ -176,6 +192,10 @@ export interface SiteConfigPublic {
   footer_text: string
   icp_no: string
   friend_links: string // raw JSON array string
+  // Spec 24: posts per page on the public list (5/10/20/30, server-enforced).
+  page_size: number
+  // Spec 27: whether anonymous visitors may read the site.
+  public_read: boolean
 }
 
 // Full config (admin only) including image-host token + registration flag.
@@ -189,6 +209,9 @@ export interface SiteConfigFull extends SiteConfigPublic {
   smtp_port: number
   smtp_user: string
   smtp_pass: string
+  // Spec 34: daily snapshot settings (root-only surface).
+  auto_backup: boolean
+  backup_keep: number
   updated_at: string
 }
 
@@ -216,9 +239,26 @@ export interface AuthorView {
 }
 
 // --- dashboard (spec 06) ---
+// Spec 33: one day of the view trend (gap-filled server-side).
+export interface DayViews {
+  day: string
+  views: number
+}
+
+// Spec 33: a most-read published post.
+export interface TopPost {
+  id: string
+  title: string
+  slug: string
+  view_count: number
+}
+
 export interface DashboardData {
   posts_total: number
   views_total: number
+  pending_total: number
+  view_trend: DayViews[]
+  top_posts: TopPost[]
   recent_posts: Post[]
   recent_logins: LoginLog[]
 }

@@ -4,13 +4,13 @@ import (
 	"container/list"
 	"context"
 	"math"
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 
 	"golang.org/x/time/rate"
+
+	"lopezpress/internal/clientip"
 )
 
 // Limiter is a token-bucket rate limiter keyed by "identity".
@@ -172,22 +172,10 @@ func UserIDFrom(ctx context.Context) string {
 	return ""
 }
 
-// clientIP extracts the originating client IP, honouring X-Forwarded-For
-// first entry when present (typical behind Nginx / a load balancer).
+// clientIP extracts the originating client IP. The trust rules (only honour
+// X-Forwarded-For from a configured proxy) live in internal/clientip so that
+// the limiter, the login limiter and the handlers can never drift apart
+// (spec 23 / P2-6).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Use the first hop (the original client); proxies append after it.
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if cf := r.Header.Get("CF-Connecting-IP"); cf != "" { // Cloudflare
-		return cf
-	}
-	host := r.RemoteAddr
-	if ip, _, err := net.SplitHostPort(host); err == nil {
-		return ip
-	}
-	return host
+	return clientip.Client(r)
 }

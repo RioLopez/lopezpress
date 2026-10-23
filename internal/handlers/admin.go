@@ -3,45 +3,28 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"lopezpress/internal/models"
 	"lopezpress/internal/services"
 )
 
-// requireAdmin checks the caller is an admin or the root and writes 403
-// otherwise. Returns true when the request may continue.
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if !services.IsAdminOrRoot(userFromContext(r)) {
-		writeError(w, http.StatusForbidden, "admin only")
-		return false
-	}
-	return true
-}
-
-// requireRoot checks the caller is the single super-admin and writes 403
-// otherwise. Used for the banned-vault endpoints, which are root-only.
-func requireRoot(w http.ResponseWriter, r *http.Request) bool {
-	if !services.IsRoot(userFromContext(r)) {
-		writeError(w, http.StatusForbidden, "root only")
-		return false
-	}
-	return true
-}
-
 // toUserRow projects a models.User onto the admin-facing UserWithDisabled DTO.
 func toUserRow(u models.User) services.UserWithDisabled {
 	return services.UserWithDisabled{
-		ID:           u.ID,
-		Username:     u.Username,
-		Email:        u.Email,
-		Role:         u.Role,
-		Disabled:     u.Disabled,
-		DisplayName:  u.DisplayName,
-		LastLoginIP:  u.LastLoginIP,
-		LastLoginAt:  u.LastLoginAt,
-		CreatedAt:    u.CreatedAt,
+		ID:          u.ID,
+		Username:    u.Username,
+		Email:       u.Email,
+		Role:        u.Role,
+		Disabled:    u.Disabled,
+		DisplayName: u.DisplayName,
+		LastLoginIP: u.LastLoginIP,
+		LastLoginAt: u.LastLoginAt,
+		CreatedAt:   u.CreatedAt,
 	}
 }
 
@@ -51,23 +34,34 @@ func toUserRow(u models.User) services.UserWithDisabled {
 // The file name must be a bare name (no path separators); the service layer
 // re-validates it so a tampered query cannot read files outside the backup
 // directory. Callers get 404 rather than 403 to avoid leaking existence.
+//
+// The streaming itself lives here, not in the service: a domain function that
+// writes to an http.ResponseWriter cannot be tested without a transport, and
+// it forces net/http into the service layer's import graph (review finding A1).
 func DownloadBackup(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	name := r.URL.Query().Get("file")
-	if err := svc.ServeBackup(w, r, name); err != nil {
+	path, size, err := svc.ResolveBackupFile(name)
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
+	f, err := os.Open(path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read backup")
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, f)
 }
 
 // ListUsers returns every account with its admin-disabled flag.
 // GET /api/users (auth, admin)
 func ListUsers(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	users, err := svc.ListUsers(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
@@ -79,9 +73,6 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 // SetUserDisabled toggles the disabled flag on a user.
 // PUT /api/users/{id}/disabled  body: { "disabled": bool } (auth, admin)
 func SetUserDisabled(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 
 	var in struct {
@@ -98,39 +89,29 @@ func SetUserDisabled(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "set_user_disabled", "user:"+id, "disabled="+strconvBool(in.Disabled))
 	writeJSON(w, http.StatusOK, services.UserWithDisabled{
 		ID: user.ID, Username: user.Username, Email: user.Email,
 		Role: user.Role, Disabled: user.Disabled, CreatedAt: user.CreatedAt,
 	})
 }
 
-// strconvBool is a tiny helper used only for audit detail strings.
-func strconvBool(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
-}
-
 // ExportBackup writes a JSON dump of the database and returns the result.
 // POST /api/backup (auth, admin)
 func ExportBackup(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	res, err := svc.ExportBackup(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "export_backup", "backup:"+res.Filename, "size="+strconv.FormatInt(res.Size, 10))
 	writeJSON(w, http.StatusOK, res)
 }
 
 // ImportBackup restores the database from an exported backup JSON file. The
 // body is the raw backup payload (same shape ExportBackup produces).
 // POST /api/backup/import (auth, admin) — destructive: replaces current data.
+// The payload can carry arbitrary user rows (incl. role "root" and foreign
+// password hashes), so importing is a whole-database replace and is
+// root-only (as-built audit Q7). The service re-checks the actor.
 //
 // Spec #6 enhancements:
 //   - ?dry_run=1 returns the validated stats WITHOUT applying the import and
@@ -139,14 +120,7 @@ func ExportBackup(w http.ResponseWriter, r *http.Request) {
 //     incompatible dump is rejected with 400 before any write happens.
 //   - A non-dry-run import automatically takes a VACUUM INTO snapshot (keep 3)
 //     before the destructive replace, and returns the snapshot file name.
-// ImportBackup restores the database from an exported backup JSON file. The
-// payload can carry arbitrary user rows (incl. role "root" and foreign
-// password hashes), so importing is a whole-database replace and is
-// root-only (as-built audit Q7). The service re-checks the actor.
 func ImportBackup(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	dryRun := r.URL.Query().Get("dry_run") == "1" || r.URL.Query().Get("dry_run") == "true"
 	var in services.ImportData
 	// Cap the decoded body so a maliciously/huge upload cannot exhaust the
@@ -166,7 +140,6 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "import_backup", "backup", "dry_run="+strconvBool(dryRun))
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -176,9 +149,6 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 // POST /api/backup/restore-snapshot  body: {"file":"snapshot-20260101-000000.db"}
 // (auth, root-only: whole-database replace, as-built audit Q7)
 func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	var in struct {
 		File string `json:"file"`
 	}
@@ -193,7 +163,6 @@ func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	// A destructive database restore is a security-relevant event; record who
 	// did it and from which snapshot (P1-7).
-	recordAudit(r, "restore_snapshot", "snapshot:"+in.File, "ok")
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -202,9 +171,6 @@ func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 // hash, so it is gated like RestoreSnapshot itself (as-built audit Q7).
 // GET /api/backup/snapshots (auth, root)
 func ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	if !requireRoot(w, r) {
-		return
-	}
 	snaps, err := svc.ListSnapshots(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
@@ -213,12 +179,38 @@ func ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snaps)
 }
 
+// GetAutoBackupStatus reports the daily-snapshot state (spec 34).
+// GET /api/admin/backup/auto (root only)
+//
+// Root-only for the same reason the snapshot list is: the file names and
+// timestamps describe the whole installation, not one author's work.
+func GetAutoBackupStatus(w http.ResponseWriter, r *http.Request) {
+	st, err := svc.AutoBackupReport(r.Context(), userFromContext(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+// RunAutoBackupNow takes today's snapshot on demand.
+// POST /api/admin/backup/auto (root only)
+//
+// Manual trigger exists because "I turned it on, did it work?" must be
+// answerable without waiting a day. It is idempotent: when today's file is
+// already there the service returns an empty name instead of overwriting.
+func RunAutoBackupNow(w http.ResponseWriter, r *http.Request) {
+	name, err := svc.MaybeAutoBackup(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"file": name})
+}
+
 // ListTrash returns soft-deleted posts inside the 7-day recovery window.
 // GET /api/trash (auth, admin)
 func ListTrash(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	rows, err := svc.ListTrash(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
@@ -230,39 +222,28 @@ func ListTrash(w http.ResponseWriter, r *http.Request) {
 // RestoreTrash resurrects a single soft-deleted post.
 // POST /api/trash/{id}/restore (auth, admin)
 func RestoreTrash(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	if err := svc.RestoreTrash(r.Context(), id); err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "restore_post", "post:"+id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // EmptyTrash permanently deletes every soft-deleted post.
 // POST /api/trash/empty (auth, admin)
 func EmptyTrash(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	n, err := svc.EmptyTrash(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	recordAudit(r, "empty_trash", "trash", "deleted="+strconv.Itoa(n))
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": n})
 }
 
 // ListActions returns the site's recent admin/content operations (audit trail).
 // GET /api/admin/actions?limit=50&actor=<user-id> (auth, admin)
 func ListActions(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	limit := parseLimit(r.URL.Query(), "limit", 50, 200)
 	actor := r.URL.Query().Get("actor")
 	rows, err := svc.ListActions(r.Context(), actor, limit)

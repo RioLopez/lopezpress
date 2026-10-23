@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { exportBackup, downloadBackup, saveBlob, importBackup, listSnapshots, restoreSnapshot, ApiError } from '../core/api'
+import { exportBackup, downloadBackup, saveBlob, importBackup, listSnapshots, restoreSnapshot, getAutoBackupStatus, runAutoBackup, errMessage } from '../core/api'
 import type { BackupResult, BackupStats, SnapshotInfo } from '../core/types'
 import { fmtDate } from '../core/format'
 
@@ -15,6 +15,9 @@ export function AdminBackupPage() {
   const [importBusy, setImportBusy] = useState(false)
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
   const [restoreBusy, setRestoreBusy] = useState<string | null>(null)
+  // Spec 34: daily-snapshot state ("did last night run?"). Root-only.
+  const [auto, setAuto] = useState<{ enabled: boolean; keep: number; last_at: string; files: number } | null>(null)
+  const [autoBusy, setAutoBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -25,6 +28,7 @@ export function AdminBackupPage() {
   useEffect(() => {
     if (user?.role === 'root' && hasToken) {
       listSnapshots().then(setSnapshots).catch(() => setSnapshots([]))
+      getAutoBackupStatus().then(setAuto).catch(() => setAuto(null))
     }
   }, [user, hasToken])
 
@@ -38,6 +42,26 @@ export function AdminBackupPage() {
     return `${(n / 1024 / 1024).toFixed(1)} MB`
   }
 
+  const runSnapshotNow = async () => {
+    setAutoBusy(true)
+    try {
+      const r = await runAutoBackup()
+      if (r.file) {
+        pushToast('success', t('admin.autoBackupRunDone', { file: r.file }))
+      } else {
+        // Empty name = today's file already exists; that is success, not a
+        // failure, so say so instead of showing nothing happened.
+        pushToast('success', t('admin.autoBackupOn'))
+      }
+      setAuto(await getAutoBackupStatus())
+      setSnapshots(await listSnapshots())
+    } catch (e) {
+      pushToast('error', errMessage(e, t('admin.failed')))
+    } finally {
+      setAutoBusy(false)
+    }
+  }
+
   const doExport = async () => {
     setBusy(true)
     try {
@@ -49,7 +73,7 @@ export function AdminBackupPage() {
       setResult(r)
       pushToast('success', t('admin.exportSuccess'))
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.exportFailed'))
+      pushToast('error', errMessage(e, t('admin.exportFailed')))
     } finally {
       setBusy(false)
     }
@@ -81,7 +105,7 @@ export function AdminBackupPage() {
       // Clear the file input so the same file can be chosen again.
       if (fileRef.current) fileRef.current.value = ''
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.importFailed'))
+      pushToast('error', errMessage(e, t('admin.importFailed')))
     } finally {
       setImportBusy(false)
     }
@@ -97,7 +121,7 @@ export function AdminBackupPage() {
       // gains an entry; refresh to show it.
       listSnapshots().then(setSnapshots).catch(() => {})
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.restoreFailed'))
+      pushToast('error', errMessage(e, t('admin.restoreFailed')))
     } finally {
       setRestoreBusy(null)
     }
@@ -148,6 +172,23 @@ export function AdminBackupPage() {
           <p class="muted">{t('admin.importRootOnly')}</p>
         )}
       </div>
+
+      {user?.role === 'root' && (
+        <div class="backup-import">
+          <h2>{t('admin.autoBackupTitle')}</h2>
+          <p class="muted">
+            {auto?.enabled ? t('admin.autoBackupOn') : t('admin.autoBackupOff')}
+            {' · '}
+            {auto?.last_at
+              ? `${t('admin.autoBackupLast')}: ${fmtDate(auto.last_at, locale)}`
+              : t('admin.autoBackupNever')}
+            {auto ? ` · ${auto.keep} ${t('site.backupKeep')}` : ''}
+          </p>
+          <button class="btn btn-ghost btn-sm" disabled={autoBusy} onClick={runSnapshotNow}>
+            {autoBusy ? '…' : t('admin.autoBackupRun')}
+          </button>
+        </div>
+      )}
 
       {user?.role === 'root' && (
         <div class="backup-import">

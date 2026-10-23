@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listTrash, restoreTrash, emptyTrash, ApiError } from '../core/api'
+import { listTrash, restoreTrash, emptyTrash, errMessage } from '../core/api'
 import type { TrashPost } from '../core/types'
 import { fmtDate } from '../core/format'
 import { TableState } from '../ui/TableState'
@@ -40,7 +40,7 @@ export function AdminTrashPage() {
       pushToast('success', t('admin.restored'))
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setBusyId(null)
     }
@@ -54,7 +54,7 @@ export function AdminTrashPage() {
       pushToast('success', t('admin.emptyTrashDone', { n: String(r.deleted) }))
       load()
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('admin.failed'))
+      pushToast('error', errMessage(e, t('admin.failed')))
     } finally {
       setEmptying(false)
     }

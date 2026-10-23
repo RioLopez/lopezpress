@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { ApiError, registrationOpen } from '../core/api'
+import { registrationOpen, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function RegisterPage() {
@@ -40,7 +40,7 @@ export function RegisterPage() {
       pushToast('success', t('auth.welcomeBack') + username.trim())
       navigate('/')
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('auth.registerFailed'))
+      pushToast('error', errMessage(e, t('auth.registerFailed')))
     } finally {
       setBusy(false)
     }

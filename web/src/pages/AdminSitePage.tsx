@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
-import { getAdminSiteConfig, updateSiteConfig, uploadImage, sendTestMail, ApiError } from '../core/api'
+import { getAdminSiteConfig, updateSiteConfig, uploadImage, sendTestMail, errMessage } from '../core/api'
 import { useSite } from '../core/site'
+import { useAuth } from '../core/auth'
 import type { SiteConfigFull, FriendLink } from '../core/types'
 
 export function AdminSitePage() {
   const { t } = useI18n()
+  const { user } = useAuth()
+  const isRoot = user?.role === 'root'
   const { pushToast } = useApp()
   const { reload } = useSite()
   const [cfg, setCfg] = useState<SiteConfigFull | null>(null)
@@ -21,7 +24,7 @@ export function AdminSitePage() {
       await sendTestMail()
       pushToast('success', t('site.mailTestSent'))
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('site.mailTestFailed'))
+      pushToast('error', errMessage(e, t('site.mailTestFailed')))
     } finally {
       setTesting(false)
     }
@@ -37,7 +40,7 @@ export function AdminSitePage() {
           setLinks([])
         }
       })
-      .catch((e) => pushToast('error', e instanceof ApiError ? e.message : t('admin.failed')))
+      .catch((e) => pushToast('error', errMessage(e, t('admin.failed'))))
   }, [pushToast, t])
 
   if (!cfg) {
@@ -57,7 +60,7 @@ export function AdminSitePage() {
       const r = await uploadImage(file)
       if (r.url) set(target === 'logo' ? 'site_logo' : 'site_favicon', r.url)
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('imgUpload.failed'))
+      pushToast('error', errMessage(e, t('imgUpload.failed')))
     } finally {
       setUploading(null)
     }
@@ -71,7 +74,7 @@ export function AdminSitePage() {
       reload()
       pushToast('success', t('site.saved'))
     } catch (e) {
-      pushToast('error', e instanceof ApiError ? e.message : t('site.saveFailed'))
+      pushToast('error', errMessage(e, t('site.saveFailed')))
     } finally {
       setBusy(false)
     }
@@ -213,6 +216,61 @@ export function AdminSitePage() {
           </div>
         )}
       </section>
+
+      <section class="settings-section">
+        <h3>{t('site.display')}</h3>
+        <div class="settings-field">
+          <label>{t('site.pageSize')}</label>
+          <select
+            value={String(cfg.page_size || 10)}
+            onChange={(e) => set('page_size', Number((e.target as HTMLSelectElement).value))}
+          >
+            {[5, 10, 20, 30].map((n) => (
+              <option key={n} value={String(n)}>{n}</option>
+            ))}
+          </select>
+          <p class="settings-hint">{t('site.pageSizeHint')}</p>
+        </div>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={cfg.public_read}
+            onInput={(e) => set('public_read', (e.target as HTMLInputElement).checked)}
+          />
+          {t('site.publicRead')}
+        </label>
+        <p class="settings-hint">{t('site.publicReadHint')}</p>
+      </section>
+
+      {/* Spec 34: root-only backup policy. Hidden from plain admins because the
+          server ignores their value anyway — showing a switch that does not
+          work is worse than not showing it. */}
+      {isRoot && (
+        <section class="settings-section">
+          <h3>{t('admin.autoBackupTitle')}</h3>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              checked={cfg.auto_backup}
+              onInput={(e) => set('auto_backup', (e.target as HTMLInputElement).checked)}
+            />
+            {t('site.autoBackup')}
+          </label>
+          <p class="settings-hint">{t('site.autoBackupHint')}</p>
+          <div class="settings-field">
+            <label>{t('site.backupKeep')}</label>
+            <select
+              value={String(cfg.backup_keep || 7)}
+              onChange={(e) => set('backup_keep', Number((e.target as HTMLSelectElement).value))}
+            >
+              {[3, 7, 14, 30, 90].map((n) => (
+                <option key={n} value={String(n)}>{n}</option>
+              ))}
+            </select>
+            <p class="settings-hint">{t('site.backupKeepHint')}</p>
+          </div>
+        </section>
+      )}
 
       <section class="settings-section">
         <h3>{t('site.register')}</h3>

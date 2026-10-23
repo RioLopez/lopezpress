@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'preact/hooks'
+import { useEffect, useState, useCallback, useMemo } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { listCategories, listTags, getRecentPosts } from '../core/api'
 import { useNav } from '../core/router'
@@ -37,6 +37,26 @@ export function Sidebar({ activeCategory, activeTag, onCategorySelect, onTagSele
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const linkBase = 'sidebar-link'
 
+  // Spec 27: categories are a two-level tree. Flatten to parents-then-children
+  // so the sidebar keeps its simple <ul> while showing hierarchy.
+  const ordered = useMemo(() => {
+    const roots = categories.filter((c) => c.parent_id == null)
+    const out: { cat: Category; depth: number }[] = []
+    for (const root of roots) {
+      out.push({ cat: root, depth: 0 })
+      for (const child of categories.filter((c) => c.parent_id === root.id)) {
+        out.push({ cat: child, depth: 1 })
+      }
+    }
+    // Orphans (parent row missing) still need to be reachable.
+    for (const cat of categories) {
+      if (cat.parent_id != null && !categories.some((p) => p.id === cat.parent_id)) {
+        out.push({ cat, depth: 0 })
+      }
+    }
+    return out
+  }, [categories])
+
   return (
     <aside class="sidebar">
       <section class="sidebar-section">
@@ -49,8 +69,8 @@ export function Sidebar({ activeCategory, activeTag, onCategorySelect, onTagSele
               onClick={(e) => { e.preventDefault(); onCategorySelect(null) }}
             >{t('sidebar.allCategories')}</a>
           </li>
-          {categories.map((c) => (
-            <li key={c.id}>
+          {ordered.map(({ cat: c, depth }) => (
+            <li key={c.id} class={depth === 1 ? 'sidebar-item--child' : ''}>
               <a
                 href="#"
                 class={`${linkBase} ${activeCategory === c.id ? 'sidebar-link--active' : ''}`}
