@@ -1,6 +1,7 @@
 import { render } from 'preact'
 import { Route, Switch, Redirect, useLocation } from 'wouter'
 import './index.css'
+import type { Role } from './core/types'
 import { AuthProvider, useAuth } from './core/auth'
 import { AppProvider } from './core/app'
 import { I18nProvider, useI18n } from './core/i18n'
@@ -53,18 +54,21 @@ function Readable({ children }: { children: any }) {
   return <Redirect to="/login" />
 }
 
-// Admin pages: require a JWT *and* the admin-or-root role, then render inside
-// the left-vertical sidebar shell (spec 06). Root is the super-admin; admins
-// manage day-to-day. Non-admins bounce back to content.
-function AdminGuarded({ children }: { children: any }) {
+// Admin pages: require a JWT *and* a role in the allow-list, then render
+// inside the left-vertical sidebar shell (spec 06). Root is the super-admin;
+// admins manage day-to-day. The allow-list lives HERE (the routing layer) —
+// pages must not re-check roles (ARCH_REVIEW F3), which is what caused the
+// duplicated `user?.role !== 'admin' && ...` guards across admin pages.
+function AdminGuarded({ children, roles = ['admin', 'root'] }: { children: any; roles?: Role[] }) {
   const { user, hasToken } = useAuth()
   const { t } = useI18n()
   if (!hasToken) return <Redirect to="/login" />
-  if (user?.role !== 'admin' && user?.role !== 'root') {
+  if (!user || !roles.includes(user.role)) {
+    const denied = roles.length === 1 && roles[0] === 'root' ? t('admin.rootOnly') : t('admin.notAdmin')
     return (
       <Layout>
         <div class="admin-page">
-          <p class="muted">{t('admin.notAdmin')}</p>
+          <p class="muted">{denied}</p>
         </div>
       </Layout>
     )
@@ -183,7 +187,7 @@ function AppView() {
       {/* Ban vault (spec 24): root-only list of banned posts. */}
       <Route
         path="/admin/banned"
-        component={() => <AdminGuarded><AdminBanVaultPage /></AdminGuarded>}
+        component={() => <AdminGuarded roles={['root']}><AdminBanVaultPage /></AdminGuarded>}
       />
 
       <Route

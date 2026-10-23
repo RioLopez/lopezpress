@@ -5,9 +5,10 @@ import { useI18n } from '../core/i18n'
 import { exportBackup, downloadBackup, saveBlob, importBackup, listSnapshots, restoreSnapshot, getAutoBackupStatus, runAutoBackup, errMessage } from '../core/api'
 import type { BackupResult, BackupStats, SnapshotInfo } from '../core/types'
 import { fmtDate } from '../core/format'
+import { isRoot } from '../core/roles'
 
 export function AdminBackupPage() {
-  const { user, hasToken } = useAuth()
+  const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
   const [result, setResult] = useState<BackupResult | null>(null)
@@ -20,21 +21,13 @@ export function AdminBackupPage() {
   const [autoBusy, setAutoBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => {
-    if (!hasToken || (user?.role !== 'admin' && user?.role !== 'root')) setResult(null)
-  }, [user, hasToken])
-
   // Snapshots are root-only (whole-database artifacts, as-built audit Q7).
   useEffect(() => {
-    if (user?.role === 'root' && hasToken) {
+    if (isRoot(user?.role)) {
       listSnapshots().then(setSnapshots).catch(() => setSnapshots([]))
       getAutoBackupStatus().then(setAuto).catch(() => setAuto(null))
     }
-  }, [user, hasToken])
-
-  if (!hasToken || (user?.role !== 'admin' && user?.role !== 'root')) {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
+  }, [user])
 
   const fmtBytes = (n: number) => {
     if (n < 1024) return `${n} B`
@@ -161,7 +154,7 @@ export function AdminBackupPage() {
         {/* Import/restore replaces the whole database including the users
             table, so it is root-only (as-built audit Q7). Admins see the
             section disabled rather than hidden, so the gate is explicit. */}
-        {user?.role === 'root' ? (
+        {isRoot(user?.role) ? (
           <div class="backup-import-row">
             <input ref={fileRef} type="file" accept="application/json,.json" />
             <button class="btn btn-danger" onClick={doImport} disabled={importBusy}>
@@ -173,7 +166,7 @@ export function AdminBackupPage() {
         )}
       </div>
 
-      {user?.role === 'root' && (
+      {isRoot(user?.role) && (
         <div class="backup-import">
           <h2>{t('admin.autoBackupTitle')}</h2>
           <p class="muted">
@@ -190,7 +183,7 @@ export function AdminBackupPage() {
         </div>
       )}
 
-      {user?.role === 'root' && (
+      {isRoot(user?.role) && (
         <div class="backup-import">
           <h2>{t('admin.snapshotsTitle')}</h2>
           <p class="muted">{t('admin.snapshotsSub')}</p>

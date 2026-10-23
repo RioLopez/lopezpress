@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
@@ -48,7 +47,6 @@ function buildRows(cats: CategoryWithCount[], filter: string): Row[] {
 }
 
 export function AdminCategoriesPage() {
-  const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
@@ -72,16 +70,12 @@ export function AdminCategoriesPage() {
   }, [pushToast, t])
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'root') load()
-  }, [user, load])
+    load()
+  }, [load])
 
   const rows = useMemo(() => buildRows(cats, filter), [cats, filter])
   // Only top-level categories can be chosen as a parent (two-level rule).
   const parentOptions = useMemo(() => cats.filter((c) => c.parent_id == null), [cats])
-
-  if (user?.role !== 'admin' && user?.role !== 'root') {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
 
   const add = async () => {
     const name = newName.trim()

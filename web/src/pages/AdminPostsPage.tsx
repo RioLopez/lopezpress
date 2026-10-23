@@ -9,6 +9,7 @@ import type { PostStatus, Category } from '../core/types'
 import { Pagination } from '../ui/Pagination'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
+import { isRoot } from '../core/roles'
 
 // Spec 26: the admin post list that the site never had. Before this page,
 // posts were managed from the public home page — reading and administering in
@@ -39,8 +40,7 @@ export function AdminPostsPage() {
   const [busy, setBusy] = useState(false)
 
   const debouncedSearch = useDebounce(search, 300)
-  const isRoot = user?.role === 'root'
-  const isAdmin = user?.role === 'admin' || user?.role === 'root'
+  const isRootUser = isRoot(user?.role)
 
   const { data, loading, reload } = useQuery(
     () =>
@@ -52,7 +52,7 @@ export function AdminPostsPage() {
         category: category == null ? undefined : category,
       }),
     [status, debouncedSearch, page, category],
-    { enabled: isAdmin, onError: (e) => pushToast('error', errMessage(e, t('admin.failed'))) },
+    { onError: (e) => pushToast('error', errMessage(e, t('admin.failed'))) },
   )
 
   useEffect(() => {
@@ -154,10 +154,6 @@ export function AdminPostsPage() {
     [tagInput],
   )
 
-  if (user?.role !== 'admin' && user?.role !== 'root') {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
-
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const selectedCount = selected.size
 
@@ -218,7 +214,7 @@ export function AdminPostsPage() {
       {selectedCount > 0 && (
         <div class="batch-bar">
           <strong class="batch-count">{t('admin.selected', { n: String(selectedCount) })}</strong>
-          {isRoot && (
+          {isRootUser && (
             <button class="btn btn-sm" disabled={busy} onClick={() => runBatch('publish', t('admin.batchPublish'))}>
               {t('admin.batchPublish')}
             </button>
@@ -321,7 +317,7 @@ export function AdminPostsPage() {
                     <button class="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${p.id}`)}>
                       {t('list.edit')}
                     </button>
-                    {isRoot && p.status !== 'banned' && (
+                    {isRootUser && p.status !== 'banned' && (
                       <button class="btn btn-danger btn-sm" onClick={() => banOne(p.id)}>
                         {t('admin.banPost')}
                       </button>

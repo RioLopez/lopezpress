@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
-import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listTrash, restoreTrash, emptyTrash, errMessage } from '../core/api'
@@ -8,7 +7,6 @@ import { fmtDate } from '../core/format'
 import { TableState } from '../ui/TableState'
 
 export function AdminTrashPage() {
-  const { user, hasToken } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
   const [items, setItems] = useState<TrashPost[]>([])
@@ -25,12 +23,8 @@ export function AdminTrashPage() {
   }, [pushToast, t])
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'root') load()
-  }, [user, load])
-
-  if (!hasToken || (user?.role !== 'admin' && user?.role !== 'root')) {
-    return <div class="admin-page"><p class="muted">{t('admin.notAdmin')}</p></div>
-  }
+    load()
+  }, [load])
 
   const restore = async (p: TrashPost) => {
     if (!(await confirmDialog(t('admin.restoreConfirm', { title: p.title })))) return

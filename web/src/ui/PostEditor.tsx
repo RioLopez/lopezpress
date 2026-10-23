@@ -3,6 +3,7 @@ import { useI18n } from '../core/i18n'
 import { renderMD, wordCount } from '../core/md'
 import { listCategories, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
+import { isRoot } from '../core/roles'
 import type { EditorValues, PostStatus, Category } from '../core/types'
 
 type EditorMode = 'split' | 'ir' | 'source'
@@ -109,7 +110,7 @@ export function PostEditor({
   const { user } = useAuth()
   // Spec 24: only root publishes straight to "published"; everyone else's
   // post enters the review queue server-side.
-  const isRoot = user?.role === 'root'
+  const isRootUser = isRoot(user?.role)
   const [title, setTitle] = useState(initialTitle)
   // Spec 22: default to public ("published") when no initial status supplied.
   // Any legacy draft/scheduled value is coerced back to public so a stale
@@ -632,7 +633,7 @@ export function PostEditor({
             {/* Spec 24: non-root posts always queue for review, so surface
                 that up front instead of letting the author wonder why the
                 post never went public. */}
-            {!isRoot && (
+            {!isRootUser && (
               <p class="pe-pinned-hint pe-review-hint">{t('editor.visibilityReviewHint')}</p>
             )}
           </div>
