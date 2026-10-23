@@ -10,6 +10,13 @@ import type { AuthResult, UserPublic } from './types'
 
 const TOKEN_KEY = 'echo.token'
 
+// The token getter must be armed at MODULE LOAD, not inside the provider's
+// useEffect: child components' effects flush before the provider's, so a
+// getter installed there would leave first-render requests (e.g.
+// /api/me/stats on /me) without an Authorization header → 401 →
+// onUnauthorized → a hard refresh of any authed page bounces to /login.
+setTokenGetter(() => localStorage.getItem(TOKEN_KEY) || '')
+
 interface AuthContextValue {
   user: UserPublic | null
   loading: boolean
@@ -28,8 +35,8 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
   const [loading, setLoading] = useState(true)
 
   // On mount: re-verify the stored token (if any) via GET /api/auth/me.
+  // (The token getter itself is armed at module load — see above.)
   useEffect(() => {
-    setTokenGetter(() => localStorage.getItem(TOKEN_KEY) || '')
     // Global 401 handling: a non-auth endpoint rejecting our token means it
     // expired — clear the session and bounce to login (unless already there).
     setOnUnauthorized(() => {

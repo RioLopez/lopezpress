@@ -2,7 +2,7 @@
 // wouter's React types are structurally compatible with Preact's JSX, so it
 // works directly under Preact without any adapter.
 
-import { Link as WLink, useLocation } from 'wouter'
+import { Link as WLink, useLocation, useSearch } from 'wouter'
 import type { ComponentChildren } from 'preact'
 
 // [currentPath, navigate] — call inside any component that needs to read the
@@ -10,6 +10,18 @@ import type { ComponentChildren } from 'preact'
 export function useNav(): [string, (to: string) => void] {
   const [location, navigate] = useLocation()
   return [location, navigate as unknown as (to: string) => void]
+}
+
+// [pathname, search, navigate] — same as useNav, but also hands back the
+// query string. wouter's useLocation returns the pathname ONLY; `?x=` lives
+// in a separate useSearch hook. Appending the search onto useNav's result
+// would look simpler but would break the layouts' exact `path === '/'`
+// matches (nav highlighting, wide main), so the two halves stay separate
+// here and callers that parse deep links (ListPage) opt in explicitly.
+export function useNavSearch(): [string, string, (to: string) => void] {
+  const [pathname, navigate] = useLocation()
+  const search = useSearch()
+  return [pathname, search, navigate as unknown as (to: string) => void]
 }
 
 interface AppLinkProps {
