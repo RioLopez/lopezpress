@@ -48,13 +48,6 @@ func (s *Service) invalidatePublicRead() {
 
 // --- preset category tree (spec 27) ---
 
-// PresetResult reports what applying the preset tree actually changed, so the
-// UI can say "created 5, re-parented 2" instead of a bare "done".
-type PresetResult struct {
-	Created    int `json:"created"`
-	Reparented int `json:"reparented"`
-}
-
 // ApplyPresetCategories materialises models.PresetCategories into the
 // database, idempotently.
 //

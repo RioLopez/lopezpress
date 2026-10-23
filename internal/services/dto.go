@@ -232,3 +232,205 @@ func toPublic(u models.User) UserPublic {
 		CreatedAt:          u.CreatedAt,
 	}
 }
+
+// --- input / meta DTOs (converged from domain files, 2026-10-23) ---
+
+// CreateUserInput is the decoded payload for POST /api/users.
+type CreateUserInput struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
+// UpdateUserInput is the decoded payload for PUT /api/users/{id}.
+type UpdateUserInput struct {
+	Role     string `json:"role"`
+	Disabled *bool  `json:"disabled"`
+}
+
+// ChangePasswordInput is the decoded payload for POST /api/auth/change-password.
+type ChangePasswordInput struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// UpdateMeInput is the decoded payload for PUT /api/auth/me.
+type UpdateMeInput struct {
+	DisplayName string `json:"display_name"`
+	Bio         string `json:"bio"`
+	Avatar      string `json:"avatar"`
+}
+
+// LoginMeta carries request context (IP / User-Agent) used for the audit log.
+type LoginMeta struct {
+	IP string
+	UA string
+}
+
+// ImportData is the decoded payload for POST /api/backup/import: the same
+// shape ExportBackup produces. All slices are empty-safe (nil ok). The
+// schema_version / app_version fields (spec #6) let the importer reject
+// dumps from an incompatible app before touching the database.
+type ImportData struct {
+	SchemaVersion  int               `json:"schema_version"`
+	AppVersion     string            `json:"app_version"`
+	ExportedAt     string            `json:"exported_at"`
+	Users          []models.User     `json:"users"`
+	PasswordHashes map[string]string `json:"password_hashes,omitempty"`
+	Categories     []models.Category `json:"categories"`
+	Tags           []models.Tag      `json:"tags"`
+	Posts          []models.Post     `json:"posts"`
+	PostTags       []models.PostTag  `json:"post_tags"`
+}
+
+// BatchPostInput is the decoded payload of POST /api/admin/posts/batch.
+type BatchPostInput struct {
+	IDs        []string `json:"ids"`
+	Action     string   `json:"action"`
+	CategoryID *int64   `json:"category_id,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+}
+
+// MarkdownFile is one uploaded markdown file.
+type MarkdownFile struct {
+	Name string
+	Body []byte
+}
+
+// ReviewPostInput is the decoded payload for the review endpoint.
+// Action is "approve" (publish) or "reject" (send back to the author with a
+// note). Note is the reviewer's free-text comment, required for reject and
+// optional for approve.
+type ReviewPostInput struct {
+	// Action is the review decision: "approve" | "reject". The JSON tag is
+	// "decision" (the wire name used by the admin UI).
+	Action string `json:"decision"` // "approve" | "reject"
+	Note   string `json:"note"`
+}
+
+// ViewMeta carries the request-derived inputs for view de-duplication.
+//
+// Now is injectable so tests can move between days without sleeping; a zero
+// value means time.Now().
+type ViewMeta struct {
+	IP  string
+	UA  string
+	Now time.Time
+}
+
+// --- response DTOs (converged from domain files, 2026-10-23) ---
+
+// PresetResult reports what applying the preset tree actually changed, so the
+// UI can say "created 5, re-parented 2" instead of a bare "done".
+type PresetResult struct {
+	Created    int `json:"created"`
+	Reparented int `json:"reparented"`
+}
+
+// AuthorUser is the public, sanitised view of an author.
+type AuthorUser struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Bio         string `json:"bio"`
+	Avatar      string `json:"avatar"`
+}
+
+// AuthorView is the payload for GET /api/authors/{username}.
+type AuthorView struct {
+	User  AuthorUser    `json:"user"`
+	Posts []models.Post `json:"posts"`
+}
+
+// DashboardData aggregates the admin dashboard widgets.
+type DashboardData struct {
+	PostsTotal int64 `json:"posts_total"`
+	ViewsTotal int64 `json:"views_total"`
+	// Spec 33: the dashboard answers "is anyone reading?" not just "how many
+	// posts exist". PendingTotal is what needs a human today; ViewTrend is the
+	// last 30 days of de-duplicated reads; TopPosts is what people actually read.
+	PendingTotal int64             `json:"pending_total"`
+	ViewTrend    []DayViews        `json:"view_trend"`
+	TopPosts     []TopPost         `json:"top_posts"`
+	RecentPosts  []models.Post     `json:"recent_posts"`
+	RecentLogins []models.LoginLog `json:"recent_logins"`
+}
+
+// DayViews is one day of the view trend. Days with no reads are present with
+// Views = 0 so the client never has to fill gaps itself.
+type DayViews struct {
+	Day   string `json:"day"`
+	Views int64  `json:"views"`
+}
+
+// TopPost is a most-read post. Only published posts qualify: a banned or
+// pending post's read count is not something an author should be paid
+// attention for.
+type TopPost struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Slug      string `json:"slug"`
+	ViewCount int64  `json:"view_count"`
+}
+
+// AutoBackupStatus is what the settings page shows about the daily snapshot.
+type AutoBackupStatus struct {
+	Enabled bool   `json:"enabled"`
+	Keep    int    `json:"keep"`
+	LastAt  string `json:"last_at"` // RFC3339, empty when never run
+	Files   int    `json:"files"`
+}
+
+// BatchSkip records one post that could not be processed, with the
+// human-readable reason (the service error message, in English per the error
+// contract).
+type BatchSkip struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+// BatchPostResult is the response body: how many rows changed, and which were
+// skipped and why. Partial success is deliberate — one 403 must not roll back
+// the whole batch.
+type BatchPostResult struct {
+	Affected int         `json:"affected"`
+	Skipped  []BatchSkip `json:"skipped"`
+}
+
+// MarkdownSkip records a file that was not imported, with the reason.
+type MarkdownSkip struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// MarkdownImportResult is the response of POST /api/admin/import/markdown.
+type MarkdownImportResult struct {
+	Created int            `json:"created"`
+	Skipped []MarkdownSkip `json:"skipped"`
+}
+
+// UploadImageInfo describes one locally-stored upload in the image library.
+type UploadImageInfo struct {
+	Name    string    `json:"name"`     // file name (relative to the upload dir)
+	URL     string    `json:"url"`      // public /uploads/<name> URL
+	Size    int64     `json:"size"`     // bytes
+	ModTime time.Time `json:"mod_time"` // last modified
+}
+
+// SnapshotInfo describes one VACUUM INTO snapshot file on disk.
+type SnapshotInfo struct {
+	Name    string    `json:"name"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"mod_time"`
+}
+
+// ViewResult is the body of POST /api/posts/{id}/view (spec 23).
+//
+// Counted=false comes with a Reason ("duplicate" / "author" / "bot") so the
+// frontend can decide whether to show anything; the count is always the
+// post's current value so the UI can update itself even when not counted.
+type ViewResult struct {
+	Counted   bool   `json:"counted"`
+	ViewCount int64  `json:"view_count"`
+	Reason    string `json:"reason,omitempty"`
+}

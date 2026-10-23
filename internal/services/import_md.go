@@ -25,24 +25,7 @@ const (
 	maxImportBytes = 2 << 20 // 2 MB per file
 )
 
-// MarkdownFile is one uploaded markdown file.
-type MarkdownFile struct {
-	Name string
-	Body []byte
-}
-
 // MarkdownSkip records a file that was not imported, with the reason.
-type MarkdownSkip struct {
-	Name   string `json:"name"`
-	Reason string `json:"reason"`
-}
-
-// MarkdownImportResult is the response of POST /api/admin/import/markdown.
-type MarkdownImportResult struct {
-	Created int          `json:"created"`
-	Skipped []MarkdownSkip `json:"skipped"`
-}
-
 // frontmatter is the parsed YAML-ish header. Only the handful of keys a blog
 // export actually carries are supported; anything else is ignored.
 type frontmatter struct {

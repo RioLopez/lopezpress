@@ -14,27 +14,9 @@ import (
 	"lopezpress/internal/models"
 )
 
-// ViewMeta carries the request-derived inputs for view de-duplication.
-//
-// Now is injectable so tests can move between days without sleeping; a zero
-// value means time.Now().
-type ViewMeta struct {
-	IP  string
-	UA  string
-	Now time.Time
-}
-
 // ViewResult is the body of POST /api/posts/{id}/view (spec 23).
 //
 // Counted=false comes with a Reason ("duplicate" / "author" / "bot") so the
-// frontend can decide whether to show anything; the count is always the
-// post's current value so the UI can update itself even when not counted.
-type ViewResult struct {
-	Counted   bool   `json:"counted"`
-	ViewCount int64  `json:"view_count"`
-	Reason    string `json:"reason,omitempty"`
-}
-
 // viewRetentionDays is how long de-duplication rows are kept. They exist only
 // to answer "did this visitor already read this post today", so anything older
 // than a few months is dead weight on a 5 GB disk.

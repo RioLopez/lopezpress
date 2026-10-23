@@ -25,13 +25,6 @@ func (s *Service) ListUserLogins(ctx context.Context, id string, limit int) ([]m
 
 // --- profile / author (spec 15) ---
 
-// UpdateMeInput is the decoded payload for PUT /api/auth/me.
-type UpdateMeInput struct {
-	DisplayName string `json:"display_name"`
-	Bio         string `json:"bio"`
-	Avatar      string `json:"avatar"`
-}
-
 // UpdateMe edits the caller's own profile. Empty fields are left unchanged so
 // a partial save never wipes the others.
 func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (models.User, error) {
@@ -52,20 +45,6 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update profile")
 	}
 	return user, nil
-}
-
-// AuthorUser is the public, sanitised view of an author.
-type AuthorUser struct {
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Bio         string `json:"bio"`
-	Avatar      string `json:"avatar"`
-}
-
-// AuthorView is the payload for GET /api/authors/{username}.
-type AuthorView struct {
-	User  AuthorUser    `json:"user"`
-	Posts []models.Post `json:"posts"`
 }
 
 // GetAuthor returns a public author profile plus their published posts. A
@@ -101,37 +80,6 @@ func (s *Service) GetAuthor(ctx context.Context, username string) (AuthorView, e
 }
 
 // --- dashboard (spec 06) ---
-
-// DashboardData aggregates the admin dashboard widgets.
-type DashboardData struct {
-	PostsTotal int64 `json:"posts_total"`
-	ViewsTotal int64 `json:"views_total"`
-	// Spec 33: the dashboard answers "is anyone reading?" not just "how many
-	// posts exist". PendingTotal is what needs a human today; ViewTrend is the
-	// last 30 days of de-duplicated reads; TopPosts is what people actually read.
-	PendingTotal int64             `json:"pending_total"`
-	ViewTrend    []DayViews        `json:"view_trend"`
-	TopPosts     []TopPost         `json:"top_posts"`
-	RecentPosts  []models.Post     `json:"recent_posts"`
-	RecentLogins []models.LoginLog `json:"recent_logins"`
-}
-
-// DayViews is one day of the view trend. Days with no reads are present with
-// Views = 0 so the client never has to fill gaps itself.
-type DayViews struct {
-	Day   string `json:"day"`
-	Views int64  `json:"views"`
-}
-
-// TopPost is a most-read post. Only published posts qualify: a banned or
-// pending post's read count is not something an author should be paid
-// attention for.
-type TopPost struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Slug      string `json:"slug"`
-	ViewCount int64  `json:"view_count"`
-}
 
 // dashboardTrendDays is the trend window. 30 days keeps the payload under a
 // few hundred bytes and still shows a month of rhythm on a 1 vCPU box.

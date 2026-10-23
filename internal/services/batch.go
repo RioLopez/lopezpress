@@ -25,30 +25,7 @@ const (
 // the SQLite write lock for a long time on a 1 vCPU box.
 const maxBatchIDs = 100
 
-// BatchPostInput is the decoded payload of POST /api/admin/posts/batch.
-type BatchPostInput struct {
-	IDs        []string `json:"ids"`
-	Action     string   `json:"action"`
-	CategoryID *int64   `json:"category_id,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-}
-
 // BatchSkip records one post that could not be processed, with the
-// human-readable reason (the service error message, in English per the error
-// contract).
-type BatchSkip struct {
-	ID     string `json:"id"`
-	Reason string `json:"reason"`
-}
-
-// BatchPostResult is the response body: how many rows changed, and which were
-// skipped and why. Partial success is deliberate — one 403 must not roll back
-// the whole batch.
-type BatchPostResult struct {
-	Affected int         `json:"affected"`
-	Skipped  []BatchSkip `json:"skipped"`
-}
-
 // BatchUpdatePosts applies one bulk action to many posts (spec 26).
 //
 // DESIGN: every action delegates to the existing single-item service method
