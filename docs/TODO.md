@@ -49,7 +49,10 @@
   行为验证（真跑，非推断）：上传→取回字节一致 + `Content-Type: image/png`；`Range: bytes=0-9` → 206；`If-Modified-Since` → 304；非图片扩展名 → 400 白名单文案；缺 `file` 字段 → 400；未授权 → 401；`/uploads/../go.mod`、`%2f` 编码、子路径 → 全 404；备份下载 200 + `Content-Length` 与实际字节一致 + `Content-Disposition` 正确；备份名穿越（`../app.db`、`a%2Fb.json`、空名）→ 全 404。
   **测试移动**：`services/upload_test.go` 随被测代码迁到 `imghost/imghost_test.go`，断言不变，另加 1 条 `TestUploadTimeoutIsBounded`（Q11 的防挂死属性）。
 - [ ] **AR-1b（可选，低优先级）状态码语义化**：295 处 `http.StatusXxx` 让领域层仍在说 HTTP 数字。真正做法是把 `newErr(404, ...)` 换成 `newErr(ErrNotFound, ...)` + 单一映射表，而不是复制一份整数常量。收益是领域可脱离 HTTP 表达错误，成本是 295 处替换 + 全量测试复核，故不并入 AR-1。
-- [ ] **AR-1c（真 bug，低优先级）上传超限返回 400 而非 413**：`MaxBytesReader(maxUploadBytes())` 在 `ParseMultipartForm` 阶段就截断，导致 `header.Size > maxUploadBytes()` 的 413 分支**永远走不到**（死代码），用户看到的是 `invalid multipart form`。这是 P1 前就存在的既有行为，本轮只做搬移未改语义。修法：把 `MaxBytesReader` 的错误单独映射成 413。
+- [x] **AR-1c（真 bug）上传超限返回 400 而非 413** ✅ 2026-10-23 第 63 轮完成
+  原：`MaxBytesReader(maxUploadBytes())` 在 `ParseMultipartForm` 阶段就截断，导致 `header.Size > maxUploadBytes()` 的 413 分支走不到（死代码），用户看到的是 `invalid multipart form`（400）。
+  修：`handlers/upload.go` 的 `ParseMultipartForm` 错误处理里，用 `errors.As(*http.MaxBytesError)` 单独映射成 413 `"file too large"`（与 `ImportBackup` 的 P1-6 修法同构）；`header.Size` 检查保留（防御"声明超限但 body 未超"的伪造）。
+  回归 `handlers/upload_test.go` `TestUploadImageOversizeReturns413`（超限 multipart → 413）。
 - [x] **AR-2 审计单点化** ✅ 2026-10-23 第 56 轮完成
   已完成：新建 `internal/services/audit.go` 的 `func (s *Service) audit(ctx, actor, action, target, detail string)`，是**全库唯一** `models.ActionLog` 构造点（R10 门禁拦其余文件）；`WithActor`/`ActorFromContext`/`ClientIPFromContext`/`SystemActor` 把「谁在动、从哪来」经 context 从 JWT 中间件传给 service（handler 不再传 `*http.Request` 给审计）。
   handler 侧 18 处 `recordAudit` 全部下沉为 service 写方法内的 `s.audit(...)`（35 处调用），`recordAudit`/`RecordAction` 双轨删除——R5 18→0、R10=0。
@@ -116,7 +119,7 @@
 - [ ] **P1-1 `roles.go` 集中权限层是死代码（架构失信头号案例）**
   `roles.go:35/:61` `canManageUser`/`canReviewPost` **零调用**，文件头却宣称"所有权限判断都走这里"。实际全靠手写 if-else，漏一个就是 P0-1。
   修法：用户管理 3 方法 + 审核 4 方法全部改调 helper，删手写链。
-  🔶 **部分落地（2026-10-15）**：`ResetPassword` 已改调 `canManageUser`（权限层不再是全死代码，P0-1 根因消除）。`UpdateUser`/`DeleteUser`/`CreateUser`/`ReviewPost`/`BanPost` 仍用手写链——但审计 §6 已确认这些手写链**层级校验完整、行为正确**，整体重写为 helper 风险大于收益，暂缓（属架构美化，非缺陷）。
+  🔶 **持续推进（2026-10-23 第 63 轮）**：`canManageUser` 已由 `ResetPassword` 调用（P0-1 根因消除）；`canReviewPost` 由 `ReviewPost` 改调——原手写 author 角色判断收敛为 helper，回归 `TestReviewPostScopeCentralised` 锁定「admin 不能审 admin 文章、root 能」。`UpdateUser`/`DeleteUser`/`CreateUser` 的用户管理链、`BanPost`/`SendBackPost`/`DeleteBanned` 的 root-only 守卫仍手写——但审计 §6 已确认层级校验完整、行为正确，且 root-only 守卫 P4 已上移路由表（service 层 IsRoot 纵深防御），整体重写风险大于收益，暂缓。
 - [x] **P1-17 root 密码无恢复路径（第 38 轮文档核对发现，运维缺口）**
   `config.go` seed 写入的首启账号是 `Role: RoleRoot`（README 曾误写为 admin）。P0-1 修复后 `ResetPassword` 经 `canManageUser` 拦截「admin 重置 root」，root 自身改密需提供当前密码——**root 忘记密码后没有任何 API 路径可恢复**，只能直改 DB 的 `password_hash` 或删库重建（`ADMIN_INITIAL_PASSWORD` 只在无 admin 账号时生效）。
   ✅ **已修（2026-10-22 第 39 轮）**：新增离线恢复入口 `lopezpress -reset-root-password`（spec `docs/specs/22-root-password-recovery.md`）。`internal/config/recover.go` 的 `ResetRootPasswordForCLI` 查唯一 root → 生成 22 字符随机密码 → 单条 UPDATE 同时改 `password_hash` / 置 `must_change_password` / `token_version+1`（吊销既有会话）；`cmd/server/main.go` 用 `-reset-root-password` 标志在**启动 HTTP 之前**拦截，先 `os.Stat(DBPath)` 拒绝不存在的库（否则 InitDB 会静默 seed 出一个假站点）。刻意不做 HTTP 端点（= 远程接管通道，违背 R2）。回归 `internal/config/recover_test.go` 3 用例（轮换+吊销+强制改密+角色不变 / 只动 root / 无 root 报错且不凭空造 root）；端到端实测：旧密码 401、新密码 200 且 `must_change_password:true`、JWT `ver:1`。

@@ -98,3 +98,33 @@ func TestReviewPostStatePrecondition(t *testing.T) {
 		t.Errorf("re-ban banned post: expected 409, got %v (err=%v)", StatusOf(err), err)
 	}
 }
+
+// TestReviewPostScopeCentralised locks the A3 convergence: an admin may not
+// review an admin-authored post (only root may), and root may review it. The
+// rule now lives in canReviewPost, so this guards the single-authority
+// invariant against hand-rolled role checks creeping back in.
+func TestReviewPostScopeCentralised(t *testing.T) {
+	svc, db := newTestService(t)
+	defer closeDB(db)
+	ctx := context.Background()
+
+	adminAuthor := makeUser(t, db, "adminauthor", "adminauthor@example.com", "admin")
+	adminReviewer := makeUser(t, db, "adminreviewer", "adminreviewer@example.com", "admin")
+	root := makeUser(t, db, "root", "root@example.com", "root")
+
+	// An admin-authored post enters the pending queue (root reviews admins).
+	p, err := svc.CreatePost(ctx, adminAuthor, CreatePostInput{Title: "admin post", Body: "x"})
+	if err != nil {
+		t.Fatalf("create admin post: %v", err)
+	}
+
+	// A different admin must NOT be able to review an admin's post.
+	if _, err := svc.ReviewPost(ctx, adminReviewer, p.ID, ReviewPostInput{Action: "approve"}); StatusOf(err) != http.StatusForbidden {
+		t.Errorf("admin reviewing admin post: expected 403, got %v (err=%v)", StatusOf(err), err)
+	}
+
+	// Root may review it.
+	if _, err := svc.ReviewPost(ctx, root, p.ID, ReviewPostInput{Action: "approve"}); err != nil {
+		t.Errorf("root reviewing admin post: expected success, got %v", err)
+	}
+}
