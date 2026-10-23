@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'preact/hooks'
 import { useI18n } from '../../core/i18n'
 import { useNav } from '../../core/router'
 import { useApp } from '../../core/app'
+import { useAuth } from '../../core/auth'
 import { listPostsPaged, updatePost, errMessage } from '../../core/api'
 import type { Post, PostStatus } from '../../core/types'
 import { fmtDay } from '../../core/format'
@@ -11,11 +12,13 @@ import { Pager, PAGE_SIZE } from './Pager'
 export function ContentManage() {
   const { t } = useI18n()
   const { pushToast } = useApp()
+  const { user } = useAuth()
   const [, navigate] = useNav()
   const [page, setPage] = useState(1)
   const { data, loading, error, reload, setData } = useQuery(
-    () => listPostsPaged({ page, size: PAGE_SIZE }),
-    [page],
+    // Personal center shows the caller's own content only (not the whole site).
+    () => listPostsPaged({ page, size: PAGE_SIZE, author: user?.id }),
+    [page, user?.id],
   )
   // Optimistic visibility switch + undo (spec 22). Undo holds the previous
   // status so the user can roll back within a short window; at most one

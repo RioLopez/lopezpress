@@ -32,6 +32,25 @@ export type SiteTexts = {
     backupKeepHint: string
     register: string
     registerOpen: string
+    registerOpenHint: string
+    // Three-tier role / permission matrix (read-only reference)
+    permissions: string
+    permissionsHint: string
+    permColRole: string
+    permRowManageUsers: string
+    permRowManageContent: string
+    permRowReview: string
+    permRowBan: string
+    permRowBackup: string
+    permRowSiteConfig: string
+    permRowAuthorPost: string
+    permRowSelfEdit: string
+    permRoot: string
+    permAdmin: string
+    permUser: string
+    permYes: string
+    permNo: string
+    permOwnOnly: string
     // security notifications (SMTP)
     mail: string
     mailHost: string
@@ -123,6 +142,24 @@ export const siteZh: SiteTexts = {
     backupKeepHint: '超过份数的最旧快照会被自动删除（1–90 天）',
     register: '公开注册',
     registerOpen: '允许访客自行注册账号',
+    registerOpenHint: '关闭后访客无法注册，只能由管理员在后台创建账号',
+    permissions: '角色权限说明',
+    permissionsHint: '三级角色（超级管理员 / 管理员 / 普通用户）的权限对照，仅供查看，规则由系统固化。',
+    permColRole: '权限',
+    permRowManageUsers: '管理用户',
+    permRowManageContent: '管理分类 / 标签',
+    permRowReview: '审核文章',
+    permRowBan: '封禁 / 解封文章',
+    permRowBackup: '备份导入 / 快照恢复',
+    permRowSiteConfig: '站点设置',
+    permRowAuthorPost: '发表文章',
+    permRowSelfEdit: '编辑 / 删除自己的文章',
+    permRoot: '超级管理员',
+    permAdmin: '管理员',
+    permUser: '普通用户',
+    permYes: '可',
+    permNo: '不可',
+    permOwnOnly: '仅自己',
     mail: '安全通知（SMTP 邮件）',
     mailHost: 'SMTP 主机',
     mailPort: 'SMTP 端口（587 或 465）',
@@ -213,6 +250,24 @@ export const siteEn: SiteTexts = {
     backupKeepHint: 'Older snapshots beyond this count are deleted automatically (1–90 days)',
     register: 'Public registration',
     registerOpen: 'Allow visitors to self-register',
+    registerOpenHint: 'When off, visitors cannot register; accounts must be created by an admin',
+    permissions: 'Role permissions',
+    permissionsHint: 'Reference matrix for the three tiers (super admin / admin / user). Read-only; the rules are fixed in code.',
+    permColRole: 'Permission',
+    permRowManageUsers: 'Manage users',
+    permRowManageContent: 'Manage categories / tags',
+    permRowReview: 'Review posts',
+    permRowBan: 'Ban / unban posts',
+    permRowBackup: 'Backup import / snapshot restore',
+    permRowSiteConfig: 'Site settings',
+    permRowAuthorPost: 'Author posts',
+    permRowSelfEdit: 'Edit / delete own posts',
+    permRoot: 'Super admin',
+    permAdmin: 'Admin',
+    permUser: 'User',
+    permYes: 'Yes',
+    permNo: 'No',
+    permOwnOnly: 'Own only',
     mail: 'Security notifications (SMTP)',
     mailHost: 'SMTP host',
     mailPort: 'SMTP port (587 or 465)',

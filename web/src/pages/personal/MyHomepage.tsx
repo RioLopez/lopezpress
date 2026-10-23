@@ -20,8 +20,9 @@ export function MyHomepage({ user }: { user: UserPublic | null }) {
   }, [])
 
   const { data, loading, error, reload } = useQuery(
-    () => listPostsPaged({ page, size: PAGE_SIZE, sort, order }),
-    [page, sort, order],
+    // My homepage lists the caller's own posts only (personal center semantics).
+    () => listPostsPaged({ page, size: PAGE_SIZE, sort, order, author: user?.id }),
+    [page, sort, order, user?.id],
   )
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1

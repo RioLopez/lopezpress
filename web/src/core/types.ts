@@ -98,6 +98,8 @@ export interface ListPostsQuery {
   size?: number
   category?: number
   tag?: string
+  // Scope to a single author (personal center "my content only").
+  author?: string
   // Personal-center sort (spec 20): "created_at" (default) | "views"
   sort?: 'created_at' | 'views'
   // "asc" | "desc" (default)

@@ -886,6 +886,15 @@ code.hl { background: var(--hl, #fff3a3); }
 .admin-table td.actions .btn { margin-right: 6px; }
 .admin-table td.col-select { width: 36px; text-align: center; }
 .admin-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+/* Read-only three-tier role / permission matrix (site settings). */
+.perm-matrix {
+  width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px;
+}
+.perm-matrix th, .perm-matrix td {
+  border: 1px solid var(--border); padding: 8px 12px; text-align: center;
+}
+.perm-matrix th { background: var(--surface-2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.perm-matrix td:first-child { text-align: left; font-weight: 500; }
 tr.row-selected td { background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
 tr.row-selected { transition: background .12s; }
 .admin-batchbar {

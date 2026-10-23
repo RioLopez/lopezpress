@@ -283,6 +283,32 @@ export function AdminSitePage() {
           />
           {t('site.registerOpen')}
         </label>
+        <p class="settings-hint">{t('site.registerOpenHint')}</p>
+      </section>
+
+      <section class="settings-section">
+        <h3>{t('site.permissions')}</h3>
+        <p class="settings-hint">{t('site.permissionsHint')}</p>
+        <table class="perm-matrix">
+          <thead>
+            <tr>
+              <th>{t('site.permColRole')}</th>
+              <th>{t('site.permRoot')}</th>
+              <th>{t('site.permAdmin')}</th>
+              <th>{t('site.permUser')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>{t('site.permRowManageUsers')}</td><td>{t('site.permYes')}</td><td>{t('site.permOwnOnly')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowManageContent')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowReview')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowBan')}</td><td>{t('site.permYes')}</td><td>{t('site.permOwnOnly')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowBackup')}</td><td>{t('site.permYes')}</td><td>{t('site.permNo')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowSiteConfig')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td><td>{t('site.permNo')}</td></tr>
+            <tr><td>{t('site.permRowAuthorPost')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td></tr>
+            <tr><td>{t('site.permRowSelfEdit')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td><td>{t('site.permYes')}</td></tr>
+          </tbody>
+        </table>
       </section>
 
       <section class="settings-section">

@@ -95,6 +95,8 @@ export function SettingsPage() {
   const { user, refresh } = useAuth()
   const { t } = useI18n()
   const { pushToast } = useApp()
+  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [bio, setBio] = useState('')
   const [avatar, setAvatar] = useState('')
@@ -103,6 +105,8 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (user) {
+      setUsername(user.username || '')
+      setEmail(user.email || '')
       setDisplayName(user.display_name || user.username || '')
       setBio(user.bio || '')
       setAvatar(user.avatar || '')
@@ -111,9 +115,17 @@ export function SettingsPage() {
 
   const save = async () => {
     if (!user) return
+    if (!username.trim()) {
+      pushToast('error', t('profile.usernameRequired'))
+      return
+    }
+    if (!email.trim()) {
+      pushToast('error', t('profile.emailRequired'))
+      return
+    }
     setSaving(true)
     try {
-      await updateMe({ display_name: displayName, bio, avatar })
+      await updateMe({ username, email, display_name: displayName, bio, avatar })
       await refresh()
       pushToast('success', t('profile.saved'))
     } catch (e) {
@@ -138,6 +150,16 @@ export function SettingsPage() {
   return (
     <div class="settings-page">
       <h1>{t('profile.title')}</h1>
+      <div class="settings-field">
+        <label>{t('profile.username')}</label>
+        <input value={username} onInput={(e) => setUsername((e.target as HTMLInputElement).value)} />
+        <p class="settings-hint">{t('profile.usernameHint')}</p>
+      </div>
+      <div class="settings-field">
+        <label>{t('profile.email')}</label>
+        <input type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
+        <p class="settings-hint">{t('profile.emailHint')}</p>
+      </div>
       <div class="settings-field">
         <label>{t('profile.displayName')}</label>
         <input value={displayName} onInput={(e) => setDisplayName((e.target as HTMLInputElement).value)} />
