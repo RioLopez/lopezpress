@@ -18,7 +18,7 @@ const maskEmail = (email: string) => {
 
 export function SecurityCenter({ user }: { user: UserPublic | null }) {
   const { t } = useI18n()
-  const { logout } = useAuth()
+  const { logout, adoptToken } = useAuth()
   const { pushToast } = useApp()
   const [, navigate] = useNav()
   const [show, setShow] = useState(false)
@@ -48,7 +48,10 @@ export function SecurityCenter({ user }: { user: UserPublic | null }) {
     }
     setPwBusy(true)
     changePassword({ current_password: cur, new_password: npw })
-      .then(() => {
+      .then(async (res) => {
+        // Swap in the fresh token the server issued (the change revoked the
+        // previous one via the token-version bump).
+        await adoptToken(res.token)
         pushToast('success', t('center.secPwChanged'))
         setCur('')
         setNpw('')

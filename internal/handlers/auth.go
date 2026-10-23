@@ -138,11 +138,18 @@ func ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeInvalidBody(w)
 		return
 	}
-	if err := svc.ChangePassword(r.Context(), me, in); err != nil {
+	token, expires, err := svc.ChangePassword(r.Context(), me, in)
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "password changed"})
+	// A fresh token is returned because the change revoked the old one (token
+	// version bumped). The client swaps it in to stay signed in.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message": "password changed",
+		"token":   token,
+		"expires": expires,
+	})
 }
 
 // MeStats returns the current user's post metrics (count + total views) for

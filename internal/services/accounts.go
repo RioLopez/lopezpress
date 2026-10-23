@@ -191,7 +191,13 @@ func (s *Service) ResetPassword(ctx context.Context, actor models.User, id, pass
 	if err != nil {
 		return newErr(http.StatusInternalServerError, "failed to hash password")
 	}
-	if err := s.db.WithContext(ctx).Model(&user).Update("password_hash", hash).Error; err != nil {
+	// Bump the target's token version so an admin-forced reset actually kicks
+	// every session the account already holds (otherwise a stolen/left-open
+	// JWT would keep working for up to its 24h lifetime even after the reset).
+	if err := s.db.WithContext(ctx).Model(&user).Updates(map[string]any{
+		"password_hash": hash,
+		"token_version": gorm.Expr("token_version + 1"),
+	}).Error; err != nil {
 		return newErr(http.StatusInternalServerError, "failed to reset password")
 	}
 	s.audit(ctx, actor, "reset_password", "user:"+id, "")
@@ -203,23 +209,30 @@ func (s *Service) ResetPassword(ctx context.Context, actor models.User, id, pass
 // must_change_password flag so the flag can never re-trigger after the user
 // has picked a password of their own. Used by the first-boot admin flow
 // (spec #2: admin is seeded with a random console-banner password).
-func (s *Service) ChangePassword(ctx context.Context, user models.User, in ChangePasswordInput) error {
+//
+// It also bumps the user's TokenVersion, which revokes every JWT issued
+// before the change (a compromised token stops working the moment the owner
+// rotates the password) — and then issues a FRESH token at the new version so
+// the caller's own session keeps working without a second login. The new
+// token is returned to the handler, which hands it back to the client.
+func (s *Service) ChangePassword(ctx context.Context, user models.User, in ChangePasswordInput) (string, time.Time, error) {
 	if !models.VerifyPassword(in.CurrentPassword, user.PasswordHash) {
-		return newErr(http.StatusUnauthorized, "current password is incorrect")
+		return "", time.Time{}, newErr(http.StatusUnauthorized, "current password is incorrect")
 	}
 	if len(in.NewPassword) < 8 {
-		return newErr(http.StatusBadRequest, "new password must be at least 8 characters")
+		return "", time.Time{}, newErr(http.StatusBadRequest, "new password must be at least 8 characters")
 	}
 	hash, err := models.HashPassword(in.NewPassword)
 	if err != nil {
-		return newErr(http.StatusInternalServerError, "failed to hash password")
+		return "", time.Time{}, newErr(http.StatusInternalServerError, "failed to hash password")
 	}
-	upd := map[string]any{"password_hash": hash}
+	newVer := user.TokenVersion + 1
+	upd := map[string]any{"password_hash": hash, "token_version": newVer}
 	if user.MustChangePassword {
 		upd["must_change_password"] = false
 	}
 	if err := s.db.WithContext(ctx).Model(&user).Updates(upd).Error; err != nil {
-		return newErr(http.StatusInternalServerError, "failed to change password")
+		return "", time.Time{}, newErr(http.StatusInternalServerError, "failed to change password")
 	}
 	// Security notification to the owner (best-effort; a broken SMTP never
 	// fails the password change itself).
@@ -229,7 +242,13 @@ func (s *Service) ChangePassword(ctx context.Context, user models.User, in Chang
 	// An admin-forced reset was already audited; a self-service change being
 	// invisible in the same trail was an asymmetry worth closing.
 	s.audit(ctx, user, "change_password", "user:"+user.ID, "")
-	return nil
+	// Re-issue at the new version so the caller stays signed in while every
+	// older token is now rejected by Authenticate.
+	token, expires, tErr := s.SignToken(user.ID, user.Role, newVer)
+	if tErr != nil {
+		return "", time.Time{}, newErr(http.StatusInternalServerError, "failed to issue token")
+	}
+	return token, expires, nil
 }
 
 // RevokeAllSessions invalidates every JWT the user currently holds by

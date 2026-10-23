@@ -37,6 +37,14 @@ func (s *Service) UploadImage(ctx context.Context, filename string, data []byte)
 	if !isAllowedImageExt(ext) {
 		return "", newErr(http.StatusBadRequest, "only image files are allowed (jpg, png, webp, gif)")
 	}
+	// The extension is attacker-controlled, so verify the bytes are actually an
+	// image. Without this, an HTML/SVG payload renamed to ".png" would be
+	// stored and later served; the nosniff header stops a browser executing it,
+	// but rejecting it outright is defense in depth and keeps the "image
+	// library" honest about what it contains.
+	if !isAllowedImageContent(data) {
+		return "", newErr(http.StatusBadRequest, "file content is not a supported image")
+	}
 
 	// Route by site config: the server holds the image-host token, so the
 	// browser never sees it (replaces the old localStorage token, spec #7).
@@ -111,6 +119,22 @@ func (s *Service) uploadMaxBytes() int64 {
 func isAllowedImageExt(ext string) bool {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+		return true
+	}
+	return false
+}
+
+// isAllowedImageContent sniffs the leading bytes and reports whether they are
+// a real raster image (PNG / JPEG / GIF / WebP). It uses the standard library's
+// content sniffer (no new dependency), which needs at most 512 bytes, so a
+// disguised HTML or SVG payload — whose sniffed type is text/html or
+// image/svg+xml — is rejected.
+func isAllowedImageContent(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	switch http.DetectContentType(data) {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
 		return true
 	}
 	return false

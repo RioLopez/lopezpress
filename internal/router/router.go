@@ -186,12 +186,15 @@ func New(cfg *config.Config, limiter *middleware.Limiter, loginLimiter *middlewa
 	register(mux, routes)
 
 	// Compose the middleware chain:
-	//   limiter (outer) -> CORS -> Logger -> Recover (inner)
+	//   limiter (outer) -> CORS -> SecurityHeaders -> Logger -> Recover (inner)
 	// Chain applies mws in reverse, so the FIRST listed middleware is the
 	// outermost. limiter.Middleware(next) already returns an http.Handler.
+	// SecurityHeaders sits inside CORS so the CORS preflight short-circuit
+	// still carries the hardening headers.
 	return middleware.Chain(mux,
 		func(h http.Handler) http.Handler { return limiter.Middleware(h) },
 		middleware.CORS(cfg.CORSOrigins),
+		middleware.SecurityHeaders,
 		middleware.Logger,
 		middleware.Recover,
 	)

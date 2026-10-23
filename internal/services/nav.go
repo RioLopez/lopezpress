@@ -28,6 +28,7 @@ func (s *Service) GetPostPrevNext(ctx context.Context, id string) (PostNav, erro
 		Preload("Author").Preload("Category").Preload("Tags").
 		First(&prev).Error
 	if err == nil {
+		prev.SanitizeAuthor()
 		nav.Prev = &prev
 	}
 
@@ -40,6 +41,7 @@ func (s *Service) GetPostPrevNext(ctx context.Context, id string) (PostNav, erro
 		Preload("Author").Preload("Category").Preload("Tags").
 		First(&next).Error
 	if err == nil {
+		next.SanitizeAuthor()
 		nav.Next = &next
 	}
 

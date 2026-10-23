@@ -59,8 +59,14 @@ export const updateMe = (b: { username?: string; email?: string; display_name?: 
 
 // Change the caller's own password (first-boot admin flow): verifies the
 // current password and clears must_change_password on success.
+// The server bumps the token version on a password change (revoking every
+// previously issued JWT) and returns a fresh token so the current session
+// survives. Callers must swap the new token in (useAuth().adoptToken).
 export const changePassword = (b: { current_password: string; new_password: string }) =>
-  request<{ message: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify(b) })
+  request<{ message: string; token: string; expires: string }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(b),
+  })
 
 // Public author profile + published posts.
 export const getAuthor = (username: string) =>
