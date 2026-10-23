@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"lopezpress/internal/services"
 )
@@ -78,9 +77,9 @@ func ListRevisions(w http.ResponseWriter, r *http.Request) {
 func RestoreRevision(w http.ResponseWriter, r *http.Request) {
 	me := userFromContext(r)
 	id := r.PathValue("id")
-	revID, err := strconv.ParseInt(r.PathValue("revID"), 10, 64)
+	revID, err := parseID(r, "revID", "revision id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid revision id")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	post, rerr := svc.RestoreRevision(r.Context(), me, id, revID)
@@ -142,13 +141,12 @@ func ListArchive(w http.ResponseWriter, r *http.Request) {
 // ships in a single response.
 func ListArchivePaged(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	page, pageErr := strconv.Atoi(query.Get("page"))
-	size, sizeErr := strconv.Atoi(query.Get("size"))
-	if (query.Get("page") != "" && pageErr != nil) || (query.Get("size") != "" && sizeErr != nil) {
-		writeError(w, http.StatusBadRequest, "page and size must be integers")
+	nums, err := parseInts(query, "page and size", "page", "size")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	res, err := svc.ListArchivePage(r.Context(), page, size)
+	res, err := svc.ListArchivePage(r.Context(), nums[0], nums[1])
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -172,9 +170,6 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	status := query.Get("status")
 	search := query.Get("q")
-	pageStr := query.Get("page")
-	sizeStr := query.Get("size")
-	catStr := query.Get("category")
 	tag := query.Get("tag")
 	sort := query.Get("sort")
 	order := query.Get("order")
@@ -182,13 +177,12 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 	// Parse pagination params. An explicitly-supplied but non-numeric value
 	// (e.g. ?page=abc) is a client error: reject it with 400 instead of
 	// silently degrading to the legacy bare-array branch (P2-7).
-	page, pageErr := strconv.Atoi(pageStr)
-	size, sizeErr := strconv.Atoi(sizeStr)
-	cat, catErr := strconv.Atoi(catStr)
-	if (pageStr != "" && pageErr != nil) || (sizeStr != "" && sizeErr != nil) || (catStr != "" && catErr != nil) {
-		writeError(w, http.StatusBadRequest, "page, size and category must be integers")
+	nums, err := parseInts(query, "page, size and category", "page", "size", "category")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	page, size, cat := nums[0], nums[1], nums[2]
 
 	// Legacy bare-array form: no pagination/search requested. The explicit
 	// PageSize keeps this branch's shape stable (spec 24 changed the *default*
