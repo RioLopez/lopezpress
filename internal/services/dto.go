@@ -51,6 +51,9 @@ type ListPostsQuery struct {
 	PageSize int
 	Category int64
 	Tag      string
+	// AuthorID scopes the result to a single author's posts. Used by the
+	// personal center ("my page shows my content only"); empty = no scoping.
+	AuthorID string
 	// SortBy whitelists the sort column: "created_at" (default) or "views".
 	// Order is "asc" or "desc" (default). Pinned posts always sort first.
 	SortBy string
@@ -256,10 +259,16 @@ type ChangePasswordInput struct {
 }
 
 // UpdateMeInput is the decoded payload for PUT /api/auth/me.
+//
+// Pointer fields distinguish "absent" (nil = leave unchanged) from "explicit
+// empty" (non-nil = clear the value), so a profile save can both change a
+// field and wipe it back to empty without an ambiguous sentinel.
 type UpdateMeInput struct {
-	DisplayName string `json:"display_name"`
-	Bio         string `json:"bio"`
-	Avatar      string `json:"avatar"`
+	Username    *string `json:"username"`
+	Email       *string `json:"email"`
+	DisplayName *string `json:"display_name"`
+	Bio         *string `json:"bio"`
+	Avatar      *string `json:"avatar"`
 }
 
 // LoginMeta carries request context (IP / User-Agent) used for the audit log.

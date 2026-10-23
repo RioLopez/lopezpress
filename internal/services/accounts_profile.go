@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"lopezpress/internal/models"
@@ -25,26 +26,76 @@ func (s *Service) ListUserLogins(ctx context.Context, id string, limit int) ([]m
 
 // --- profile / author (spec 15) ---
 
-// UpdateMe edits the caller's own profile. Empty fields are left unchanged so
-// a partial save never wipes the others.
+// UpdateMe edits the caller's own profile. A nil pointer leaves a field
+// unchanged; a non-nil pointer (including an empty string) overwrites it, so
+// a partial save never wipes unmentioned fields while still allowing the
+// caller to clear bio/avatar/display name explicitly.
+//
+// Username / email changes are validated for format + uniqueness. Changing
+// either invalidates the login identifier: the client should treat a username
+// or email change as requiring a re-login (the returned user reflects the new
+// value, but the current JWT's identity is unchanged until re-issued).
 func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (models.User, error) {
 	var user models.User
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		return models.User{}, newErr(http.StatusNotFound, "user not found")
 	}
-	if in.DisplayName != "" {
-		user.DisplayName = in.DisplayName
+
+	if in.Username != nil {
+		name := strings.TrimSpace(*in.Username)
+		if name == "" {
+			return models.User{}, newErr(http.StatusBadRequest, "username is required")
+		}
+		if name != user.Username {
+			var dup models.User
+			if s.db.WithContext(ctx).Where("username = ?", name).First(&dup).RowsAffected == 1 {
+				return models.User{}, newErr(http.StatusConflict, "username already in use")
+			}
+			user.Username = name
+		}
 	}
-	if in.Bio != "" {
-		user.Bio = in.Bio
+	if in.Email != nil {
+		email := strings.TrimSpace(*in.Email)
+		if email == "" {
+			return models.User{}, newErr(http.StatusBadRequest, "email is required")
+		}
+		if !isValidEmail(email) {
+			return models.User{}, newErr(http.StatusBadRequest, "invalid email")
+		}
+		if email != user.Email {
+			var dup models.User
+			if s.db.WithContext(ctx).Where("email = ?", email).First(&dup).RowsAffected == 1 {
+				return models.User{}, newErr(http.StatusConflict, "email already in use")
+			}
+			user.Email = email
+		}
 	}
-	if in.Avatar != "" {
-		user.Avatar = in.Avatar
+	if in.DisplayName != nil {
+		user.DisplayName = strings.TrimSpace(*in.DisplayName)
+	}
+	if in.Bio != nil {
+		user.Bio = *in.Bio
+	}
+	if in.Avatar != nil {
+		user.Avatar = strings.TrimSpace(*in.Avatar)
 	}
 	if err := s.db.WithContext(ctx).Save(&user).Error; err != nil {
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update profile")
 	}
 	return user, nil
+}
+
+// isValidEmail is a lightweight structural check: exactly one "@", non-empty
+// local and domain parts, and a dot in the domain. It is intentionally loose
+// (full RFC 5322 validation is overkill for a self-hosted blog) but rejects
+// obviously malformed input before it hits the unique index.
+func isValidEmail(s string) bool {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 || at == len(s)-1 {
+		return false
+	}
+	domain := s[at+1:]
+	return strings.Contains(domain, ".")
 }
 
 // GetAuthor returns a public author profile plus their published posts. A

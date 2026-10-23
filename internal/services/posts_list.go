@@ -75,6 +75,13 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 			// Anonymous visitor: only public posts are browseable.
 			query = query.Where("posts.status = ?", models.PostPublished)
 		}
+		if q.AuthorID != "" {
+			// Scope to a single author (personal center). Applied on top of the
+			// role visibility above, so a user scoping to their own id still
+			// only sees what their role permits (their own restricted posts,
+			// never the banned vault).
+			query = query.Where("posts.author_id = ?", q.AuthorID)
+		}
 		if q.Status != "" {
 			query = query.Where("posts.status = ?", q.Status)
 		}

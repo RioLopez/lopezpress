@@ -173,6 +173,7 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 	tag := query.Get("tag")
 	sort := query.Get("sort")
 	order := query.Get("order")
+	author := query.Get("author")
 
 	// Parse pagination params. An explicitly-supplied but non-numeric value
 	// (e.g. ?page=abc) is a client error: reject it with 400 instead of
@@ -210,6 +211,7 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 		PageSize: size,
 		Category: int64(cat),
 		Tag:      tag,
+		AuthorID: author,
 		SortBy:   sort,
 		Order:    order,
 	})

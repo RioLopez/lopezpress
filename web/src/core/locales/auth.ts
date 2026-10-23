@@ -44,6 +44,10 @@ export type AuthTexts = {
   },
   profile: {
     title: string
+    username: string
+    usernameHint: string
+    email: string
+    emailHint: string
     displayName: string
     bio: string
     avatar: string
@@ -51,6 +55,8 @@ export type AuthTexts = {
     save: string
     saved: string
     saveFailed: string
+    usernameRequired: string
+    emailRequired: string
   },
   register: {
     closed: string
@@ -102,6 +108,10 @@ export const authZh: AuthTexts = {
   },
   profile: {
     title: '个人资料',
+    username: '用户名',
+    usernameHint: '登录时可用用户名登录，修改后需重新登录',
+    email: '邮箱',
+    emailHint: '作为登录账号，修改后需重新登录',
     displayName: '显示名称',
     bio: '简介',
     avatar: '头像',
@@ -109,6 +119,8 @@ export const authZh: AuthTexts = {
     save: '保存',
     saved: '资料已保存',
     saveFailed: '资料保存失败',
+    usernameRequired: '用户名不能为空',
+    emailRequired: '邮箱不能为空',
   },
   register: {
     closed: '注册已关闭',
@@ -160,6 +172,10 @@ export const authEn: AuthTexts = {
   },
   profile: {
     title: 'Profile',
+    username: 'Username',
+    usernameHint: 'Used to sign in; changing it requires re-login',
+    email: 'Email',
+    emailHint: 'Used as the sign-in account; changing it requires re-login',
     displayName: 'Display name',
     bio: 'Bio',
     avatar: 'Avatar',
@@ -167,6 +183,8 @@ export const authEn: AuthTexts = {
     save: 'Save',
     saved: 'Profile saved',
     saveFailed: 'Failed to save profile',
+    usernameRequired: 'Username is required',
+    emailRequired: 'Email is required',
   },
   register: {
     closed: 'Registration closed',

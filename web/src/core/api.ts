@@ -51,8 +51,10 @@ export const me = () => request<UserPublic>('/api/auth/me')
 
 export const logout = () => request<{ message: string }>('/api/auth/logout', { method: 'POST' })
 
-// Update the caller's own profile (display_name / bio / avatar).
-export const updateMe = (b: { display_name?: string; bio?: string; avatar?: string }) =>
+// Update the caller's own profile (username / email / display_name / bio /
+// avatar). All fields are optional; sending one changes only that field, and
+// an explicit empty string clears it.
+export const updateMe = (b: { username?: string; email?: string; display_name?: string; bio?: string; avatar?: string }) =>
   request<UserPublic>('/api/auth/me', { method: 'PUT', body: JSON.stringify(b) })
 
 // Change the caller's own password (first-boot admin flow): verifies the
@@ -102,6 +104,7 @@ export const listPostsPaged = (q: ListPostsQuery = {}) => {
   // Presence checks, not truthiness: `if (q.category)` would skip id 0.
   if (q.category !== undefined) params.set('category', String(q.category))
   if (q.tag) params.set('tag', q.tag)
+  if (q.author) params.set('author', q.author)
   // Personal-center sort (spec 20): sort=created_at|views, order=asc|desc.
   if (q.sort) params.set('sort', q.sort)
   if (q.order) params.set('order', q.order)
