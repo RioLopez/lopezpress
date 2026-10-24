@@ -80,6 +80,7 @@
 | 第五十五轮（P1 分层） | service 层传输符号 12 处 → 0 + `internal/imghost` 抽出 | ✅ 门禁全绿 + 7 组真跑冒烟 | 见 §4 |
 | 第七十二轮（渗透报告核实 + 安全加固） | 作者敏感字段裁剪 / 安全头 / 上传内容校验 / 改密废旧 token / nginx 4 个 location | ✅ 门禁全绿 + 隔离冒烟 15/15 | 见 §4 |
 | 第七十三轮（私密语义收紧） | `private`/`draft` 改为严格作者可见，admin/root 也读不到 | ✅ 门禁全绿 + 三角色真机复测 | 见 §4 |
+| 第七十四轮（分类/标签/层级细节） | `?category=分类名` / 三处层级视觉 / 标签自动补全 + 大小写归并 | ✅ 门禁全绿 + Chrome 实点验证 | 见 §4 |
 
 > 第 43–52 轮为功能轮次，详情见 §4 对应小节；本节自第 53 轮起只收录"改了架构或门禁"的里程碑轮。
 
@@ -1220,6 +1221,40 @@
 - `TestListPostsNonAdminFilter`：root 期望 6 不变，但注释补明"alice/bob 的 private 请求已被强制成 pending，本用例不覆盖 author-only 规则"。
 
 **验证**：`go build`/`go vet`/`go test ./...` 全绿（183 用例）；`arch_check`、`contract_check`、`tsc --noEmit` 全绿。**真机复测**（重启二进制后）：匿名 12 / rio 13（含自己 private）/ lopez 12（不再有任何非公开）/ admin 14（仅自己的 private + draft）；单篇直取 `校园网自动登录系统`、`封面测试`、`rio的测试1`：lopez 全 404，admin 对自己的 200、对 rio 的 404。
+
+---
+
+### 第七十四轮 — 分类/标签/层级的细节补齐（2026-10-24）
+
+**触发**：用户真机走查提出三个体验问题——① 分类链接是 `?category=2` 这样的数字，而标签是 `?tag=Go`，同一个筛选却两套标识；② 后台能建两级分类，但前台 php 与 php教程 同字号、无缩进，层级形同不存在；③ 标签每次手输，`Go`/`go`/`GO` 是否算一个、长标签怎么找，全靠作者记。
+
+**① 分类标识改为名字（`?category=PHP`）**
+
+- `services/dto.go` `ListPostsQuery.Category` 由 `int64` 改为 `string`（原始引用，未解析），`internal/handlers/query.go` 新增 `parsePostListParams` 把 `/api/posts` 的七个筛选参数收进一个 struct，`category` 不再走 `parseInts`（它不再是纯整数）。
+- `services/taxonomy.go` 新增 `categoryFilterIDs(ctx, ref)`：数字 → 按 id 查（仍校验存在），其它 → 按 name 查；命中后连带子分类。**未知引用返回空页（`WHERE 1 = 0`），不是「不筛选」**——否则 `?category=打错字` 会静默列出全站。
+- 前端 `ListPage` 的 `UrlFilters.category` 改 `string | null`，`Sidebar` 与 `AdminCategoriesPage`/`ReadPage` 深链全部改传 `encodeURIComponent(name)`。
+- 兼容：`?category=2` 仍可用（旧书签、旧分享链接不失效）。
+
+**② 层级在三个界面同时可见**
+
+- 新增 `web/src/core/taxonomy.ts`（纯函数）：`orderCategories`（父后紧跟子、孤儿提级）、`categoryPath` / `categoryLabel`（`PHP › php教程`）、`categoryOptionLabel`（`　└ 子分类`，option 不可样式化只能靠文本缩进）。
+- 侧边栏：父级 13.5px/600 字重/正文色，子级 12.5px/muted/左缩进 24px + 用 `::before` 画的肘形引导线。此前父子都是 13px、只差 `opacity: .9`，等于没做。
+- 筛选下拉、编辑器分类下拉、后台文章页两个下拉：全部换成带 `└` 前缀的有序树。
+- 文章卡片分类 chip 由「Windows」变成「系统与网络 › Windows」；阅读页面包屑由一级变「首页 / 系统与网络 / Windows」，父级是纯文本、末级可点。
+
+**③ 标签选已有 instead of 手输**
+
+- 新增 `web/src/core/tags.ts`：`suggestTags(all, input, selected, limit)` — 大小写不敏感、前缀优先于子串、排除已选、无匹配时末尾补一条 `exists:false` 的「创建标签」行；已选的同名不再给 create 行（否则像是上次没选上）。`normalizeTagInput` 与服务端同规则（trim + 折叠内部空白）。
+- `PostEditor` 标签区改 CSDN 式：输入即搜索、↑↓ 选择、回车确认、Esc 关闭、Backspace 删最后一个 chip；下拉里已有标签显示原名，未有的显示「+ 创建标签 xxx」。选中已存在的标签时提交**存储拼写**（输入 `go` 得到 `Go`）。
+- 关闭下拉从 `onBlur` 改为 document `mousedown` 且限定在输入框容器内：blur 的 120ms 定时器与输入存在竞态（定时器在下一次按键之后才触发，列表刚出现就被关掉），真机实测复现。
+- 后端 `services/tags.go` `findOrCreateTagsTx` 查重由 `name = ?` 改 `LOWER(name) = ?`，先建的拼写胜出——`go`/`GO` 复用已有的 `Go`，不再分裂成三个标签；`UpdateTag` 的重名检查同步改 `COLLATE NOCASE`。`posts_list.go` 的 `?tag=` 过滤改 `COLLATE NOCASE`（SQLite 的 NOCASE 只覆盖 ASCII，正好是大小写存在的范围）。
+- 编辑器标签 chip 由 999px 胶囊改回 4px 矩形（表单内的可删除 token，不是侧边栏的标签云）。
+
+**测试**：Go 183 → **184**（`TestTagNamesAreCaseInsensitive`：四种拼写只落一行、首个拼写胜出、`?tag=go` 命中 4 篇；`TestCategoryFilterIncludesDescendants` 扩为名字/数字/未知三种，`TestListPostsRejectsBadPageParam` 移除 `category=abc` 的 400 断言并新增「未知分类返回 200 空页」）。前端 22 → **43**（新增 `taxonomy.test.ts` 9 条、`tags.test.ts` 12 条）。
+
+**真机验证**（重启二进制 + Chrome 实点）：`?category=Windows` 与 `?category=3` 结果一致（1 篇）、父分类「系统与网络」连带子分类命中；点侧边栏 php教程 → URL 变 `?category=php%E6%95%99%E7%A8%8B`（地址栏显示中文）；卡片 chip 显示「系统与网络 › Windows」；下拉显示「└ Windows」；`?tag=go`/`GO` 与 `?tag=Go` 均 11 篇。
+
+**顺带修**：`api.md` 里 `/api/posts` 的参数写作 `search=`，实际是 `q`，已改正。
 
 ---
 

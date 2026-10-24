@@ -364,6 +364,26 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 - 本仓库 `deploy/nginx.conf` 的静态资源 location 因此需要**重复声明** 4 个安全头；同理 SPA fallback 会把 `/uploads/` `/feed` `/sitemap.xml` `/robots.txt` 全吃成 `index.html`，必须各自 `location` 反代到 8080。
 - 结论：**改 nginx 后不能只看浏览器，要 `curl -I` 逐个 location 验头**。
 
+### 7.21 可分享的筛选链接用名字，不用自增 id（第 74 轮）
+
+- 首页列表的分类筛选原来是 `?category=2`，同一个筛选里标签却是 `?tag=Go`——两套标识，前者贴出去没人看得懂，后者一眼就明白。
+- 现在 `?category=` 收**分类名**（`?category=PHP`），数字 id 继续兼容（旧书签不失效）。解析不在 handler：`internal/handlers/query.go` 的 `parsePostListParams` 只把原始字符串塞进 `ListPostsQuery.Category`，`services/taxonomy.go` 的 `categoryFilterIDs` 才查库。
+- **未知分类必须返回空页，不能退化成「不筛选」**：否则 `?category=打错字` 会静默列出全站文章，读者看不出筛选其实没生效。
+- 前端改标识时容易漏的三处深层链接：`AdminCategoriesPage` 的计数链接、`ReadPage` 的面包屑、`ListPage` 的 `<select value>`——都要用 `encodeURIComponent(name)`，中文分类名否则会被 URL 编码规则打断。
+
+### 7.22 「层级」不做视觉区分就等于没做（第 74 轮）
+
+- 后台能建两级分类，但侧边栏父子**同为 13px**、只差 `opacity: .9`，`php教程` 看起来就是 `PHP` 的兄弟节点。
+- 现在的做法：父级 13.5px + 600 字重 + 正文色；子级 12.5px + muted + 左缩进 24px + `::before` 画的肘形引导线。三处必须同时改——侧边栏、筛选下拉、卡片 chip（`PHP › php教程`）；`<option>` 无法样式化，只能用 `\u3000└ ` 文本缩进。
+- 排序逻辑抽到 `web/src/core/taxonomy.ts`（`orderCategories` / `categoryPath` / `categoryOptionLabel`），否则三处各写一遍必然漂移。
+
+### 7.23 标签去重必须大小写不敏感，两端都要（第 74 轮）
+
+- `findOrCreateTagsTx` 原来用 `name = ?` 精确匹配，`go` / `Go` / `GO` 会生成三个标签，同一个概念分裂成三条互不相通的筛选项。
+- 查询改 `LOWER(name) = ?`，**先建的拼写胜出**（输入 `go` 复用已有的 `Go`）；`UpdateTag` 重名检查与 `?tag=` 过滤同步改 `COLLATE NOCASE`（SQLite 的 NOCASE / LOWER 只覆盖 ASCII，正好是大小写存在的范围，中文不受影响）。
+- 前端补全用 `web/src/core/tags.ts` 的纯函数 `suggestTags`：大小写不敏感、前缀优先、排除已选、无匹配时末尾补「创建标签」行（且**已选的同名不再给 create 行**，否则像是上次没选上）。
+- 下拉**不要用 `onBlur` 关**：实测 120ms 定时器会和输入竞态——下一次按键刚把列表打开，定时器随后把它关掉。改用 document `mousedown` + 容器 `contains` 判断。
+
 ---
 
 ## 8. 已知问题 & 待修复清单

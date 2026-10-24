@@ -53,7 +53,12 @@ type ListPostsQuery struct {
 	Search   string
 	Page     int
 	PageSize int
-	Category int64
+	// Category is the raw ?category= value: a numeric category id (the
+	// pre-slug form, still supported) or a category name. Names make the
+	// shareable URL human-readable — ?category=PHP instead of ?category=2 —
+	// and match how ?tag=Go already works. The service resolves it, so the
+	// handler stays free of lookups.
+	Category string
 	Tag      string
 	// AuthorID scopes the result to a single author's posts. Used by the
 	// personal center ("my page shows my content only"); empty = no scoping.

@@ -107,8 +107,9 @@ export const listPostsPaged = (q: ListPostsQuery = {}) => {
   if (q.q) params.set('q', q.q)
   if (q.page) params.set('page', String(q.page))
   if (q.size) params.set('size', String(q.size))
-  // Presence checks, not truthiness: `if (q.category)` would skip id 0.
-  if (q.category !== undefined) params.set('category', String(q.category))
+  // Category is a name (or a legacy numeric id): presence check only, an
+  // empty string means "no filter".
+  if (q.category) params.set('category', q.category)
   if (q.tag) params.set('tag', q.tag)
   if (q.author) params.set('author', q.author)
   // Personal-center sort (spec 20): sort=created_at|views, order=asc|desc.

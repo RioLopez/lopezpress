@@ -243,7 +243,10 @@ export function AdminCategoriesPage() {
                               title={t('admin.viewPosts')}
                               onClick={(e) => {
                                 e.preventDefault()
-                                navigate(`/?category=${c.id}`)
+                                // Link by name so the public URL stays readable
+                                // (?category=PHP); encodeURIComponent handles
+                                // CJK and spaces.
+                                navigate(`/?category=${encodeURIComponent(c.name)}`)
                               }}
                             >
                               {c.count}

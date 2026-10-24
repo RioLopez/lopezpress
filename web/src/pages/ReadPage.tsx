@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { getPost, deletePost, getPostPrevNext, getRelatedPosts, reportView, errMessage, errStatus } from '../core/api'
+import { getPost, deletePost, getPostPrevNext, getRelatedPosts, reportView, listCategories, errMessage, errStatus } from '../core/api'
 import type { Post, PostNav, FontSize } from '../core/types'
 import { useAuth } from '../core/auth'
 import { isAdmin } from '../core/roles'
 import { renderMD, wordCount, extractTOC } from '../core/md'
 import { useNav } from '../core/router'
+import { useQuery } from '../core/useQuery'
+import { categoryPath } from '../core/taxonomy'
 
 const FONT_KEY = 'echo.readFont'
 
@@ -43,6 +45,12 @@ export function ReadPage({ id }: { id: string }) {
   const [showTop, setShowTop] = useState(false)
   // Lightbox: src of enlarged image, or null when closed.
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+
+  // The article's own category chain ("PHP / php教程"). Loaded separately from
+  // the post so a slow category fetch can never delay the article itself; an
+  // empty result just falls back to the category name the post carries.
+  const { data: categoriesData } = useQuery(() => listCategories(), [])
+  const categories = categoriesData ?? []
 
   const setFontSize = (f: FontSize) => {
     localStorage.setItem(FONT_KEY, f)
@@ -238,13 +246,26 @@ export function ReadPage({ id }: { id: string }) {
           <a onClick={(e) => { e.preventDefault(); navigate('/') }} href="/">{t('read.home')}</a>
           {post.category && (
             <>
-              <span class="sep">/</span>
-              <a
-                onClick={(e) => { e.preventDefault(); navigate(`/?category=${post.category!.id}`) }}
-                href={`/?category=${post.category.id}`}
-              >
-                {post.category.name}
-              </a>
+              {(categoryPath(categories, post.category.id).length
+                ? categoryPath(categories, post.category.id)
+                : [post.category.name]
+              ).map((name, i, all) => (
+                <span key={name} class="crumb-seg">
+                  <span class="sep">/</span>
+                  {i === all.length - 1 ? (
+                    <a
+                      onClick={(e) => { e.preventDefault(); navigate(`/?category=${encodeURIComponent(name)}`) }}
+                      href={`/?category=${encodeURIComponent(name)}`}
+                    >{name}</a>
+                  ) : (
+                    // Ancestors are shown but not linked: clicking the parent
+                    // from a child article would be useful, yet the parent's
+                    // own page is exactly the same list, so the extra link
+                    // only adds noise. Keep it plain text.
+                    <span class="crumb-ancestor">{name}</span>
+                  )}
+                </span>
+              ))}
             </>
           )}
         </nav>

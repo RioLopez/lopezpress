@@ -8,6 +8,9 @@ export type EditorTexts = {
     category: string
     tags: string
     tagPlaceholder: string
+    tagCreate: string
+    tagHint: string
+    tagRemove: string
     allCategories: string
     publish: string
     cancel: string
@@ -87,7 +90,10 @@ export const editorZh: EditorTexts = {
     status: '状态',
     category: '分类',
     tags: '标签',
-    tagPlaceholder: '输入标签，逗号分隔…',
+    tagPlaceholder: '搜索或输入新标签…',
+    tagCreate: '创建标签',
+    tagHint: '输入即搜索已有标签，↑↓ 选择，回车确认；没有的标签会给出创建入口。',
+    tagRemove: '移除标签',
     allCategories: '全部分类',
     publish: '发布',
     cancel: '取消',
@@ -167,7 +173,10 @@ export const editorEn: EditorTexts = {
     status: 'Status',
     category: 'Category',
     tags: 'Tags',
-    tagPlaceholder: 'Enter tags, comma separated…',
+    tagPlaceholder: 'Search or type a new tag…',
+    tagCreate: 'Create tag',
+    tagHint: 'Typing searches existing tags — ↑↓ to pick, Enter to confirm. Tags that do not exist yet get a create row.',
+    tagRemove: 'Remove tag',
     allCategories: 'All categories',
     publish: 'Publish',
     cancel: 'Cancel',

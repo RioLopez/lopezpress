@@ -4,6 +4,7 @@ package services
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"lopezpress/internal/models"
@@ -142,12 +143,39 @@ func TestCategoryFilterIncludesDescendants(t *testing.T) {
 		t.Fatalf("assign other cat: %v", err)
 	}
 
-	page, err := svc.ListPostsPage(ctx, anonymous(), ListPostsQuery{Page: 1, PageSize: 50, Category: parent.ID})
+	// Name form: the frontend links with ?category=<name>, and a parent must
+	// still include its children's posts.
+	page, err := svc.ListPostsPage(ctx, anonymous(), ListPostsQuery{Page: 1, PageSize: 50, Category: parent.Name})
 	if err != nil {
 		t.Fatalf("list by parent: %v", err)
 	}
 	if len(page.Items) != 1 || page.Items[0].ID != pChild.ID {
 		t.Fatalf("parent filter must include its children's posts, got %d items", len(page.Items))
+	}
+
+	// The numeric form stays supported so bookmarks made before the switch to
+	// names keep working.
+	byID, err := svc.ListPostsPage(ctx, anonymous(), ListPostsQuery{
+		Page: 1, PageSize: 50, Category: strconv.FormatInt(parent.ID, 10),
+	})
+	if err != nil {
+		t.Fatalf("list by numeric id: %v", err)
+	}
+	if len(byID.Items) != 1 || byID.Items[0].ID != pChild.ID {
+		t.Fatalf("numeric category filter must behave like the name form, got %d items", len(byID.Items))
+	}
+
+	// An unknown reference yields an empty page, never the whole site: the URL
+	// claims a filter is applied, so falling back to "no filter" would show
+	// every post under a link that looks like a category.
+	none, err := svc.ListPostsPage(ctx, anonymous(), ListPostsQuery{
+		Page: 1, PageSize: 50, Category: "没有这个分类",
+	})
+	if err != nil {
+		t.Fatalf("list by unknown category: %v", err)
+	}
+	if none.Total != 0 || len(none.Items) != 0 {
+		t.Fatalf("unknown category must return an empty page, got %d items", len(none.Items))
 	}
 }
 

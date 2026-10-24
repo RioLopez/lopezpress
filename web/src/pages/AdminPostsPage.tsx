@@ -10,6 +10,7 @@ import { Pagination } from '../ui/Pagination'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
 import { isRoot } from '../core/roles'
+import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 
 // Spec 26: the admin post list that the site never had. Before this page,
 // posts were managed from the public home page — reading and administering in
@@ -51,7 +52,7 @@ export function AdminPostsPage() {
         q: debouncedSearch || undefined,
         page,
         size: ADMIN_PAGE_SIZE,
-        category: category == null ? undefined : category,
+        category: category == null ? undefined : String(category),
         tag: tag || undefined,
       }),
     [status, debouncedSearch, page, category, tag],
@@ -196,8 +197,8 @@ export function AdminPostsPage() {
           }}
         >
           <option value="">{t('list.allCategories')}</option>
-          {categories.map((c) => (
-            <option key={c.id} value={String(c.id)}>{c.name}</option>
+          {orderCategories(categories).map((node) => (
+            <option key={node.cat.id} value={String(node.cat.id)}>{categoryOptionLabel(node)}</option>
           ))}
         </select>
         <select
@@ -244,8 +245,8 @@ export function AdminPostsPage() {
             onInput={(e) => setBatchCategory((e.target as HTMLSelectElement).value ? Number((e.target as HTMLSelectElement).value) : '')}
           >
             <option value="">{t('list.categoryLabel')}</option>
-            {categories.map((c) => (
-              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            {orderCategories(categories).map((node) => (
+              <option key={node.cat.id} value={String(node.cat.id)}>{categoryOptionLabel(node)}</option>
             ))}
           </select>
           <button

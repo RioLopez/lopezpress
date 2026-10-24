@@ -54,7 +54,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/api/posts` | 可选 | 列表。`?page=&size=&search=&category=&tag=&status=&sort=&order=`；**页面不传 `size`，由站点设置决定** |
+| GET | `/api/posts` | 可选 | 列表。`?page=&size=&q=&category=&tag=&status=&sort=&order=&author=`；**页面不传 `size`，由站点设置决定**。`category` 收**分类名**（`?category=PHP`）或数字 id（旧链接）；名字也可读，且父分类连带其子分类的文章。`tag` 大小写不敏感。未知分类返回**空页**，不会退化成"不筛选" |
 | GET | `/api/posts/recent` | 可选 | 最近文章 |
 | GET | `/api/posts/archive` | 可选 | 归档（旧版，全量；前端已改用 paged） |
 | GET | `/api/posts/archive/paged` | 可选 | 归档分页（默认 50 / 上限 200 / `body` 恒空） |

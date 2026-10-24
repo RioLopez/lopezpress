@@ -310,6 +310,10 @@ func TestOptionalAuthDowngradesMustChangePassword(t *testing.T) {
 // TestListPostsRejectsBadPageParam guards P2-7: an explicitly-supplied but
 // non-numeric ?page= (e.g. "abc") must be rejected with 400 instead of
 // silently degrading to the legacy bare-array branch.
+//
+// `category` is deliberately absent from this list: it accepts a category NAME
+// (?category=PHP) as well as an id, so a non-numeric value is a legitimate
+// filter and must not be a 400.
 func TestListPostsRejectsBadPageParam(t *testing.T) {
 	svc, _ := setup(t)
 	tok := mustToken(t, svc, "u", "u@example.com")
@@ -317,7 +321,6 @@ func TestListPostsRejectsBadPageParam(t *testing.T) {
 	for _, q := range []string{
 		"/api/posts?page=abc",
 		"/api/posts?size=abc",
-		"/api/posts?category=abc",
 		"/api/posts?page=1&size=abc",
 	} {
 		req := httptest.NewRequest(http.MethodGet, q, nil)
@@ -329,10 +332,31 @@ func TestListPostsRejectsBadPageParam(t *testing.T) {
 		}
 	}
 
-	// A valid page param must still work (no false positive).
-	req := httptest.NewRequest(http.MethodGet, "/api/posts?page=1&size=10", nil)
+	// A name that matches no category is a valid filter with an empty result,
+	// not a client error: the URL is well-formed, the category just is not
+	// there (any more).
+	req := httptest.NewRequest(http.MethodGet, "/api/posts?category=nope", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
+	WithOptionalAuth(ListPosts)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/posts?category=nope: expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var page struct {
+		Items []models.Post `json:"items"`
+		Total int64         `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode empty category page: %v", err)
+	}
+	if page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("unknown category must return no posts, got %d", page.Total)
+	}
+
+	// A valid page param must still work (no false positive).
+	req = httptest.NewRequest(http.MethodGet, "/api/posts?page=1&size=10", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec = httptest.NewRecorder()
 	WithOptionalAuth(ListPosts)(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/posts?page=1&size=10: expected 200, got %d (%s)", rec.Code, rec.Body.String())

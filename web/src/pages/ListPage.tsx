@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'preact/hooks'
+import { useState, useCallback, useMemo } from 'preact/hooks'
 import { useDebounce } from '../core/debounce'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
@@ -11,6 +11,7 @@ import { Pagination } from '../ui/Pagination'
 import { useNavSearch } from '../core/router'
 import { useQuery } from '../core/useQuery'
 import { isAdminOnly, isRoot } from '../core/roles'
+import { orderCategories, categoryOptionLabel, categoryLabel } from '../core/taxonomy'
 
 // Spec 24: classic pagination. The page number lives in the URL (?page=N) and
 // the page SIZE is decided by the server from site_config.page_size — the
@@ -22,17 +23,19 @@ import { isAdminOnly, isRoot } from '../core/roles'
 // URL on every keystroke would trash the history.
 interface UrlFilters {
   page: number
-  category: number | null
+  // Category NAME, not id: ?category=PHP reads like ?tag=Go and stays
+  // meaningful when the URL is pasted into a chat. The server still accepts a
+  // numeric id, so bookmarks made before this change keep resolving.
+  category: string | null
   tag: string | null
 }
 
 function parseUrl(search: string): UrlFilters {
   const p = new URLSearchParams(search)
   const rawPage = parseInt(p.get('page') ?? '', 10)
-  const rawCat = parseInt(p.get('category') ?? '', 10)
   return {
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
-    category: Number.isFinite(rawCat) ? rawCat : null,
+    category: p.get('category') || null,
     tag: p.get('tag') || null,
   }
 }
@@ -40,7 +43,7 @@ function parseUrl(search: string): UrlFilters {
 function buildUrl(f: UrlFilters): string {
   const p = new URLSearchParams()
   if (f.page > 1) p.set('page', String(f.page))
-  if (f.category != null) p.set('category', String(f.category))
+  if (f.category) p.set('category', f.category)
   if (f.tag) p.set('tag', f.tag)
   const qs = p.toString()
   return qs ? `/?${qs}` : '/'
@@ -71,9 +74,7 @@ export function ListPage() {
         q: debouncedSearch || undefined,
         page,
         // No `size`: the server applies site_config.page_size (spec 24).
-        // Explicit null check: a valid category id could be falsy (0),
-        // which `||` would silently drop and disable the filter.
-        category: activeCategory == null ? undefined : activeCategory,
+        category: activeCategory ?? undefined,
         tag: activeTag == null ? undefined : activeTag,
       }),
     [page, status, debouncedSearch, activeCategory, activeTag],
@@ -90,12 +91,15 @@ export function ListPage() {
 
   const { data: categoriesData } = useQuery(() => listCategories(), [])
   const categories = categoriesData ?? []
+  // One flattening for both the filter dropdown and the card breadcrumbs, so
+  // the hierarchy cannot be right in one place and flat in the other.
+  const categoryNodes = useMemo(() => orderCategories(categories), [categories])
 
   // Single navigation helper: every filter change goes through it so the page
   // number is always reset deliberately (spec 24 AC-3.1) instead of by an
   // effect that would also fire on mount and fight a deep link.
   const go = useCallback(
-    (next: { page?: number; category?: number | null; tag?: string | null }) => {
+    (next: { page?: number; category?: string | null; tag?: string | null }) => {
       navigate(
         buildUrl({
           page: next.page ?? 1,
@@ -118,7 +122,7 @@ export function ListPage() {
     }
   }
 
-  const onCategorySelect = (id: number | null) => go({ category: id })
+  const onCategorySelect = (name: string | null) => go({ category: name })
   const onTagSelect = (name: string | null) => go({ tag: name })
 
   // Server-decided page size; fall back to 10 only while the first response
@@ -175,15 +179,20 @@ export function ListPage() {
               }}
             />
             <select
-              value={activeCategory !== null ? String(activeCategory) : ''}
+              value={activeCategory ?? ''}
               onInput={(e) => {
                 const val = (e.target as HTMLSelectElement).value
-                onCategorySelect(val ? Number(val) : null)
+                onCategorySelect(val || null)
               }}
             >
               <option value="">{t('list.allCategories')}</option>
-              {categories.map((c) => (
-                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              {/* Options cannot be styled, so the two-level tree is spelled
+                  with an indent + └ prefix. Values are names, matching the
+                  URL and the sidebar. */}
+              {categoryNodes.map((node) => (
+                <option key={node.cat.id} value={node.cat.name}>
+                  {categoryOptionLabel(node)}
+                </option>
               ))}
             </select>
             <select value={status} onInput={(e) => {
@@ -257,9 +266,15 @@ export function ListPage() {
                         </span>
                       )}
                     </div>
-                    {(p.category?.name || (p.tags?.length || 0) > 0) && (
+                    {(p.category || (p.tags?.length || 0) > 0) && (
                       <div class="post-tags">
-                        {p.category?.name && <span class="post-cat-chip">{p.category.name}</span>}
+                        {/* Breadcrumb ("PHP › php教程") so a child category is
+                            readable as a child even out of the sidebar. */}
+                        {p.category && (
+                          <span class="post-cat-chip">
+                            {categoryLabel(categories, p.category.id) || p.category.name}
+                          </span>
+                        )}
                         {p.tags?.map((tg) => (
                           <span key={tg.id} class="post-tag-chip">{tg.name}</span>
                         ))}

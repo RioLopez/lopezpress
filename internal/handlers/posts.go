@@ -162,39 +162,27 @@ func ListArchivePaged(w http.ResponseWriter, r *http.Request) {
 //   - q:        keyword search across title / body / author username
 //   - page:     1-based page number (default 1)
 //   - size:     page size, 1..100 (default 20)
-//   - category: category id filter
+//   - category: category name or id (a name also matches its children)
 //   - tag:      tag name filter
 func ListPosts(w http.ResponseWriter, r *http.Request) {
 	me := userFromContext(r)
 
-	query := r.URL.Query()
-	status := query.Get("status")
-	search := query.Get("q")
-	tag := query.Get("tag")
-	sort := query.Get("sort")
-	order := query.Get("order")
-	author := query.Get("author")
-
-	// Parse pagination params. An explicitly-supplied but non-numeric value
-	// (e.g. ?page=abc) is a client error: reject it with 400 instead of
-	// silently degrading to the legacy bare-array branch (P2-7).
-	nums, err := parseInts(query, "page, size and category", "page", "size", "category")
+	p, err := parsePostListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, size, cat := nums[0], nums[1], nums[2]
 
 	// Legacy bare-array form: no pagination/search requested. The explicit
 	// PageSize keeps this branch's shape stable (spec 24 changed the *default*
 	// page size for the paged path; this one is a diagnostic/back-compat
 	// endpoint, not the public list).
-	if page == 0 && size == 0 && search == "" && cat == 0 && tag == "" {
+	if p.Page == 0 && p.Size == 0 && p.Search == "" && p.Category == "" && p.Tag == "" {
 		posts, err := svc.ListPostsPage(r.Context(), me, services.ListPostsQuery{
-			Status:   status,
+			Status:   p.Status,
 			PageSize: 20,
-			SortBy:   sort,
-			Order:    order,
+			SortBy:   p.Sort,
+			Order:    p.Order,
 		})
 		if err != nil {
 			writeServiceError(w, err)
@@ -205,15 +193,15 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := svc.ListPostsPage(r.Context(), me, services.ListPostsQuery{
-		Status:   status,
-		Search:   search,
-		Page:     page,
-		PageSize: size,
-		Category: int64(cat),
-		Tag:      tag,
-		AuthorID: author,
-		SortBy:   sort,
-		Order:    order,
+		Status:   p.Status,
+		Search:   p.Search,
+		Page:     p.Page,
+		PageSize: p.Size,
+		Category: p.Category,
+		Tag:      p.Tag,
+		AuthorID: p.Author,
+		SortBy:   p.Sort,
+		Order:    p.Order,
 	})
 	if err != nil {
 		writeServiceError(w, err)
