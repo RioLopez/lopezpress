@@ -62,7 +62,7 @@ func DownloadBackup(w http.ResponseWriter, r *http.Request) {
 // ListUsers returns every account with its admin-disabled flag.
 // GET /api/users (auth, admin)
 func ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := svc.ListUsers(r.Context())
+	users, err := svc.ListUsers(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

@@ -1,10 +1,17 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"image"
+	// Register the decoders DecodeConfig needs. Standard library only: the
+	// point of the check below is validation, not image processing.
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -124,20 +131,49 @@ func isAllowedImageExt(ext string) bool {
 	return false
 }
 
-// isAllowedImageContent sniffs the leading bytes and reports whether they are
-// a real raster image (PNG / JPEG / GIF / WebP). It uses the standard library's
-// content sniffer (no new dependency), which needs at most 512 bytes, so a
-// disguised HTML or SVG payload — whose sniffed type is text/html or
-// image/svg+xml — is rejected.
+// Bounds for a decoded image. They are not a substitute for the upload byte
+// cap: a small PNG can decode to a gigapixel canvas (a decompression bomb),
+// which is why the geometry is checked from the header before any pixel data
+// is touched.
+const (
+	maxImageSide   = 12000
+	maxImagePixels = 40 * 1000 * 1000
+)
+
+// isAllowedImageContent reports whether the bytes are a real raster image
+// (PNG / JPEG / GIF / WebP) of sane dimensions.
+//
+// The first check is the stdlib content sniffer (512 bytes), which already
+// rejects HTML/SVG payloads renamed to .png. But a sniffed header is only a
+// few bytes: an 8-byte PNG signature followed by zeros used to be accepted,
+// and so was a GIF89a header glued to an HTML document (polyglot). Decoding
+// the header with image.DecodeConfig proves the format actually parses and
+// yields its geometry, which closes both cases without adding a dependency.
+//
+// WebP is the exception: the stdlib has no WebP decoder, so magic bytes are
+// the strongest check available there.
 func isAllowedImageContent(data []byte) bool {
 	if len(data) == 0 {
 		return false
 	}
 	switch http.DetectContentType(data) {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
+	case "image/webp":
 		return true
+	case "image/png", "image/jpeg", "image/gif":
+	default:
+		return false
 	}
-	return false
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return false
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return false
+	}
+	if cfg.Width > maxImageSide || cfg.Height > maxImageSide {
+		return false
+	}
+	return int64(cfg.Width)*int64(cfg.Height) <= maxImagePixels
 }
 
 // randomName returns a collision-resistant file name: <unix-ms>-<8hex><ext>.

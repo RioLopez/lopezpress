@@ -9,9 +9,21 @@ import (
 	"lopezpress/internal/models"
 )
 
-func (s *Service) ListUserLogins(ctx context.Context, id string, limit int) ([]models.LoginLog, error) {
+// ListUserLogins returns the most recent login_log rows for a user.
+//
+// The root account's trail is root-only: IP, user agent and identifier of the
+// super-admin are exactly the reconnaissance an admin needs to plan a
+// takeover, and no admin workflow requires them.
+func (s *Service) ListUserLogins(ctx context.Context, actor models.User, id string, limit int) ([]models.LoginLog, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
+	}
+	var target models.User
+	if err := s.db.WithContext(ctx).Select("id, role").Where("id = ?", id).First(&target).Error; err != nil {
+		return nil, newErr(http.StatusNotFound, "user not found")
+	}
+	if target.Role == models.RoleRoot && !IsRoot(actor) {
+		return nil, newErr(http.StatusForbidden, "only the root can view the root account's login history")
 	}
 	var logs []models.LoginLog
 	if err := s.db.WithContext(ctx).Where("user_id = ?", id).
@@ -46,9 +58,12 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 		if name == "" {
 			return models.User{}, newErr(http.StatusBadRequest, "username is required")
 		}
+		if !isValidUsername(name) {
+			return models.User{}, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
+		}
 		if name != user.Username {
 			var dup models.User
-			if s.db.WithContext(ctx).Where("username = ?", name).First(&dup).RowsAffected == 1 {
+			if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?)", name).First(&dup).RowsAffected == 1 {
 				return models.User{}, newErr(http.StatusConflict, "username already in use")
 			}
 			user.Username = name
@@ -64,7 +79,7 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 		}
 		if email != user.Email {
 			var dup models.User
-			if s.db.WithContext(ctx).Where("email = ?", email).First(&dup).RowsAffected == 1 {
+			if s.db.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).First(&dup).RowsAffected == 1 {
 				return models.User{}, newErr(http.StatusConflict, "email already in use")
 			}
 			user.Email = email
@@ -96,6 +111,36 @@ func isValidEmail(s string) bool {
 	}
 	domain := s[at+1:]
 	return strings.Contains(domain, ".")
+}
+
+// isValidUsername enforces an ASCII-only handle: 3-32 characters from
+// [A-Za-z0-9_-], starting with a letter or a digit.
+//
+// ASCII-only is the whole point. Cyrillic "а" (U+0430) and Latin "a" render
+// identically, so allowing Unicode lets an attacker register "аdmin" and
+// impersonate the real account in every list that shows names. The byte loop
+// below rejects anything outside ASCII by construction.
+//
+// Uniqueness is checked case-insensitively by the callers (LOWER(username)),
+// so "Admin" and "ADMIN" cannot coexist either — a second impersonation
+// channel that a plain unique index misses on SQLite.
+func isValidUsername(s string) bool {
+	if len(s) < 3 || len(s) > 32 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '_' || c == '-':
+			if i == 0 {
+				return false // no leading separator
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // GetAuthor returns a public author profile plus their published posts. A

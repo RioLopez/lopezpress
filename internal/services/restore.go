@@ -147,6 +147,13 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 				return err
 			}
 		}
+		// Same reason as ImportBackup: the snapshot carries the token_version
+		// values from when it was taken, so restoring it would resurrect
+		// tokens revoked after that point. Bump everyone and force a re-login.
+		if err := tx.Model(&models.User{}).Where("1 = 1").
+			UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

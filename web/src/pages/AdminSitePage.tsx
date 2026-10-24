@@ -205,7 +205,8 @@ export function AdminSitePage() {
             <input
               type="password"
               value={cfg.img_host_token}
-              placeholder={t('site.tokenHint')}
+              disabled={!isRootUser}
+              placeholder={isRootUser ? t('site.tokenHint') : t('site.rootOnlyHint')}
               onInput={(e) => set('img_host_token', (e.target as HTMLInputElement).value)}
             />
             <p class="settings-hint">
@@ -279,11 +280,16 @@ export function AdminSitePage() {
           <input
             type="checkbox"
             checked={cfg.allow_register}
+            disabled={!isRootUser}
             onInput={(e) => set('allow_register', (e.target as HTMLInputElement).checked)}
           />
           {t('site.registerOpen')}
         </label>
         <p class="settings-hint">{t('site.registerOpenHint')}</p>
+        {/* The registration gate is a site-wide admission policy: the server
+            ignores an admin's value, so the control is disabled rather than
+            offering a switch that silently does nothing. */}
+        {!isRootUser && <p class="settings-hint">{t('site.rootOnlyHint')}</p>}
       </section>
 
       <section class="settings-section">
@@ -314,10 +320,16 @@ export function AdminSitePage() {
       <section class="settings-section">
         <h3>{t('site.mail')}</h3>
         <p class="settings-hint">{t('site.mailDisabledHint')}</p>
+        {/* Mail credentials are root-only on the server: the SMTP password is
+            a secret (and is routinely the same string as the root login), so
+            the field is never sent to a plain admin and their edits are
+            ignored. Disabled inputs say so plainly instead of pretending. */}
+        {!isRootUser && <p class="settings-hint">{t('site.rootOnlyHint')}</p>}
         <div class="settings-field">
           <label>{t('site.mailHost')}</label>
           <input
             value={cfg.smtp_host}
+            disabled={!isRootUser}
             placeholder="smtp.example.com"
             onInput={(e) => set('smtp_host', (e.target as HTMLInputElement).value)}
           />
@@ -329,6 +341,7 @@ export function AdminSitePage() {
             min={1}
             max={65535}
             value={cfg.smtp_port || ''}
+            disabled={!isRootUser}
             placeholder="587"
             onInput={(e) => set('smtp_port', Number((e.target as HTMLInputElement).value) || 0)}
           />
@@ -337,6 +350,7 @@ export function AdminSitePage() {
           <label>{t('site.mailUser')}</label>
           <input
             value={cfg.smtp_user}
+            disabled={!isRootUser}
             placeholder="you@example.com"
             onInput={(e) => set('smtp_user', (e.target as HTMLInputElement).value)}
           />
@@ -346,6 +360,7 @@ export function AdminSitePage() {
           <input
             type="password"
             value={cfg.smtp_pass}
+            disabled={!isRootUser}
             placeholder="••••••••"
             onInput={(e) => set('smtp_pass', (e.target as HTMLInputElement).value)}
           />

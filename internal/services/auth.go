@@ -25,6 +25,12 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 	if len(in.Password) < 8 {
 		return nil, newErr(http.StatusBadRequest, "password must be at least 8 characters")
 	}
+	if !isValidUsername(in.Username) {
+		return nil, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
+	}
+	if !isValidEmail(in.Email) {
+		return nil, newErr(http.StatusBadRequest, "invalid email")
+	}
 
 	// Public registration is gated by the site-level allow_register flag
 	// (default false for a single-user site). Admins create users via the
@@ -33,8 +39,10 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 		return nil, newErr(http.StatusForbidden, "registration is disabled")
 	}
 
+	// Case-insensitive: the unique index is byte-exact, so without LOWER()
+	// "Admin" could be registered next to "admin".
 	var existing models.User
-	if s.db.WithContext(ctx).Where("username = ? OR email = ?", in.Username, in.Email).
+	if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", in.Username, in.Email).
 		First(&existing).RowsAffected == 1 {
 		return nil, newErr(http.StatusConflict, "username or email already in use")
 	}

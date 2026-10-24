@@ -78,7 +78,6 @@ export function AdminBackupPage() {
       pushToast('error', t('admin.importNoFile'))
       return
     }
-    if (!(await confirmDialog(t('admin.importConfirm')))) return
 
     // Read + parse the file, then hand the parsed object to the API.
     let data: unknown
@@ -91,6 +90,23 @@ export function AdminBackupPage() {
 
     setImportBusy(true)
     try {
+      // Step 1: dry run. The server validates the payload (schema, users
+      // present, a root account) and returns the counts without writing
+      // anything, so the operator confirms against real numbers instead of a
+      // filename. An empty `{}` is rejected here with a 400.
+      const preview = await importBackup(data, true)
+      const ok = await confirmDialog(
+        t('admin.importPreview', {
+          users: String(preview.users),
+          posts: String(preview.posts),
+          cats: String(preview.categories),
+          tags: String(preview.tags),
+        }),
+      )
+      if (!ok) return
+
+      // Step 2: apply. api.ts adds confirm="REPLACE-ALL-DATA" — the server
+      // rejects an apply without it.
       const stats: BackupStats = await importBackup(data)
       pushToast('success', t('admin.importSuccess'))
       // Refresh the result panel to reflect the restored row counts.
@@ -127,11 +143,19 @@ export function AdminBackupPage() {
 
       <div class="backup-warning">{t('admin.backupSecurityNote')}</div>
 
-      <button class="btn btn-primary" onClick={doExport} disabled={busy}>
-        {busy ? t('admin.exportBusy') : t('admin.exportBtn')}
-      </button>
+      {/* Export writes a JSON dump that embeds bcrypt password hashes, and
+          download streams any file in the backup dir (including the raw .db
+          snapshots). Both are root-only on the server, so the button is only
+          rendered for root instead of offering a control that 403s. */}
+      {isRoot(user?.role) ? (
+        <button class="btn btn-primary" onClick={doExport} disabled={busy}>
+          {busy ? t('admin.exportBusy') : t('admin.exportBtn')}
+        </button>
+      ) : (
+        <p class="muted">{t('admin.exportRootOnly')}</p>
+      )}
 
-      {result && (
+      {isRoot(user?.role) && result && (
         <div class="backup-result">
           <div class="backup-result-title">{t('admin.lastBackup')}</div>
           <div class="backup-result-file">

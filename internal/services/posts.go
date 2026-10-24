@@ -68,6 +68,13 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	}
 	post.Slug = slug
 	if in.Pinned != nil {
+		// Pinning floats a post to the top of every public list for every
+		// reader, so it is a site-wide editorial decision, not an author
+		// choice: a plain member could otherwise buy the front-page slot by
+		// ticking a checkbox before submitting for review.
+		if *in.Pinned && !IsAdminOrRoot(user) {
+			return models.Post{}, newErr(http.StatusForbidden, "only an admin can pin a post")
+		}
 		post.Pinned = *in.Pinned
 	}
 	// Create the post and its tag associations atomically: if the tag

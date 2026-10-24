@@ -27,6 +27,12 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 	if len(in.Password) < 8 {
 		return models.User{}, newErr(http.StatusBadRequest, "password must be at least 8 characters")
 	}
+	if !isValidUsername(in.Username) {
+		return models.User{}, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
+	}
+	if !isValidEmail(in.Email) {
+		return models.User{}, newErr(http.StatusBadRequest, "invalid email")
+	}
 	// Service-level privilege check (defense in depth): only admin-or-root may
 	// provision accounts. The route table already enforces this (P4), but the
 	// service is the authoritative layer and must not trust the transport to
@@ -35,7 +41,8 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 		return models.User{}, newErr(http.StatusForbidden, "only admin or root can create users")
 	}
 	var existing models.User
-	if s.db.WithContext(ctx).Where("username = ? OR email = ?", in.Username, in.Email).First(&existing).RowsAffected == 1 {
+	if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", in.Username, in.Email).
+		First(&existing).RowsAffected == 1 {
 		return models.User{}, newErr(http.StatusConflict, "username or email already in use")
 	}
 	// Resolve the requested role against the actor's privilege.

@@ -291,9 +291,14 @@ type LoginMeta struct {
 // schema_version / app_version fields (spec #6) let the importer reject
 // dumps from an incompatible app before touching the database.
 type ImportData struct {
-	SchemaVersion  int               `json:"schema_version"`
-	AppVersion     string            `json:"app_version"`
-	ExportedAt     string            `json:"exported_at"`
+	SchemaVersion int    `json:"schema_version"`
+	AppVersion    string `json:"app_version"`
+	ExportedAt    string `json:"exported_at"`
+	// Confirm must equal ImportConfirmPhrase before a non-dry-run import is
+	// allowed to replace the database. It is not part of the exported dump:
+	// the client adds it to the payload it re-submits after a dry run, so an
+	// accidental "import this file" click cannot wipe the site on its own.
+	Confirm        string            `json:"confirm,omitempty"`
 	Users          []models.User     `json:"users"`
 	PasswordHashes map[string]string `json:"password_hashes,omitempty"`
 	Categories     []models.Category `json:"categories"`

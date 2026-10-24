@@ -373,11 +373,21 @@ export function saveBlob(blob: Blob, filename: string) {
 // Restores the database from an exported backup JSON (destructive: replaces
 // current contents). Send the already-parsed object so the caller can read
 // the file locally first.
-export const importBackup = (data: unknown) =>
-  request<BackupStats>('/api/backup/import', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
+//
+// Two-step by design: call it with dryRun=true first to get the row counts
+// without touching anything, then call it again with dryRun=false. The server
+// refuses an apply that does not carry confirm="REPLACE-ALL-DATA", so a
+// single accidental click can no longer wipe the site.
+export const importBackup = (data: unknown, dryRun = false) =>
+  dryRun
+    ? request<BackupStats>('/api/backup/import?dry_run=1', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    : request<BackupStats>('/api/backup/import', {
+        method: 'POST',
+        body: JSON.stringify({ ...(data as Record<string, unknown>), confirm: 'REPLACE-ALL-DATA' }),
+      })
 
 // --- admin: trash / recovery ---
 export const listTrash = () =>
