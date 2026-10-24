@@ -57,13 +57,21 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 
 	applyFilters := func(db *gorm.DB) *gorm.DB {
 		query := db.WithContext(ctx).Model(&models.Post{})
+		// Author-only states: nobody but the author sees these, whatever the
+		// caller's role (see canSeePost). Kept in one slice so the list filter
+		// and the single-post guard cannot drift apart.
+		authorOnly := []string{models.PostPrivate, models.PostDraft}
 		switch {
 		case user.Role == models.RoleRoot:
-			// root: sees every post, including the banned vault.
+			// root: the moderation view — every post including the banned
+			// vault, EXCEPT other people's author-only posts.
+			query = query.Where("posts.status NOT IN ? OR posts.author_id = ?", authorOnly, user.ID)
 		case user.Role == models.RoleAdmin:
-			// admin: sees everything EXCEPT the banned vault (root-only).
-			// pending / rejected / private are all visible.
-			query = query.Where("posts.status <> ?", models.PostBanned)
+			// admin: everything except the banned vault (root-only) and other
+			// people's author-only posts.
+			query = query.Where(
+				"(posts.status NOT IN ? AND posts.status <> ?) OR posts.author_id = ?",
+				authorOnly, models.PostBanned, user.ID)
 		case user.ID != "":
 			// Signed-in member (user): public posts PLUS their own
 			// restricted posts (private / pending / rejected). They never see

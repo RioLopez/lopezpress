@@ -246,6 +246,25 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 ---
 
+## 3.2 可见性矩阵（第 73 轮收紧「私密」）
+
+判定唯一入口 `services.canSeePost`；列表过滤在 `ListPostsPage` 的 `applyFilters` 里用同一份 `authorOnly` 名单（`private` + `draft`），两者必须同步修改。
+
+| 状态 | 匿名 | 作者本人 | 其他普通用户 | admin | root |
+|---|---|---|---|---|---|
+| `published` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `private` | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `draft`（第 22 轮已废的遗留值） | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `pending` | ❌ | ✅ | ❌ | ✅ | ✅ |
+| `rejected` | ❌ | ✅ | ❌ | ✅ | ✅ |
+| `banned` | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+- 看不到时**一律 404**，不区分"不存在"与"存在但无权看"，避免泄露文章存在性。
+- admin/root 读不到别人的 `private`：私密文章永不进入公开区，没有治理需求；只要能读，「仅自己可见」就是假话。审核需要看的 `pending`/`rejected` 仍对 admin/root 开放。
+- 后果：后台「文章管理」对 admin 会少显示别人的 private/draft 行，这是预期行为。
+
+---
+
 ## 4. 变更日志
 
 | 轮次 | 变更 |

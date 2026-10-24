@@ -32,18 +32,23 @@ const (
 // Post status names. The visibility axis expanded from public/private to a
 // review workflow (spec: content moderation + banned vault):
 //   - Published: public, visible to everyone (default outcome of approval).
-//   - Private: author + admin/root only.
+//   - Private: author ONLY. Not admins, not root — "仅自己可见" means exactly
+//     that, and unpublished content needs no moderation.
 //   - Pending: in the review queue. Visible to the author and to admin/root.
 //   - Rejected: sent back to the author for revision, with a reviewer note.
 //     Visible to the author + admin/root; carries ReviewNote.
 //   - Banned: hard-moderated by root. Visible to root ONLY (banned vault);
 //     hidden from the author and other admins.
+//   - Draft: LEGACY, retired in round 22 (the editor no longer produces it).
+//     Kept only so stray old rows stay readable by their author and invisible
+//     to everyone else; treat it exactly like Private.
 const (
 	PostPublished = "published"
 	PostPrivate   = "private"
 	PostPending   = "pending"
 	PostRejected  = "rejected"
 	PostBanned    = "banned"
+	PostDraft     = "draft"
 )
 
 // User represents an account that can authenticate and author posts.
