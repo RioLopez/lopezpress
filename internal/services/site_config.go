@@ -58,11 +58,26 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 			return models.SiteConfig{}, newErr(http.StatusBadRequest, "site url must start with http:// or https://")
 		}
 	}
-	// Validate friend_links is well-formed JSON when supplied.
+	// Validate friend_links: well-formed JSON array, and every url must be an
+	// absolute http(s) link. The footer renders these into <a href> verbatim,
+	// so a "javascript:" entry is a stored-XSS primitive that fires on click.
 	if strings.TrimSpace(in.FriendLinks) != "" {
 		var links []map[string]string
 		if err := json.Unmarshal([]byte(in.FriendLinks), &links); err != nil {
 			return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend links must be a JSON array")
+		}
+		if len(links) > 50 {
+			return models.SiteConfig{}, newErr(http.StatusBadRequest, "too many friend links (max 50)")
+		}
+		for _, l := range links {
+			u := strings.TrimSpace(l["url"])
+			low := strings.ToLower(u)
+			if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") {
+				return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend link url must start with http:// or https://")
+			}
+			if len([]rune(u)) > 500 {
+				return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend link url too long")
+			}
 		}
 	}
 

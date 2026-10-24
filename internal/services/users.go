@@ -35,14 +35,20 @@ func (s *Service) UserStats(ctx context.Context, user models.User) (UserStats, e
 // --- user management (admin) ---
 
 // ListUsers returns every account with its admin-disabled flag.
-func (s *Service) ListUsers(ctx context.Context) ([]UserWithDisabled, error) {
+//
+// A plain admin sees the root account exists (it must, to avoid "why can't I
+// manage this row" confusion) but not its contact address or last login IP:
+// those two fields are how an admin would profile the super-admin, and no
+// user-management screen needs them.
+func (s *Service) ListUsers(ctx context.Context, actor models.User) ([]UserWithDisabled, error) {
 	var users []models.User
 	if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&users).Error; err != nil {
 		return nil, newErr(http.StatusInternalServerError, "failed to load users")
 	}
+	hideRootDetails := !IsRoot(actor)
 	out := make([]UserWithDisabled, 0, len(users))
 	for _, u := range users {
-		out = append(out, UserWithDisabled{
+		row := UserWithDisabled{
 			ID:          u.ID,
 			Username:    u.Username,
 			Email:       u.Email,
@@ -52,7 +58,12 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserWithDisabled, error) {
 			LastLoginIP: u.LastLoginIP,
 			LastLoginAt: u.LastLoginAt,
 			CreatedAt:   u.CreatedAt,
-		})
+		}
+		if hideRootDetails && u.Role == models.RoleRoot {
+			row.Email = ""
+			row.LastLoginIP = ""
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }

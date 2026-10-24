@@ -136,15 +136,20 @@ var routes = []route{
 	{method: "POST", path: "/api/admin/banned/{id}/send-back", auth: authRequired, roles: rootRoles, handler: handlers.SendBackPost},
 	{method: "DELETE", path: "/api/admin/banned/{id}", auth: authRequired, roles: rootRoles, handler: handlers.DeleteBannedPermanently},
 
-	// ---- Admin (admin|root): Markdown import + backup/trash ----
+	// ---- Admin (admin|root): Markdown import + trash ----
 	{method: "POST", path: "/api/admin/import/markdown", auth: authRequired, roles: adminRoles, handler: handlers.ImportMarkdown},
-	{method: "POST", path: "/api/backup", auth: authRequired, roles: adminRoles, handler: handlers.ExportBackup},
-	{method: "GET", path: "/api/backup/download", auth: authRequired, roles: adminRoles, handler: handlers.DownloadBackup},
 	{method: "GET", path: "/api/trash", auth: authRequired, roles: adminRoles, handler: handlers.ListTrash},
 	{method: "POST", path: "/api/trash/empty", auth: authRequired, roles: adminRoles, handler: handlers.EmptyTrash},
 	{method: "POST", path: "/api/trash/{id}/restore", auth: authRequired, roles: adminRoles, handler: handlers.RestoreTrash},
 
-	// ---- Root-only: backup import / snapshot restore ----
+	// ---- Root-only: backup export / download / import / snapshot restore ----
+	// The export JSON embeds bcrypt password hashes and the snapshots are raw
+	// .db copies of the users table, so the whole backup surface is root-only.
+	// An admin could previously list-restrict snapshots (403) yet still pull
+	// any file by name through the download endpoint, which made the export
+	// and download paths an unguarded hash-disclosure channel.
+	{method: "POST", path: "/api/backup", auth: authRequired, roles: rootRoles, handler: handlers.ExportBackup},
+	{method: "GET", path: "/api/backup/download", auth: authRequired, roles: rootRoles, handler: handlers.DownloadBackup},
 	{method: "POST", path: "/api/backup/import", auth: authRequired, roles: rootRoles, handler: handlers.ImportBackup},
 	{method: "POST", path: "/api/backup/restore-snapshot", auth: authRequired, roles: rootRoles, handler: handlers.RestoreSnapshot},
 	{method: "GET", path: "/api/backup/snapshots", auth: authRequired, roles: rootRoles, handler: handlers.ListSnapshots},

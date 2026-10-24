@@ -1136,6 +1136,10 @@
 | 69 | 用户/权限/个人中心逻辑梳理 | 个人中心只显示自己的文章；用户名/邮箱可改；后台权限可视化矩阵 |
 | 70 | 后台全功能真机走查 + 3 个前端 bug | wouter query 失效（`useNavSearch`）、按钮越权渲染（`canEditPost`）、硬刷新掉登录（`setTokenGetter` 提到模块加载）→ 提交 `f157437` 并推送 |
 | 71 | 排查「私密文章被别人看到」 | 后端 9 个读取入口 + 匿名/登录实测证明**不泄漏**；根因是浏览器残留 admin token；另记 2 个真实产品缺陷（编辑器暴露「私密」但存不下来、`pending` 误显为「公开」） |
+| 72 | 外部渗透报告核实（11 项） | 9 真 / 5 假阳性；`SanitizeAuthor` 堵住作者 email 泄露、安全头、上传魔数校验、改密回发新 token、nginx 4 个 location → `5683a81` |
+| 73 | 「私密」可见性收紧 | `canSeePost` 拆 `private`/`draft` 独立分支**只判作者**；admin 也不再能读他人 private → `540b403` |
+| 74 | 分类链接可读化 + 层级可见 + 标签自动补全 | `?category=` 收名字、`core/taxonomy.ts`、CSDN 式标签选择器、后端 `LOWER(name)` 归并 → `fab0762` |
+| 75 | 外部渗透报告核实（root/admin 权限面，15 项） | 8 类真问题已修（备份导入清库 / 备份导出下载未收归 root / SMTP 明文口令 / `javascript:` 友链 / 普通用户置顶 / 用户名同形字 / 上传魔数 / 恢复复活旧 token）+ 4 项假阳性；Go 188 用例、隔离冒烟 28/28 |
 
 ---
 
@@ -1255,6 +1259,61 @@
 **真机验证**（重启二进制 + Chrome 实点）：`?category=Windows` 与 `?category=3` 结果一致（1 篇）、父分类「系统与网络」连带子分类命中；点侧边栏 php教程 → URL 变 `?category=php%E6%95%99%E7%A8%8B`（地址栏显示中文）；卡片 chip 显示「系统与网络 › Windows」；下拉显示「└ Windows」；`?tag=go`/`GO` 与 `?tag=Go` 均 11 篇。
 
 **顺带修**：`api.md` 里 `/api/posts` 的参数写作 `search=`，实际是 `q`，已改正。
+
+### 第 75 轮 — 外部渗透报告（root/admin 权限面）核实与修复
+
+报告共 15 项，核实后 **8 类真问题已修**、**4 项假阳性**（详见文末「复核判定」）。
+
+**① 备份导入能一条请求清库（真，已修）**
+
+`POST /api/backup/import {}` 曾返回 200 并把 users/posts/categories/tags 全删（`validateImportPayload` 三条检查全是「字段存在才校验」，空对象全部跳过）。现在三道闸：
+
+- 结构闸：`users` 非空、每行有 `id`/`username`/`email`、至少一个 `role:"root"`。没有 root 的备份导入后会「没人能登录、没人能恢复」。
+- 预检闸：`?dry_run=1` 只回 `stats`。
+- 确认闸：非 dry-run 必须带 `confirm:"REPLACE-ALL-DATA"`（`ImportData.Confirm`，不写进导出文件，由客户端二次提交时补上）。
+
+**② 备份导出/下载没收归 root（真，已修）**
+
+`/api/backup` 与 `/api/backup/download` 原为 `adminRoles`，而 `/api/backup/snapshots` 是 root-only——admin 拿不到列表却能按文件名直接下 `auto-*.db`（内含 `CREATE TABLE users(... password_hash)`）。且导出的 JSON 本身也带 `password_hashes` 映射。两个端点改 `rootRoles`，前端导出按钮仅 root 渲染。
+
+**③ `site-config` 对 admin 泄露 SMTP 明文口令（真，已修）**
+
+`GET /api/admin/site-config` 原样返回 `smtp_pass`——而该口令与 root 登录口令同值，等于 admin 一步变 root。现在非 root 读到的 `smtp_pass`/`img_host_token` 一律为空串；`PUT` 时非 root 的这几个字段（含 `allow_register`、`auto_backup`、`backup_keep`）**继承库里现值**（字段级授权，不是路由守卫），前端对应输入框 `disabled` + 提示「仅 root 可修改」。
+
+**④ `friend_links` 可存 `javascript:`（真，已修）**
+
+页脚把 `url` 原样塞进 `<a href>`，`javascript:` 链接点击即执行。`UpdateSiteConfig` 现在要求每个 url 以 `http://` / `https://` 开头、上限 50 条、单条 500 字符。
+
+**⑤ 普通用户可自设置顶（真，已修）**
+
+`CreatePost`/`UpdatePost` 原来无条件写 `pinned`，而公开列表排序是 `pinned DESC, created_at DESC` —— 任何用户勾一下就占首页头位（配合审核通过即生效）。现在只有 admin/root 能把 `pinned` 从 false 改 true（保持原值/取消置顶不受限），`ReviewPost` 通过普通用户文章时强制 `pinned=false`，前端编辑器对普通用户隐藏置顶开关。
+
+**⑥ 用户名 Unicode 同形字 + 大小写变体（真，已修）**
+
+`isValidUsername`：3–32 字符、`[A-Za-z0-9_-]`、首字符必须字母或数字（西里尔 `а` 是双字节，直接落 `default` 分支被拒）。`Register`/`CreateUser`/`UpdateMe` 共用；唯一性检查改 `LOWER(username)` / `LOWER(email)`，`Admin` 与 `admin` 不能再共存（SQLite 的 unique index 是字节精确的，靠它挡不住）。
+
+**⑦ 上传只校验魔数（真，已修）**
+
+`isAllowedImageContent` 现在对 PNG/JPEG/GIF 再跑一次 `image.DecodeConfig`（标准库解码器，零新依赖）：8 字节 PNG 头 + 零填充、GIF89a 头接 HTML 的 polyglot 都会被拒；同时限制边长 ≤ 12000、像素 ≤ 4000 万（解压炸弹）。WebP 标准库无解码器，仍只校验魔数。
+
+**⑧ 恢复备份复活旧 token（真，已修）**
+
+导入/恢复会带回快照里的 `token_version`，等于把已撤销的 JWT 重新变成有效。`ImportBackup` 与 `RestoreSnapshot` 在事务末尾对**所有**账号 `token_version + 1`，恢复完成后必须重新登录。
+
+**⑨ admin 可窥 root 的登录记录与邮箱/IP（真，已修）**
+
+`GET /api/users/{root}/logins` 对非 root 返回 403；`GET /api/users` 对非 root 把 root 行的 `email`/`last_login_ip` 置空；前端对 root 行隐藏「登录历史」按钮。
+
+**复核判定：假阳性 4 项**
+
+| 报告项 | 判定 |
+|---|---|
+| `?limit=-1` 返回全部审计日志 | **假**。`parseLimit` 把非法/负数回落到默认 50，超上限 clamp 200；`ListActions` 服务层同样 clamp。报告把 50 行（约 12KB）当成了 157 行全量 |
+| `page_size=5000` 被接受 | **假**。`ClampPageSize` 只允许 {5,10,20,30}，5000 落回默认 10；公开列表无参走的是 20 条裸数组（旧兼容分支），与 `page_size` 无关 |
+| 被驳回文章无法改稿重投 | **假**。`UpdatePost` 支持作者把 `rejected` 改回 `pending`（清空 review_note），编辑器顶部也有「重新提交审核」按钮 |
+| `X-Forwarded-For` 可伪造 IP | **部分真但属设计**。`internal/clientip` 只信任 `TRUSTED_PROXIES`（默认回环）；报告是从本机直连 8080 测的，此时回环正是「可信反代」。**遗留**：若 nginx 用 `$proxy_add_x_forwarded_for` 透传，客户端自带的 XFF 会留在最左，而 `Client()` 取最左一跳 → 仍可伪造，需在 VPS 上连同 nginx 一起改（取最右一跳或改 `$remote_addr`） |
+
+**测试**：Go 184 → **188**（新增 `import_guard_test.go` 4 条：空载荷拒绝且不写库、缺 confirm 拒绝且生效后 token_version 递增、普通用户 pin 被拒 + 审批清 pin、同形字/大小写用户名）。隔离冒烟 **28/28**（复制 DB + 临时目录 + 独立二进制 18081）。
 
 ---
 

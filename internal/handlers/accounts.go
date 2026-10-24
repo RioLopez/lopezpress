@@ -42,13 +42,23 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetAdminSiteConfig returns the FULL site config (incl. token + flags).
+// GetAdminSiteConfig returns the FULL site config for the settings form.
 // GET /api/admin/site-config (auth, admin)
+//
+// Secrets are masked for a plain admin: smtp_pass and img_host_token are
+// credentials (the SMTP password is very often reused for the root login), and
+// reading them from a settings screen is a privilege escalation, not a feature.
+// The admin form still works because UpdateSiteConfig re-inherits the stored
+// values for any field the caller may not change.
 func GetAdminSiteConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := svc.GetSiteConfig(r.Context(), true)
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if !services.IsRoot(userFromContext(r)) {
+		cfg.SmtpPass = ""
+		cfg.ImgHostToken = ""
 	}
 	writeJSON(w, http.StatusOK, cfg)
 }
@@ -64,14 +74,22 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	// Map the JSON body onto the model. friend_links arrives as a raw JSON
 	// string (the client serialises the array itself).
 	cfg := services.SiteConfigFromMap(in)
-	// Spec 34: the daily-backup policy is a root-only setting. A non-root
-	// admin saving the settings form must not be able to switch it off (or
-	// silently reset the retention) just because their payload omitted it, so
-	// their submission inherits the stored values.
+	// Root-only settings: the daily-backup policy, the registration gate and
+	// the mail/image-host credentials. A non-root admin saving the settings
+	// form must not be able to switch any of them off (or blank a secret it
+	// cannot read) just because their payload omitted or masked it, so their
+	// submission inherits the stored values. Field-level authorisation, not a
+	// route guard: an admin keeps full control of the content fields.
 	if !services.IsRoot(userFromContext(r)) {
 		if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
 			cfg.AutoBackup = cur.AutoBackup
 			cfg.BackupKeep = cur.BackupKeep
+			cfg.AllowRegister = cur.AllowRegister
+			cfg.SmtpHost = cur.SmtpHost
+			cfg.SmtpPort = cur.SmtpPort
+			cfg.SmtpUser = cur.SmtpUser
+			cfg.SmtpPass = cur.SmtpPass
+			cfg.ImgHostToken = cur.ImgHostToken
 		}
 	}
 	out, err := svc.UpdateSiteConfig(r.Context(), cfg)
@@ -79,6 +97,9 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	// Never echo a secret back, whatever the caller's role.
+	out.SmtpPass = ""
+	out.ImgHostToken = ""
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -179,7 +200,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 func ListUserLogins(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	limit := parseLimit(r.URL.Query(), "limit", 50, 100)
-	logs, err := svc.ListUserLogins(r.Context(), id, limit)
+	logs, err := svc.ListUserLogins(r.Context(), userFromContext(r), id, limit)
 	if err != nil {
 		writeServiceError(w, err)
 		return

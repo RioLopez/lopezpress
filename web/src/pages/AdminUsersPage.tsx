@@ -265,9 +265,15 @@ export function AdminUsersPage() {
                 <td class="mono-cell">{u.last_login_ip || '—'}</td>
                 <td class="muted">{fmtDate(u.last_login_at, locale)}</td>
                 <td class="actions">
-                  <button class="btn btn-sm btn-ghost" disabled={busyId === u.id} onClick={() => openLogs(u)}>
-                    {t('admin.loginHistory')}
-                  </button>
+                  {/* The root account's login trail is root-only on the
+                      server: an admin could otherwise profile where the
+                      super-admin signs in from. Hide the entry instead of
+                      offering a button that 403s. */}
+                  {(isRoot(user?.role) || u.role !== 'root') && (
+                    <button class="btn btn-sm btn-ghost" disabled={busyId === u.id} onClick={() => openLogs(u)}>
+                      {t('admin.loginHistory')}
+                    </button>
+                  )}
                   <button class="btn btn-sm btn-ghost" disabled={busyId === u.id} onClick={() => setResetTarget(u)}>
                     {t('admin.resetPwd')}
                   </button>

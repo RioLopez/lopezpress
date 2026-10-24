@@ -329,10 +329,10 @@ func TestRegisterDuplicateByEmail(t *testing.T) {
 	defer closeDB(db)
 	ctx := context.Background()
 
-	if _, err := svc.Register(ctx, RegisterInput{Username: "u1", Email: "same@example.com", Password: "password1"}); err != nil {
+	if _, err := svc.Register(ctx, RegisterInput{Username: "u1x", Email: "same@example.com", Password: "password1"}); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	if _, err := svc.Register(ctx, RegisterInput{Username: "u2", Email: "same@example.com", Password: "password2"}); StatusOf(err) != http.StatusConflict {
+	if _, err := svc.Register(ctx, RegisterInput{Username: "u2x", Email: "same@example.com", Password: "password2"}); StatusOf(err) != http.StatusConflict {
 		t.Fatalf("expected 409 on duplicate email, got %v (err=%v)", StatusOf(err), err)
 	}
 }

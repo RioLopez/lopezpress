@@ -116,28 +116,41 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/api/users` | admin | 用户列表 |
+| GET | `/api/users` | admin | 用户列表。非 root 调用时 root 那行的 `email`/`last_login_ip` 为空 |
 | POST | `/api/users` | admin | 新建用户（不可造 root） |
 | PUT | `/api/users/{id}` | admin | 改用户（不可提升为 root） |
 | PUT | `/api/users/{id}/disabled` | admin | 启用/禁用 |
 | POST | `/api/users/{id}/reset-password` | admin | 重置密码（`canManageUser` 守卫）。重置后 bump 目标 `token_version`，其所有旧会话立即失效 |
 | DELETE | `/api/users/{id}` | admin | 删除 |
-| GET | `/api/users/{id}/logins` | admin | 该用户登录记录 |
+| GET | `/api/users/{id}/logins` | admin | 该用户登录记录。目标为 root 时仅 root 可读（403） |
 | GET | `/api/site-config` | 公开 | 公开配置（品牌、`page_size`、`public_read`） |
-| GET | `/api/admin/site-config` | admin | 全量配置（含 SMTP、图床 token） |
-| PUT | `/api/admin/site-config` | admin | 保存（非 root 提交时继承 `auto_backup`/`backup_keep`） |
+| GET | `/api/admin/site-config` | admin | 全量配置。非 root 的 `smtp_pass`/`img_host_token` 一律返回空串 |
+| PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`（字段级授权）；`friend_links[].url` 必须是 http(s)，否则 400 |
 | POST | `/api/admin/mail/test` | admin | 测试邮件 |
-| POST | `/api/backup` | admin | 导出 JSON 备份 |
-| POST | `/api/backup/import` | admin | 导入（`dry_run` 支持） |
-| GET | `/api/backup/download` | admin | 下载备份文件 |
+| POST | `/api/backup` | **root** | 导出 JSON 备份（含 bcrypt 哈希，故仅 root） |
+| POST | `/api/backup/import` | **root** | 导入：先 `?dry_run=1` 预检，应用需载荷带 `confirm:"REPLACE-ALL-DATA"` |
+| GET | `/api/backup/download` | **root** | 下载备份文件（JSON 与 `auto-*.db` 快照均含密码哈希） |
 | GET | `/api/backup/snapshots` | root | 快照列表（`snapshot-*` 与 `auto-*`） |
-| POST | `/api/backup/restore-snapshot` | root | 从快照恢复 |
+| POST | `/api/backup/restore-snapshot` | root | 从快照恢复（恢复后全站 `token_version` +1） |
 | GET | `/api/admin/backup/auto` | root | 每日备份状态 |
 | POST | `/api/admin/backup/auto` | root | 立即生成今日快照（幂等） |
 
 ---
 
 ## 2. 关键端点细节
+
+### `POST /api/backup/import`（root）
+
+整体替换数据库，因此有三道闸门，缺一即 400 且不写库：
+
+1. **结构闸**：`users` 不能为空；每行必须有 `id`/`username`/`email`；必须至少有一个 `role:"root"`。
+   （空对象 `{}` 曾在 2026-10-24 一次请求清空全站，此闸即为它而设。）
+2. **预检闸**：`?dry_run=1` 只返回 `stats` 与实际将写入的行数，不落盘、不建快照。
+3. **确认闸**：非 dry-run 必须携带 `confirm:"REPLACE-ALL-DATA"`，否则 400。
+
+应用成功后：先 `VACUUM INTO` 生成 `snapshot-*.db`（保留 3 份），再在单事务里清表重建，
+并为**所有**账号 `token_version + 1` —— 恢复备份等于撤销全站会话（否则恢复会复活旧 token）。
+
 
 ### `POST /api/posts/{id}/view`
 
@@ -269,6 +282,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 | 变更 |
 |---|---|
+| 73 | 权限面收紧：① `backup` 导出/下载收归 root（此前 admin 可下载含密码哈希的 JSON 与 `.db`）② 导入加结构闸 + `confirm` 确认词 + 全站 token 失效 ③ `site-config` 对非 root 脱敏 `smtp_pass`/`img_host_token`，`allow_register`/`smtp_*` 改 root 专属 ④ `friend_links` 仅允许 http(s) ⑤ `pinned` 仅 admin/root 可设，审批时清掉普通用户自设的置顶 ⑥ 用户名限定 ASCII `[A-Za-z0-9_-]`（3–32）且大小写不敏感唯一 ⑦ 上传用 `image.DecodeConfig` 真实解码 + 像素上限 ⑧ 非 root 不可读 root 的登录记录与邮箱/IP |
 | 72 | 安全加固：① 文章载荷裁剪 author 敏感字段（见 §3.1）② `change-password` 响应新增 `token`/`expires`，旧 token 立刻失效 ③ `login` 支持 `username` 当标识 ④ `upload` 加 magic-bytes 内容校验 ⑤ 全站响应加安全头（`X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`/CSP/HSTS） |
 | 52 | 新增 `GET /api/posts/{id}/related`、`GET/POST /api/admin/backup/auto`；dashboard 增加 `pending_total`/`view_trend`/`top_posts` |
 | 51 | 新增 `GET /api/posts/{id}/revisions`、`POST .../revisions/{revID}/restore`、`POST /api/admin/import/markdown` |

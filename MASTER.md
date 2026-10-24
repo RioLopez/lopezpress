@@ -255,16 +255,16 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 ---
 
-## 7. 事实基线（第 74 轮实测，2026-10-24；改动后请重测并更新）
+## 7. 事实基线（第 75 轮实测，2026-10-24；改动后请重测并更新）
 
 | 指标 | 值 |
 |---|---|
-| 后端规模 | 96 个 `.go`，16,903 行；6 个直接依赖（+11 indirect） |
-| 前端规模 | 69 个 `.ts(x)`，10,757 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
-| 测试 | 44 个文件 / **184** 个 `Test*`（services 114 / handlers 29 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2）+ 前端 vitest 5 文件 **43** 用例 |
+| 后端规模 | 97 个 `.go`，17,304 行；6 个直接依赖（+11 indirect） |
+| 前端规模 | 69 个 `.ts(x)`，10,827 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
+| 测试 | 45 个文件 / **188** 个 `Test*`（services 118 / handlers 29 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2）+ 前端 vitest 5 文件 **43** 用例 |
 | 路由 | 后端 **76** 条，前端接入 69 条，方法不匹配 **0**（`scripts/contract_check.py`） |
 | 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=26（仅状态码常量，观察项）/ R2.files=1 / R2.funcs=16 / **R3=0**（散落在 `dto.go` 外的 struct）/ R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
-| 构建产物 | JS 237.59 kB / gzip 73.95 kB；CSS 63.11 kB / gzip 11.80 kB |
+| 构建产物 | JS 238.86 kB / gzip 74.35 kB；CSS 63.11 kB / gzip 11.80 kB |
 | Git | 分支 `main`，tag `v0.1.0`，远程 `RioLopez/lopezpress`（private） |
 | 文档 | 仓库内 71 份（含本文件，不含 memory 日志） |
 
@@ -317,12 +317,12 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-24 11:30（第 74 轮：分类链接改分类名 `?category=PHP`；分类层级在侧边栏/下拉/卡片面包屑三处可见；编辑器标签改自动补全 + 后端大小写归并） |
+| 最后更新 | 2026-10-24 12:30（第 75 轮：核实外部渗透报告 root/admin 权限面，修 8 类真问题 —— 备份导入可清库、备份导出/下载未收归 root、site-config 泄露 SMTP 明文口令、`pinned` 普通用户可设、用户名 Unicode 同形字、上传只校验魔数、admin 可窥 root 登录记录、恢复备份复活旧 token） |
 | 对应提交 | 主题 `fix(visibility): make private author-only`（第 73 轮）/ `fix(security): harden author payload, upload, token revocation, headers`（第 72 轮，已推送 `5683a81`），用 `git log --oneline -3` 核对，**不写 sha** |
-| 正在做 | 无进行中任务；本轮代码 + 文档已落盘，`go build/vet/test`（184 用例）、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check`、前端 vitest（43 用例）全绿；本地服务已用新二进制重启（8080 + 5173） |
-| 下一步第一件事 | ① **第 74 轮改动需 commit + 推送** ② **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`（存不下来，第 73 轮私密收紧后这个入口更矛盾）；`PostEditor` 把 `pending` 误显为「公开」 ③ **编辑器三栏在 1440 宽窗口下右侧面板溢出被裁**（标签输入框只露出 80px，第 74 轮真机走查发现，非本轮引入，未修） ④ **nginx 改动需实测**（`/uploads` `/feed` `/sitemap.xml` `/robots.txt` 4 个 location + 静态 location 安全头），有 VPS 才能验 |
+| 正在做 | 无进行中任务；本轮代码 + 文档已落盘，`go build/vet/test`（188 用例）、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check`、前端 vitest（43 用例）全绿，隔离冒烟 28/28（复制 DB 到 18081，临时目录，独立二进制，验完即删） |
+| 下一步第一件事 | ① **第 75 轮改动需 commit + 推送** ② **用新二进制重启本地服务**（当前 8080 还是旧进程，`LopezPress.bat restart`）③ **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`；`PostEditor` 把 `pending` 误显为「公开」 ④ **编辑器三栏在 1440 宽窗口下右侧面板溢出被裁**（T-4，非本轮引入）⑤ **nginx 改动需实测**（4 个 location + 静态 location 安全头），有 VPS 才能验 |
 | 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ `rio` 账号下 2 篇文章（`rio的测试1` / `浏览器自动化测试文章`）疑似测试残迹，**留给用户自行删除** ④ 库里 6 篇 pending 测试残迹（`deep-xss` / `x` / `pin-test` / `slug-clash` / `fk-test` / `deep-test-pub`）与 1 条 `category_id=999999` 的脏外键，未清 ⑤ `data/uploads/` 两个 418KB PNG 未被任何文章引用 ⑥ WXR（WordPress XML）导入未做 ⑦ `ListCategoriesWithCount`/`ListTagsWithCount` 的计数仍含 private/pending/draft（只泄露"存在多少"，不泄露内容），未收口 |
-| 当前分支状态 | 第 72 轮 `5683a81`、第 73 轮已推送；第 74 轮改动**尚未 commit**；tag `v0.1.0` 之后尚未打新 tag |
+| 当前分支状态 | 第 72 轮 `5683a81`、第 73 轮 `540b403`、第 74 轮 `fab0762` 均已推送；第 75 轮改动**尚未 commit**；tag `v0.1.0` 之后尚未打新 tag |
 
 ### 9.5 新会话开场自检（30 秒）
 

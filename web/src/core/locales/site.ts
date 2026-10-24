@@ -33,6 +33,7 @@ export type SiteTexts = {
     register: string
     registerOpen: string
     registerOpenHint: string
+    rootOnlyHint: string
     // Three-tier role / permission matrix (read-only reference)
     permissions: string
     permissionsHint: string
@@ -143,6 +144,7 @@ export const siteZh: SiteTexts = {
     register: '公开注册',
     registerOpen: '允许访客自行注册账号',
     registerOpenHint: '关闭后访客无法注册，只能由管理员在后台创建账号',
+    rootOnlyHint: '仅 root 可修改（当前值仍然生效）',
     permissions: '角色权限说明',
     permissionsHint: '三级角色（超级管理员 / 管理员 / 普通用户）的权限对照，仅供查看，规则由系统固化。',
     permColRole: '权限',
@@ -251,6 +253,7 @@ export const siteEn: SiteTexts = {
     register: 'Public registration',
     registerOpen: 'Allow visitors to self-register',
     registerOpenHint: 'When off, visitors cannot register; accounts must be created by an admin',
+    rootOnlyHint: 'Root only (the current value stays in effect)',
     permissions: 'Role permissions',
     permissionsHint: 'Reference matrix for the three tiers (super admin / admin / user). Read-only; the rules are fixed in code.',
     permColRole: 'Permission',

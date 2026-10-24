@@ -107,6 +107,8 @@ export type AdminTexts = {
     importSuccess: string
     importFailed: string
     importConfirm: string
+    importPreview: string
+    exportRootOnly: string
     importNoFile: string
     stUsers: string
     stPosts: string
@@ -298,6 +300,8 @@ export const adminZh: AdminTexts = {
     importSuccess: '备份已导入',
     importFailed: '备份导入失败',
     importConfirm: '导入将覆盖当前全部数据且不可撤销，确定继续？',
+    importPreview: '预检结果：{users} 位用户 / {posts} 篇文章 / {cats} 个分类 / {tags} 个标签。导入将覆盖当前全部数据且不可撤销，确定继续？',
+    exportRootOnly: '导出与下载包含全部账号和密码哈希，仅 root 可执行',
     importNoFile: '请先选择备份文件',
     stUsers: '位用户',
     stPosts: '文章',
@@ -485,6 +489,8 @@ export const adminEn: AdminTexts = {
     importSuccess: 'Backup imported',
     importFailed: 'Failed to import backup',
     importConfirm: 'Importing will replace all current data and cannot be undone. Continue?',
+    importPreview: 'Dry run: {users} users / {posts} posts / {cats} categories / {tags} tags. Importing replaces all current data and cannot be undone. Continue?',
+    exportRootOnly: 'Export and download contain every account and password hash; root only',
     importNoFile: 'Choose a backup file first',
     stUsers: ' users',
     stPosts: 'posts',

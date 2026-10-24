@@ -112,6 +112,13 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 		post.CategoryID = in.CategoryID
 	}
 	if in.Pinned != nil {
+		// See CreatePost: pinning is a site-wide editorial decision. Only a
+		// *transition* to pinned is privileged — re-sending the current value
+		// (a legacy user post that is already pinned) and unpinning stay open
+		// so an ordinary edit never fails on a field the UI did not touch.
+		if *in.Pinned && !post.Pinned && !IsAdminOrRoot(me) {
+			return models.Post{}, newErr(http.StatusForbidden, "only an admin can pin a post")
+		}
 		post.Pinned = *in.Pinned
 	}
 	// Cover is an optional field. A non-empty value replaces the stored

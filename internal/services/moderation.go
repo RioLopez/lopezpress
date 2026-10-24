@@ -68,6 +68,12 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 			"reviewed_by": actor.ID,
 			"reviewed_at": now,
 		}
+		// A plain member must not inherit the front-page slot from a pin they
+		// set before submitting: approval is the moment the post becomes
+		// public, so any self-pin is dropped here. Root can re-pin afterwards.
+		if author.Role == models.RoleUser {
+			updates["pinned"] = false
+		}
 	} else { // reject
 		// A reject must carry a note so the author knows what to fix.
 		if strings.TrimSpace(in.Note) == "" {

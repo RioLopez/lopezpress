@@ -49,6 +49,23 @@
 - [ ] **S-11 `PostEditor` 把 `pending` 误显示为「公开」**——**等用户拍板**。
 - [x] **S-12 「私密」对管理员可见**（用户真机发现 admin 能读他人 private）：`canSeePost` 拆出独立分支只判作者，`PostDraft` 同档；`ListPostsPage` 用同一份 `authorOnly` 名单驱动过滤。⚠️ **改可见性必须同时改列表过滤与单篇判定**，否则出现"列表有、点进去 404"。
 
+## 🔒 安全（2026-10-24 第 75 轮：外部渗透报告 root/admin 权限面，全部处理完）
+
+> 报告 15 项 → 8 类真问题已修 / 4 项假阳性（假阳性理由见 `PROGRESS.md` 第 75 轮，**不要重复排查**）。
+
+- [x] **S-13 备份导入可清库**（灾难级）：`{}` 曾把全站表删空。现三道闸——结构闸（users 非空 + 每行有 id/username/email + 至少一个 root）、`?dry_run=1` 预检、`confirm:"REPLACE-ALL-DATA"` 确认词。
+- [x] **S-14 备份导出/下载未收归 root**：导出 JSON 含 `password_hashes`，`auto-*.db` 含完整 users 表；两个端点改 `rootRoles`，前端导出按钮仅 root 渲染。
+- [x] **S-15 `site-config` 泄露 SMTP 明文口令**：非 root 读到 `smtp_pass`/`img_host_token` 为空串；`PUT` 时这些字段与 `allow_register`/`auto_backup`/`backup_keep` 一起继承库值；前端字段 `disabled`。
+- [x] **S-16 `friend_links` 可存 `javascript:`**：`UpdateSiteConfig` 强制 http(s)、上限 50 条/500 字符。
+- [x] **S-17 普通用户可自设置顶**：`CreatePost`/`UpdatePost` 只允许 admin/root 把 pinned 由 false 改 true；`ReviewPost` 通过 user 文章时清 pin；编辑器对普通用户隐藏开关。
+- [x] **S-18 用户名 Unicode 同形字 / 大小写变体**：`isValidUsername` ASCII 3–32；`LOWER(username)`/`LOWER(email)` 查重。
+- [x] **S-19 上传只校验魔数**：PNG/JPEG/GIF 追加 `image.DecodeConfig`（真实可解码 + 边长 ≤12000 + 像素 ≤4000 万）；WebP 仍只有魔数。
+- [x] **S-20 恢复备份复活旧 token**：`ImportBackup`/`RestoreSnapshot` 事务末尾全站 `token_version + 1`，恢复后必须重新登录。
+- [x] **S-21 admin 可窥 root 登录记录与邮箱/IP**：`GET /api/users/{root}/logins` 对非 root 403；用户列表对非 root 置空 root 的 email/ip。
+- [ ] **S-22 XFF 取最左一跳 → nginx 透传时可伪造**（报告误判为「已可伪造」，实际只在直连回环时成立）：待 VPS 上连同 `deploy/nginx.conf` 一起改——要么 `proxy_set_header X-Forwarded-For $remote_addr`（覆盖），要么 `clientip.Client` 改取最右一跳。
+- [ ] **S-23 admin 可删任意用户上传的媒体**（`DELETE /api/uploads/{name}` 为 adminRoles，无归属校验）：与「admin 可删 user 文章」一致，暂判**设计如此**；若要收口需给上传加 `owner_id` 元数据（当前文件名不记作者）。
+- [ ] **S-24 发布权限两套口径**：`POST /api/admin/review/{id} approve` 允许 admin，`POST /api/admin/posts/batch` 的 `publish` 却 root-only。同一效果两个门槛，建议抽 `canPublish()` 统一（当前维持严格侧，未改）。
+
 ## 🧩 分类 / 标签体验（2026-10-24 第 74 轮，全部完成）
 
 - [x] **T-1 分类链接是数字**（`?category=2`，而标签是 `?tag=Go`）：`?category=` 改收分类名，数字 id 兼容；未知分类返回空页而非全量；`categoryFilterIDs` 负责解析。
@@ -310,7 +327,7 @@
 - `view_count` 递增：`gorm.Expr("view_count + 1")` 原子，无竞态 ✅
 - 分页边界：`page<1→1`、`size<1→20`、`>100→100` ✅
 - 排序注入：`sort`/`order` 白名单 ✅
-- 导入备份：事务内 Clear+Create，导入前自动 `VACUUM INTO` 快照可回滚 ✅
+- 导入备份：事务内 Clear+Create，导入前自动 `VACUUM INTO` 快照可回滚；第 75 轮起再加结构闸 + 确认词 + 全站 token 失效 ✅
 - 快照恢复：`filepath.Base` 防路径穿越 ✅
 - 角色提权：`UpdateUser`/`CreateUser` 遇 `RoleRoot` 直接 403（root 不可经 API 创建）✅
 - 封禁可见性：`canSeePost` 中 `banned` 仅 root 可达，作者本人与其他 admin 均被过滤 ✅

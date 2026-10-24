@@ -386,6 +386,28 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 ---
 
+### 7.24 「校验」写成「字段存在才校验」，空载荷就全跳过（第 75 轮）
+
+`validateImportPayload` 原来的三条检查都是 `if in.SchemaVersion != 0 && in.SchemaVersion != X`、`if in.AppVersion != "" && ...`。空对象每条都短路通过，然后进事务清表——一次 `POST /api/backup/import {}` 就抹掉全站。**教训**：校验要写成「必须出现」而不是「出现了就必须对」；整体替换类操作还要有一个不依赖字段的兜底不变式（这里选了「必须至少有一个 root，否则导入后没人能登录也没人能恢复」）。
+
+### 7.25 同一个权限面，列表接口 root-only 但下载接口 admin——等于没挡（第 75 轮）
+
+`/api/backup/snapshots` 是 root-only，`/api/backup/download?file=` 却是 admin：admin 拿不到列表，但知道文件名（`auto-YYYYMMDD.db` 可猜）就能直接下整个 SQLite。**教训**：按「资源」而不是按「接口」定权限，同一个资源的读/写/枚举必须是同一档。同类错误还有 `site-config`（内容字段 admin、`smtp_pass` 是 root 级秘密，却整行返回）。
+
+### 7.26 密码复用会把「泄露一个小秘密」变成 root 接管（第 75 轮）
+
+`site-config` 里的 `smtp_pass` 与 root 登录口令同值，admin 一读 = root。代码层面能做的是**不给低权角色读任何凭据**；运维层面要避免口令复用。脱敏时注意「读屏蔽 / 写继承」要成对：只屏蔽读、不继承写，admin 一保存就会把秘密清空。
+
+### 7.27 恢复备份会复活已撤销的 token（第 75 轮）
+
+快照里带 `token_version`。恢复 = 回到当时的版本号，之前撤销过的 JWT 全部重新有效。修法是恢复事务末尾对全表 `token_version + 1`——**代价是恢复后所有人（含操作者）要重新登录**，这属于正确行为，要写进运维手册。
+
+### 7.28 前端「隐藏按钮」不能替代后端的权限拒绝（第 75 轮）
+
+本轮 4 处改了前端（导出按钮、置顶开关、SMTP 输入框、root 行登录历史），每一处都有对应的服务层 403。反过来说，前端隐藏是为了不提供「点了必失败」的控件，不是安全边界。`arch_check` 的 R4 门禁（handler 里不许 `require*`）保证了路由表这一层不会漏，但**字段级**授权（谁能写 `pinned`、谁能读 `smtp_pass`）只能在 service 里做。
+
+---
+
 ## 8. 已知问题 & 待修复清单
 
 | 等级 | 问题 | 位置 / 状态 |

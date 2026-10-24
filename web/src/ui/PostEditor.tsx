@@ -3,7 +3,7 @@ import { useI18n } from '../core/i18n'
 import { renderMD, wordCount } from '../core/md'
 import { listCategories, listTags, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
-import { isRoot } from '../core/roles'
+import { isAdmin, isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 import { normalizeTagInput, suggestTags } from '../core/tags'
 import type { EditorValues, PostStatus, Category, Tag } from '../core/types'
@@ -113,6 +113,10 @@ export function PostEditor({
   // Spec 24: only root publishes straight to "published"; everyone else's
   // post enters the review queue server-side.
   const isRootUser = isRoot(user?.role)
+  // Pinning floats a post to the top of every public list for every reader,
+  // so it is an editorial decision: the server refuses it from a plain member
+  // and the control is hidden here to match (no button that 403s).
+  const canPin = isAdmin(user?.role)
   const [title, setTitle] = useState(initialTitle)
   // Spec 22: default to public ("published") when no initial status supplied.
   // Any legacy draft/scheduled value is coerced back to public so a stale
@@ -127,7 +131,7 @@ export function PostEditor({
   const [reviewNote] = useState(initialReviewNote)
   const [category, setCategory] = useState<number | ''>(initialCategory ?? '')
   const [tags, setTags] = useState<string[]>((initialTags || []).filter(Boolean))
-  const [pinned, setPinned] = useState(!!initialPinned)
+  const [pinned, setPinned] = useState(!!initialPinned && canPin)
   const [cover, setCover] = useState(initialCover)
   const [mode, setMode] = useState<EditorMode>('split')
   const [body, setBody] = useState(initialBody)
@@ -341,7 +345,7 @@ export function PostEditor({
       setStatus(d.status === 'private' ? 'private' : 'published')
       setCategory(d.category ?? '')
       setTags((d.tags || []).filter(Boolean))
-      setPinned(!!d.pinned)
+      setPinned(!!d.pinned && canPin)
       setCover(d.cover || '')
       setBodyValue(d.body || '')
     }
@@ -767,17 +771,19 @@ export function PostEditor({
             )}
           </div>
 
-          <div class="pe-field">
-            <label class="pe-pinned">
-              <input
-                type="checkbox"
-                checked={pinned}
-                onChange={(e) => setPinned((e.target as HTMLInputElement).checked)}
-              />
-              <span>{t('editor.pinnedLabel')}</span>
-            </label>
-            <p class="pe-pinned-hint">{t('editor.pinnedHint')}</p>
-          </div>
+          {canPin && (
+            <div class="pe-field">
+              <label class="pe-pinned">
+                <input
+                  type="checkbox"
+                  checked={pinned}
+                  onChange={(e) => setPinned((e.target as HTMLInputElement).checked)}
+                />
+                <span>{t('editor.pinnedLabel')}</span>
+              </label>
+              <p class="pe-pinned-hint">{t('editor.pinnedHint')}</p>
+            </div>
+          )}
 
           <div class="pe-field">
             <label>{t('editor.cover')}</label>

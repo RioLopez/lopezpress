@@ -23,12 +23,17 @@ func TestImportBackupDryRun(t *testing.T) {
 	var liveCount int64
 	db.Model(&models.Post{}).Count(&liveCount)
 
-	// Build an import payload that would wipe + replace the DB.
+	// Build an import payload that would wipe + replace the DB. It must carry
+	// the unique root, otherwise validateImportPayload refuses it (a dump
+	// without a root would leave nobody able to restore the site).
 	in := ImportData{
 		SchemaVersion: BackupSchemaVersion,
 		AppVersion:    BackupAppVersion,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
-		Users:         []models.User{makeUser(t, db, "newadmin", "na@example.com", "admin")},
+		Users: []models.User{
+			makeUser(t, db, "newadmin", "na@example.com", "admin"),
+			makeUser(t, db, "newroot", "nr@example.com", "root"),
+		},
 	}
 	res, err := svc.ImportBackup(ctx, root, in, true)
 	if err != nil {
@@ -73,8 +78,12 @@ func TestImportBackupSchemaValidation(t *testing.T) {
 	}
 
 	// Legacy payload (no metadata at all) must still be accepted so older
-	// backups keep working.
-	legacy := ImportData{Users: []models.User{makeUser(t, db, "legacy", "l@example.com", "user")}}
+	// backups keep working — the structural guards (users present + a root
+	// account) apply to legacy dumps too, which is what stops `{}`.
+	legacy := ImportData{Users: []models.User{
+		makeUser(t, db, "legacy", "l@example.com", "user"),
+		makeUser(t, db, "legacyroot", "lr@example.com", "root"),
+	}}
 	res, err := svc.ImportBackup(ctx, root, legacy, true)
 	if err != nil {
 		t.Fatalf("legacy payload should pass validation: %v", err)
@@ -99,8 +108,12 @@ func TestImportBackupAppliedTakesSnapshot(t *testing.T) {
 	in := ImportData{
 		SchemaVersion: BackupSchemaVersion,
 		AppVersion:    BackupAppVersion,
-		Users:         []models.User{makeUser(t, db, "fresh", "f@example.com", "admin")},
-		Posts:         []models.Post{makePostNoTime(t, db, admin, "published", "new", "New Post")},
+		Confirm:       ImportConfirmPhrase,
+		Users: []models.User{
+			makeUser(t, db, "fresh", "f@example.com", "admin"),
+			makeUser(t, db, "freshroot", "fr@example.com", "root"),
+		},
+		Posts: []models.Post{makePostNoTime(t, db, admin, "published", "new", "New Post")},
 	}
 	res, err := svc.ImportBackup(ctx, root, in, false)
 	if err != nil {

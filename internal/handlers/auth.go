@@ -170,7 +170,7 @@ func MeStats(w http.ResponseWriter, r *http.Request) {
 func MeLoginHistory(w http.ResponseWriter, r *http.Request) {
 	me := userFromContext(r)
 	limit := parseLimit(r.URL.Query(), "limit", 20, 100)
-	logs, err := svc.ListUserLogins(r.Context(), me.ID, limit)
+	logs, err := svc.ListUserLogins(r.Context(), me, me.ID, limit)
 	if err != nil {
 		writeServiceError(w, err)
 		return

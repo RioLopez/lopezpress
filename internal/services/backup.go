@@ -127,10 +127,19 @@ func (s *Service) backupDir() string {
 
 // --- backup import (restore) ---
 
-// validateImportPayload enforces the spec #6 schema gate before any write.
+// ImportConfirmPhrase is the literal the client must echo back before an
+// import is allowed to replace every table. See ImportData.Confirm.
+const ImportConfirmPhrase = "REPLACE-ALL-DATA"
+
+// validateImportPayload enforces the schema gate before any write.
 // It returns a 400 ServiceError describing the first incompatibility found.
+//
 // Older dumps without the metadata fields are still accepted (the fields
-// simply default to zero/empty and pass), so existing backups keep working.
+// simply default to zero/empty and pass) so existing backups keep working —
+// but a payload that cannot produce a working site is always rejected, no
+// matter how old it claims to be. An empty object (`{}`) previously passed
+// this check and wiped users/posts/categories/tags in one request; the checks
+// below are what makes that impossible now.
 func validateImportPayload(in ImportData) error {
 	if in.SchemaVersion != 0 && in.SchemaVersion != BackupSchemaVersion {
 		return newErr(http.StatusBadRequest, fmt.Sprintf(
@@ -139,6 +148,25 @@ func validateImportPayload(in ImportData) error {
 	if in.AppVersion != "" && in.AppVersion != BackupAppVersion {
 		return newErr(http.StatusBadRequest, fmt.Sprintf(
 			"backup app_version %q does not match this app (%q); refusing to import", in.AppVersion, BackupAppVersion))
+	}
+	// A whole-database replace with no users leaves nobody able to log in, and
+	// the import deletes every existing account first — an unrecoverable
+	// lockout. Likewise a dump without the unique root would leave the site
+	// with no account that can run the restore that undoes this.
+	if len(in.Users) == 0 {
+		return newErr(http.StatusBadRequest, "backup contains no users; refusing to replace the database")
+	}
+	roots := 0
+	for _, u := range in.Users {
+		if strings.TrimSpace(u.ID) == "" || strings.TrimSpace(u.Username) == "" || strings.TrimSpace(u.Email) == "" {
+			return newErr(http.StatusBadRequest, "backup contains a user row without id/username/email")
+		}
+		if u.Role == models.RoleRoot {
+			roots++
+		}
+	}
+	if roots == 0 {
+		return newErr(http.StatusBadRequest, "backup contains no root account; importing it would lock the site out")
 	}
 	return nil
 }
@@ -163,19 +191,34 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	if err := validateImportPayload(in); err != nil {
 		return ImportResult{}, err
 	}
+	if dryRun {
+		// Preview is non-destructive: report the counts the payload would
+		// produce and let the caller ask for explicit confirmation.
+		stats := BackupStats{
+			Users:      int64(len(in.Users)),
+			Posts:      int64(len(in.Posts)),
+			Categories: int64(len(in.Categories)),
+			Tags:       int64(len(in.Tags)),
+		}
+		// A preview is a privileged read of a whole-database dump, and the
+		// handler used to audit it; keep that trail now that the write lives
+		// here (P2: audit moved with the operation, not left behind).
+		s.audit(ctx, actor, "import_backup", "backup", "dry_run=true")
+		return ImportResult{DryRun: true, Applied: false, Stats: stats}, nil
+	}
+	// Applying replaces every table, so it needs an explicit confirmation in
+	// the payload. Without this an accidental request (or a truncated file
+	// that still decodes) is enough to destroy the site.
+	if in.Confirm != ImportConfirmPhrase {
+		return ImportResult{}, newErr(http.StatusBadRequest,
+			"refusing to replace the database without confirmation: preview with ?dry_run=1, then resend the same payload with confirm=\""+ImportConfirmPhrase+"\"")
+	}
 
 	stats := BackupStats{
 		Users:      int64(len(in.Users)),
 		Posts:      int64(len(in.Posts)),
 		Categories: int64(len(in.Categories)),
 		Tags:       int64(len(in.Tags)),
-	}
-	if dryRun {
-		// A preview is a privileged read of a whole-database dump, and the
-		// handler used to audit it; keep that trail now that the write lives
-		// here (P2: audit moved with the operation, not left behind).
-		s.audit(ctx, actor, "import_backup", "backup", "dry_run=true")
-		return ImportResult{DryRun: true, Applied: false, Stats: stats}, nil
 	}
 
 	// Auto snapshot before the destructive replace (VACUUM INTO is atomic
@@ -236,6 +279,15 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 			if err := tx.Create(&in.PostTags[i]).Error; err != nil {
 				return err
 			}
+		}
+		// A restore brings back the token_version values captured in the dump,
+		// which would silently re-validate JWTs that had already been revoked
+		// (the exact side effect seen after the 2026-10-24 wipe-and-restore).
+		// Bump every account so no pre-restore token survives; the operator
+		// signs in again with the restored credentials.
+		if err := tx.Model(&models.User{}).Where("1 = 1").
+			UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error; err != nil {
+			return err
 		}
 		return nil
 	})

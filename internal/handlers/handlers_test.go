@@ -316,7 +316,7 @@ func TestOptionalAuthDowngradesMustChangePassword(t *testing.T) {
 // filter and must not be a 400.
 func TestListPostsRejectsBadPageParam(t *testing.T) {
 	svc, _ := setup(t)
-	tok := mustToken(t, svc, "u", "u@example.com")
+	tok := mustToken(t, svc, "uabc", "uabc@example.com")
 
 	for _, q := range []string{
 		"/api/posts?page=abc",
