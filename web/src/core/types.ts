@@ -96,7 +96,9 @@ export interface ListPostsQuery {
   q?: string
   page?: number
   size?: number
-  category?: number
+  // Category reference: a category NAME (readable links, e.g. ?category=PHP)
+  // or a numeric id as a string (legacy links). The server accepts both.
+  category?: string
   tag?: string
   // Scope to a single author (personal center "my content only").
   author?: string

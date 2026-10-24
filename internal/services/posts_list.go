@@ -107,16 +107,30 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 			query = query.Joins("LEFT JOIN users AS author ON author.id = posts.author_id").
 				Where("posts.title LIKE ? ESCAPE '\\' OR posts.body LIKE ? ESCAPE '\\' OR author.username LIKE ? ESCAPE '\\'", like, like, like)
 		}
-		if q.Category > 0 {
+		if q.Category != "" {
 			// Spec 27: selecting a parent also returns its children's posts,
 			// otherwise a parent node looks empty while its content sits one
 			// level down.
-			query = query.Where("posts.category_id IN ?", s.categoryWithDescendants(ctx, q.Category))
+			//
+			// The reference may be a name (?category=PHP) or a legacy numeric
+			// id (?category=2). An unknown reference gets an empty page: the
+			// URL claims a filter is on, so silently listing every post would
+			// be a lie the reader cannot see through.
+			ids, ok := s.categoryFilterIDs(ctx, q.Category)
+			if !ok {
+				query = query.Where("1 = 0")
+			} else {
+				query = query.Where("posts.category_id IN ?", ids)
+			}
 		}
 		if q.Tag != "" {
+			// Case-insensitive so ?tag=go finds the "Go" tag: the tag list is
+			// de-duplicated without regard to case, so the filter must match
+			// the same way or a reader would see an empty page for a tag that
+			// visibly exists.
 			query = query.Joins("JOIN post_tags pt ON pt.post_id = posts.id").
 				Joins("JOIN tags tag ON tag.id = pt.tag_id").
-				Where("tag.name = ?", q.Tag)
+				Where("tag.name COLLATE NOCASE = ?", q.Tag)
 		}
 		return query
 	}

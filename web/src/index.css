@@ -733,8 +733,40 @@ code.hl { background: var(--hl, #fff3a3); }
 .admin-table tr.row-child { background: color-mix(in srgb, var(--border) 22%, transparent); }
 .tree-indent { display: inline-block; width: 18px; color: var(--text-muted); }
 .tree-root { font-weight: 600; }
-.sidebar-item--child { padding-left: 14px; }
-.sidebar-item--child .sidebar-link { font-size: 13px; opacity: .9; }
+
+/* The sidebar tree has to show the hierarchy, not hint at it. Parents read as
+   group headings (heavier, full-strength text); children step down in size and
+   colour and sit under an elbow guide line. The previous rule only changed
+   opacity to .9 at the same 13px, which made "php教程" indistinguishable from a
+   sibling of "PHP" — the tree looked flat. */
+.sidebar .sidebar-item--parent { margin-top: 6px; }
+.sidebar .sidebar-item--parent .sidebar-link {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.sidebar .sidebar-item--child { position: relative; padding-left: 0; }
+.sidebar .sidebar-item--child .sidebar-link {
+  padding-left: 24px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+/* Elbow: a short vertical run curving into the link. Drawn with borders so no
+   extra markup or icon font is needed. */
+.sidebar .sidebar-item--child .sidebar-link::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 0;
+  height: 50%;
+  width: 10px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+  pointer-events: none;
+}
+/* An active child keeps the parent's indent but must still stand out. */
+.sidebar .sidebar-item--child .sidebar-link--active { color: var(--primary); }
 
 /* Spec 28: cover thumbnail in the post list (the field existed, nothing drew it). */
 .post-cover-thumb {
@@ -1075,6 +1107,9 @@ tr.row-selected { transition: background .12s; }
 .read-crumbs a { color: var(--text-muted); text-decoration: none; }
 .read-crumbs a:hover { color: var(--primary); }
 .read-crumbs .sep { margin: 0 6px; opacity: .6; }
+/* Ancestor segments in the article breadcrumb (PHP / php教程): plain text, so
+   the reader can tell the leaf category is the linkable one. */
+.read-crumbs .crumb-ancestor { color: var(--text-muted); }
 .related-block { margin: 42px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
 .related-block h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 .related-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
@@ -1532,10 +1567,35 @@ tr.row-selected { transition: background .12s; }
   width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px;
 }
-.pe-tags-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; background: var(--surface); }
-.pe-tag { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 8px; font-size: 12px; }
+.pe-tags-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; background: var(--surface); position: relative; }
+.pe-tag { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 12px; }
 .pe-tag button { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.pe-tag button:hover { color: var(--danger); }
 .pe-tag-input { flex: 1; min-width: 80px; border: none; outline: none; background: transparent; color: var(--text); font-family: inherit; font-size: 13px; }
+
+/* Tag autocomplete dropdown. Rendered inside the bordered input box (which is
+   position: relative) so it reads as part of the field, the way CSDN's tag
+   picker does. */
+.pe-tag-menu {
+  position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px);
+  margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+  max-height: 260px; overflow-y: auto;
+}
+.pe-tag-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-radius: 4px; font-size: 13px; cursor: pointer;
+  color: var(--text);
+}
+.pe-tag-option--active { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.pe-tag-option-name { font-weight: 600; }
+.pe-tag-option-plus { font-weight: 700; line-height: 1; }
+.pe-tag-option-label { color: var(--text-muted); }
+.pe-tag-option--create { border-top: 1px dashed var(--border); margin-top: 2px; padding-top: 8px; }
+.pe-tag-option--create .pe-tag-option-plus,
+.pe-tag-option--create .pe-tag-option-name { color: var(--primary); }
+.pe-tags-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
 .pe-cover-preview { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .pe-cover-preview img { width: 72px; height: 48px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); }
 .pe-cover-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
@@ -1717,7 +1777,9 @@ tr.row-selected { transition: background .12s; }
 .sidebar-section:last-child { border-radius: 0 0 var(--radius) var(--radius); }
 
 /* Pills / chips / badges: fully rounded */
-.tag-pill, .post-cat-chip, .post-tag-chip, .badge, .badge-pinned, .pe-tag { border-radius: 999px; }
+.tag-pill, .post-cat-chip, .post-tag-chip, .badge, .badge-pinned { border-radius: 999px; }
+/* Editor tag chips stay rectangles on purpose: they sit inside a form field
+   and read as removable tokens, not as the sidebar's pill-shaped cloud. */
 
 /* Small polish */
 .read-page { box-shadow: var(--shadow-sm); }

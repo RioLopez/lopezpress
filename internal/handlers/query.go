@@ -62,3 +62,41 @@ func parseInts(q url.Values, label string, keys ...string) ([]int, error) {
 	}
 	return out, nil
 }
+
+// postListParams is the parsed filter set of GET /api/posts, read but not yet
+// interpreted. It exists so the handler's two response shapes (the legacy
+// bare array and the paged object) both read from one struct instead of from
+// seven locals that could drift apart.
+type postListParams struct {
+	Status   string
+	Search   string
+	Tag      string
+	Category string
+	Sort     string
+	Order    string
+	Author   string
+	Page     int
+	Size     int
+}
+
+// parsePostListParams reads the public list's query string. page and size must
+// be integers when supplied (P2-7: a typo must not silently degrade to the
+// bare-array branch), while category stays free-form because it accepts a
+// category name as well as a numeric id.
+func parsePostListParams(q url.Values) (postListParams, error) {
+	nums, err := parseInts(q, "page and size", "page", "size")
+	if err != nil {
+		return postListParams{}, err
+	}
+	return postListParams{
+		Status:   q.Get("status"),
+		Search:   q.Get("q"),
+		Tag:      q.Get("tag"),
+		Category: q.Get("category"),
+		Sort:     q.Get("sort"),
+		Order:    q.Get("order"),
+		Author:   q.Get("author"),
+		Page:     nums[0],
+		Size:     nums[1],
+	}, nil
+}

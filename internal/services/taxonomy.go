@@ -182,6 +182,43 @@ func (s *Service) DeleteCategory(ctx context.Context, id int64) error {
 // filtering the public list by a PARENT category also returns its children's
 // posts (spec 27 AC-2.5) — otherwise a parent node would look empty even
 // while all its content sits one level down.
+// categoryFilterIDs resolves a ?category= reference to the id set a list
+// query should match. The reference is either a name (the readable form the
+// frontend links with) or a numeric id (the original form, kept so old links
+// and bookmarks keep working). The set includes the category's children:
+// selecting a parent must also return the posts filed under it.
+//
+// ok=false means no such category exists. The caller has to treat that as an
+// empty result rather than as "no filter" — otherwise a bogus URL silently
+// lists the whole site.
+func (s *Service) categoryFilterIDs(ctx context.Context, ref string) ([]int64, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, false
+	}
+	var id int64
+	if n, err := strconv.ParseInt(ref, 10, 64); err == nil {
+		id = n
+		// A numeric reference still has to point at a real row, otherwise
+		// ?category=999 would quietly list everything.
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&models.Category{}).
+			Where("id = ?", id).Count(&count).Error; err != nil || count == 0 {
+			return nil, false
+		}
+	} else {
+		var cat models.Category
+		if err := s.db.WithContext(ctx).Where("name = ?", ref).First(&cat).Error; err != nil {
+			return nil, false
+		}
+		id = cat.ID
+	}
+	if id == 0 {
+		return nil, false
+	}
+	return s.categoryWithDescendants(ctx, id), true
+}
+
 func (s *Service) categoryWithDescendants(ctx context.Context, id int64) []int64 {
 	ids := []int64{id}
 	var children []models.Category
@@ -271,7 +308,7 @@ func (s *Service) DeleteTag(ctx context.Context, id int64) error {
 // this endpoint the only way to fix a typo'd tag was delete + re-create, which
 // silently dropped the tag from every post that carried it.
 func (s *Service) UpdateTag(ctx context.Context, id int64, in UpdateTagInput) (models.Tag, error) {
-	name := strings.TrimSpace(in.Name)
+	name := normalizeTagName(in.Name)
 	if name == "" {
 		return models.Tag{}, newErr(http.StatusBadRequest, "tag name is required")
 	}
@@ -285,9 +322,10 @@ func (s *Service) UpdateTag(ctx context.Context, id int64, in UpdateTagInput) (m
 		return models.Tag{}, newErr(http.StatusNotFound, "tag not found")
 	}
 	// Duplicate check excludes self so a pure case change ("go" -> "Go") is
-	// allowed.
+	// allowed, while a rename that would collide with a *different* tag
+	// differing only in case is still rejected.
 	var dup models.Tag
-	if s.db.WithContext(ctx).Where("name = ? AND id != ?", name, id).First(&dup).RowsAffected == 1 {
+	if s.db.WithContext(ctx).Where("name COLLATE NOCASE = ? AND id != ?", name, id).First(&dup).RowsAffected == 1 {
 		return models.Tag{}, newErr(http.StatusConflict, "a tag with this name already exists")
 	}
 	tag.Name = name

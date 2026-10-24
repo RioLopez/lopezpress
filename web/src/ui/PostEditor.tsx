@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { renderMD, wordCount } from '../core/md'
-import { listCategories, uploadImage } from '../core/api'
+import { listCategories, listTags, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
 import { isRoot } from '../core/roles'
-import type { EditorValues, PostStatus, Category } from '../core/types'
+import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
+import { normalizeTagInput, suggestTags } from '../core/tags'
+import type { EditorValues, PostStatus, Category, Tag } from '../core/types'
 
 type EditorMode = 'split' | 'ir' | 'source'
 const DRAFT_TTL_DAYS = 30
@@ -131,7 +133,13 @@ export function PostEditor({
   const [body, setBody] = useState(initialBody)
   const [categories, setCategories] = useState<Category[]>([])
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  // Tag picker state: the site's existing tags (for autocomplete), what the
+  // author is typing, whether the dropdown is open, and which row is
+  // highlighted for Enter/arrow keys.
+  const [allTags, setAllTags] = useState<Tag[]>([])
   const [tagInput, setTagInput] = useState('')
+  const [tagOpen, setTagOpen] = useState(false)
+  const [tagActive, setTagActive] = useState(0)
   const [coverBusy, setCoverBusy] = useState(false)
   const [splitPct, setSplitPct] = useState(50)
   const [dragging, setDragging] = useState(false)
@@ -152,6 +160,9 @@ export function PostEditor({
   useEffect(() => {
     pruneOldDrafts()
     listCategories().then(setCategories).catch(() => {})
+    // Tag autocomplete data. Failure is non-fatal: the author can still type
+    // a tag by hand and the server will resolve or create it.
+    listTags().then(setAllTags).catch(() => {})
   }, [])
 
   const saveDraft = useCallback(() => {
@@ -344,18 +355,94 @@ export function PostEditor({
     setRestoreDecided(true)
   }
 
+  // --- tag picker -----------------------------------------------------------
+  // The dropdown mirrors the site's existing tags so an author never has to
+  // remember whether the site spells it "Go" or "go". Matching is delegated to
+  // core/tags (pure + unit-tested); this component only handles focus and keys.
+  const tagSuggestions = useMemo(
+    () => (tagOpen ? suggestTags(allTags, tagInput, tags) : []),
+    [tagOpen, allTags, tagInput, tags],
+  )
+
+  // Close the dropdown on an outside click rather than on input blur. A blur
+  // timer raced with typing (the timer fired just after the next keystroke
+  // reopened the list, so the list vanished while the author was still typing)
+  // and it also fired when the click landed on an option. A document-level
+  // mousedown scoped to the box has neither problem.
+  const tagBoxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!tagOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (tagBoxRef.current && !tagBoxRef.current.contains(e.target as Node)) setTagOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [tagOpen])
+
   const addTag = (raw: string) => {
-    const name = raw.trim().replace(/,/g, '')
+    const name = normalizeTagInput(raw.replace(/,/g, ' '))
     if (!name) return
-    setTags((prev) => (prev.includes(name) ? prev : [...prev, name]))
+    // Reuse the stored spelling when one exists: attaching "go" to the "Go"
+    // tag is what keeps one concept from splitting into three.
+    const existing = allTags.find((t) => t.name.toLowerCase() === name.toLowerCase())
+    const final = existing ? existing.name : name
+    setTags((prev) =>
+      prev.some((t) => t.toLowerCase() === final.toLowerCase()) ? prev : [...prev, final],
+    )
     setTagInput('')
+    setTagActive(0)
+    setTagOpen(false)
   }
+
+  const pickSuggestion = (index: number) => {
+    const picked = tagSuggestions[index]
+    if (picked) addTag(picked.name)
+    else addTag(tagInput)
+  }
+
   const onTagKey = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ',' || e.key === ' ' || e.key === 'Tab') {
-      e.preventDefault()
-      addTag(tagInput)
-    } else if (e.key === 'Backspace' && !tagInput && tags.length) {
-      setTags(tags.slice(0, -1))
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        if (!tagOpen && tagInput.trim()) { setTagOpen(true); setTagActive(0); return }
+        setTagActive((i) => Math.min(i + 1, Math.max(0, tagSuggestions.length - 1)))
+        return
+      case 'ArrowUp':
+        e.preventDefault()
+        setTagActive((i) => Math.max(0, i - 1))
+        return
+      case 'Escape':
+        // Close the dropdown without touching what was typed.
+        if (tagOpen) { e.preventDefault(); setTagOpen(false) }
+        return
+      case 'Enter':
+      case 'Tab':
+        e.preventDefault()
+        // Enter takes the highlighted suggestion (a create-row is part of the
+        // suggestion list, so "type a new name + Enter" still creates it).
+        if (tagOpen && tagSuggestions.length) pickSuggestion(tagActive)
+        else addTag(tagInput)
+        return
+      case ',':
+        e.preventDefault()
+        addTag(tagInput)
+        return
+      case ' ':
+        // Space only commits when it cannot be part of a name: multi-word tags
+        // like "web dev" are legitimate, so a space mid-typing stays literal.
+        if (tagOpen && tagSuggestions.length) {
+          e.preventDefault()
+          pickSuggestion(tagActive)
+        }
+        return
+      case 'Backspace':
+        if (!tagInput && tags.length) {
+          e.preventDefault()
+          setTags(tags.slice(0, -1))
+        }
+        return
+      default:
+        return
     }
   }
 
@@ -557,9 +644,11 @@ export function PostEditor({
               }
             >
               <option value="">{t('editor.allCategories')}</option>
-              {categories.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.name}
+              {/* Same indented tree as the public filter: filing a post must
+                  show which node is a parent and which is a leaf. */}
+              {orderCategories(categories).map((node) => (
+                <option key={node.cat.id} value={String(node.cat.id)}>
+                  {categoryOptionLabel(node)}
                 </option>
               ))}
             </select>
@@ -567,11 +656,18 @@ export function PostEditor({
 
           <div class="pe-field">
             <label>{t('editor.tags')}</label>
-            <div class="pe-tags-input">
+            <div
+              ref={tagBoxRef}
+              class={`pe-tags-input ${tagOpen && tagSuggestions.length ? 'pe-tags-input--open' : ''}`}
+            >
               {tags.map((tg) => (
                 <span class="pe-tag" key={tg}>
                   {tg}
-                  <button type="button" onClick={() => setTags(tags.filter((x) => x !== tg))}>
+                  <button
+                    type="button"
+                    aria-label={`${t('editor.tagRemove')} ${tg}`}
+                    onClick={() => setTags(tags.filter((x) => x !== tg))}
+                  >
                     ×
                   </button>
                 </span>
@@ -579,12 +675,45 @@ export function PostEditor({
               <input
                 class="pe-tag-input"
                 value={tagInput}
-                placeholder={t('editor.tagPlaceholder')}
-                onInput={(e) => setTagInput((e.target as HTMLInputElement).value)}
+                placeholder={tags.length ? '' : t('editor.tagPlaceholder')}
+                onInput={(e) => {
+                  setTagInput((e.target as HTMLInputElement).value)
+                  setTagOpen(true)
+                  setTagActive(0)
+                }}
+                onFocus={() => { if (tagInput.trim()) setTagOpen(true) }}
                 onKeyDown={onTagKey}
-                onBlur={() => tagInput && addTag(tagInput)}
               />
+              {tagOpen && tagSuggestions.length > 0 && (
+                <ul class="pe-tag-menu">
+                  {tagSuggestions.map((s, i) => (
+                    <li
+                      key={`${s.exists ? 'e' : 'n'}:${s.name}`}
+                      class={[
+                        'pe-tag-option',
+                        i === tagActive ? 'pe-tag-option--active' : '',
+                        s.exists ? '' : 'pe-tag-option--create',
+                      ].join(' ')}
+                      // mousedown (not click) so the input never loses focus
+                      // before the choice is committed.
+                      onMouseDown={(e) => { e.preventDefault(); pickSuggestion(i) }}
+                      onMouseEnter={() => setTagActive(i)}
+                    >
+                      {s.exists ? (
+                        <span class="pe-tag-option-name">{s.name}</span>
+                      ) : (
+                        <>
+                          <span class="pe-tag-option-plus">+</span>
+                          <span class="pe-tag-option-label">{t('editor.tagCreate')}</span>
+                          <span class="pe-tag-option-name">{s.name}</span>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
+            <p class="pe-tags-hint">{t('editor.tagHint')}</p>
           </div>
 
           <div class="pe-field">

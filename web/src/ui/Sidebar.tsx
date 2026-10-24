@@ -1,13 +1,16 @@
-import { useEffect, useState, useCallback, useMemo } from 'preact/hooks'
+import { useEffect, useState, useCallback } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { listCategories, listTags, getRecentPosts } from '../core/api'
 import { useNav } from '../core/router'
+import { orderCategories } from '../core/taxonomy'
 import type { Category, Tag, Post } from '../core/types'
 
 interface SidebarProps {
-  activeCategory: number | null
+  // Category NAME (see ListPage): the sidebar highlights by name so it agrees
+  // with the URL and with the filter dropdown.
+  activeCategory: string | null
   activeTag: string | null
-  onCategorySelect: (id: number | null) => void
+  onCategorySelect: (name: string | null) => void
   onTagSelect: (name: string | null) => void
 }
 
@@ -37,25 +40,10 @@ export function Sidebar({ activeCategory, activeTag, onCategorySelect, onTagSele
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const linkBase = 'sidebar-link'
 
-  // Spec 27: categories are a two-level tree. Flatten to parents-then-children
-  // so the sidebar keeps its simple <ul> while showing hierarchy.
-  const ordered = useMemo(() => {
-    const roots = categories.filter((c) => c.parent_id == null)
-    const out: { cat: Category; depth: number }[] = []
-    for (const root of roots) {
-      out.push({ cat: root, depth: 0 })
-      for (const child of categories.filter((c) => c.parent_id === root.id)) {
-        out.push({ cat: child, depth: 1 })
-      }
-    }
-    // Orphans (parent row missing) still need to be reachable.
-    for (const cat of categories) {
-      if (cat.parent_id != null && !categories.some((p) => p.id === cat.parent_id)) {
-        out.push({ cat, depth: 0 })
-      }
-    }
-    return out
-  }, [categories])
+  // Spec 27: categories are a two-level tree. The flattening lives in
+  // core/taxonomy so the sidebar, the list filter and the card breadcrumbs all
+  // agree on the order.
+  const ordered = orderCategories(categories)
 
   return (
     <aside class="sidebar">
@@ -70,11 +58,15 @@ export function Sidebar({ activeCategory, activeTag, onCategorySelect, onTagSele
             >{t('sidebar.allCategories')}</a>
           </li>
           {ordered.map(({ cat: c, depth }) => (
-            <li key={c.id} class={depth === 1 ? 'sidebar-item--child' : ''}>
+            // The class carries the hierarchy: parents get a heavier weight,
+            // children get a real indent plus a guide line. Before this the
+            // only difference was opacity .9, which nobody could see, so a
+            // child category read as a sibling.
+            <li key={c.id} class={depth === 1 ? 'sidebar-item--child' : 'sidebar-item--parent'}>
               <a
                 href="#"
-                class={`${linkBase} ${activeCategory === c.id ? 'sidebar-link--active' : ''}`}
-                onClick={(e) => { e.preventDefault(); onCategorySelect(c.id) }}
+                class={`${linkBase} ${depth === 1 ? 'sidebar-link--child' : ''} ${activeCategory === c.name ? 'sidebar-link--active' : ''}`}
+                onClick={(e) => { e.preventDefault(); onCategorySelect(c.name) }}
               >{c.name}</a>
             </li>
           ))}
