@@ -131,10 +131,12 @@ func TestGetPostNotFound(t *testing.T) {
 }
 
 // TestGetPostPrivateVisibility is the regression test for the visibility
-// guard: a private post is readable only by its author or an admin/root;
-// anyone else (incl. anonymous) gets 404 so the post's existence is not
-// leaked. A banned post is visible to root only (the banned vault), so even
-// the author and a plain admin are blocked from it.
+// guard: a private post is readable only by its author — not by another
+// user, not by an admin, not by root (strict "仅自己可见"). Anyone else gets
+// 404 so the post's existence is not leaked. Pending/rejected posts stay
+// readable by admin/root for the review flow. A banned post is visible to
+// root only (the banned vault), so even the author and a plain admin are
+// blocked from it.
 func TestGetPostPrivateVisibility(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -142,22 +144,26 @@ func TestGetPostPrivateVisibility(t *testing.T) {
 
 	author := makeUser(t, db, "author", "author@example.com", "user")
 	other := makeUser(t, db, "other", "other@example.com", "user")
+	admin := makeUser(t, db, "boss", "boss@example.com", "admin")
 	root := makeUser(t, db, "root", "root@example.com", "root")
 
-	priv, err := svc.CreatePost(ctx, author, CreatePostInput{Title: "secret", Body: "x", Status: "private"})
-	if err != nil {
-		t.Fatalf("CreatePost(private): %v", err)
-	}
+	// Posts are inserted straight into the DB (makePostNoTime) rather than
+	// through CreatePost: CreatePost forces plain users' submissions to
+	// "pending", so it cannot produce a genuinely private post for a
+	// non-root author.
+	priv := makePostNoTime(t, db, author, "private", "x", "secret")
 	pub, err := svc.CreatePost(ctx, root, CreatePostInput{Title: "public", Body: "y"})
 	if err != nil {
 		t.Fatalf("CreatePost(published): %v", err)
 	}
+	// A pending post stays readable by admin/root: the review flow needs it.
+	pend, err := svc.CreatePost(ctx, author, CreatePostInput{Title: "queued", Body: "z"})
+	if err != nil {
+		t.Fatalf("CreatePost(pending): %v", err)
+	}
 	// A banned post, placed into the vault by root, is invisible to everyone
 	// except root.
-	banned, err := svc.CreatePost(ctx, author, CreatePostInput{Title: "nasty", Body: "x", Status: "private"})
-	if err != nil {
-		t.Fatalf("CreatePost(banned-source): %v", err)
-	}
+	banned := makePostNoTime(t, db, author, "private", "x", "nasty")
 	if _, err := svc.BanPost(ctx, root, banned.ID); err != nil {
 		t.Fatalf("BanPost: %v", err)
 	}
@@ -169,12 +175,19 @@ func TestGetPostPrivateVisibility(t *testing.T) {
 		wantOK bool
 	}{
 		{"author reads own private", author, priv.ID, true},
-		{"root reads other's private", root, priv.ID, true},
+		{"root blocked from other's private", root, priv.ID, false},
+		{"admin blocked from other's private", admin, priv.ID, false},
 		{"other user blocked from private", other, priv.ID, false},
 		{"anonymous blocked from private", models.User{}, priv.ID, false},
 		{"anonymous reads published", models.User{}, pub.ID, true},
+		{"author reads own pending", author, pend.ID, true},
+		{"admin reads pending (review flow)", admin, pend.ID, true},
+		{"root reads pending (review flow)", root, pend.ID, true},
+		{"other user blocked from pending", other, pend.ID, false},
+		{"anonymous blocked from pending", models.User{}, pend.ID, false},
 		{"root reads banned (vault)", root, banned.ID, true},
 		{"author blocked from own banned", author, banned.ID, false},
+		{"admin blocked from banned", admin, banned.ID, false},
 	}
 	for _, c := range cases {
 		_, err := svc.GetPost(ctx, c.user, c.id)

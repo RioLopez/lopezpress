@@ -21,6 +21,7 @@ func TestListPostsPageVisibilityThreeBranches(t *testing.T) {
 
 	admin := makeUser(t, db, "boss", "boss@example.com", "admin")
 	alice := makeUser(t, db, "alice", "alice@example.com", "user")
+	root := makeUser(t, db, "chief", "chief@example.com", "root")
 
 	pubA := makePostNoTime(t, db, alice, "published", "public body", "Alice Public")
 	privA := makePostNoTime(t, db, alice, "private", "alice secret", "Alice Private")
@@ -57,13 +58,35 @@ func TestListPostsPageVisibilityThreeBranches(t *testing.T) {
 		t.Fatalf("alice should see exactly 2 posts (1 pub + 1 own private), got %d", len(alicePage.Items))
 	}
 
-	// 3) Admin: sees everything (public + all privates).
+	// 3) Admin: sees everything EXCEPT other people's private posts. "Private"
+	// is strictly author-only, so alice's private post is invisible to the
+	// admin; the admin's own private post is not.
 	adminPage, err := svc.ListPostsPage(ctx, admin, ListPostsQuery{PageSize: 100})
 	if err != nil {
 		t.Fatalf("admin list: %v", err)
 	}
-	if len(adminPage.Items) != 3 {
-		t.Fatalf("admin should see all 3 posts, got %d", len(adminPage.Items))
+	if len(adminPage.Items) != 2 {
+		t.Fatalf("admin should see 2 posts (public + own private), got %d", len(adminPage.Items))
+	}
+	for _, p := range adminPage.Items {
+		if p.ID == privA.ID {
+			t.Fatalf("admin must not see another user's private post")
+		}
+	}
+
+	// 4) Root: the banned vault plus every non-private post — but still no
+	// other people's private posts ("仅自己可见" applies to root too).
+	rootPage, err := svc.ListPostsPage(ctx, root, ListPostsQuery{PageSize: 100})
+	if err != nil {
+		t.Fatalf("root list: %v", err)
+	}
+	if len(rootPage.Items) != 1 {
+		t.Fatalf("root should see 1 post (the published one), got %d", len(rootPage.Items))
+	}
+	for _, p := range rootPage.Items {
+		if p.Status == models.PostPrivate {
+			t.Fatalf("root must not see another user's private post, got %q", p.Title)
+		}
 	}
 }
 

@@ -115,7 +115,9 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 //
 // Visibility by status (spec: review + banned vault):
 //   - published: everyone (incl. anonymous).
-//   - private / pending / rejected: author, admin, or root.
+//   - private: the author ONLY. Not admins, not root — "仅自己可见" has to
+//     mean exactly that, and unpublished content needs no moderation.
+//   - pending / rejected: author, admin, or root (the review flow needs it).
 //   - banned: root only (the banned vault is invisible to the author and to
 //     other admins).
 func (s *Service) GetPost(ctx context.Context, user models.User, id string) (models.Post, error) {
@@ -141,8 +143,16 @@ func canSeePost(user models.User, post models.Post) bool {
 	case models.PostBanned:
 		// Banned vault: only root sees it.
 		return user.Role == models.RoleRoot
-	case models.PostPrivate, models.PostPending, models.PostRejected:
-		// Restricted content: the author, or any admin/root, may read.
+	case models.PostPrivate, models.PostDraft:
+		// Strictly author-only. The UI promises "仅自己可见", so admins and
+		// root are deliberately excluded too: neither state is ever published,
+		// so there is nothing to moderate, and an admin who could read it
+		// would make the promise a lie. Draft is the retired legacy state and
+		// is treated the same way.
+		return post.AuthorID == user.ID
+	case models.PostPending, models.PostRejected:
+		// Review flow: the author reads their own submission, admins and root
+		// read it in order to review it.
 		return post.AuthorID == user.ID || user.Role == models.RoleAdmin || user.Role == models.RoleRoot
 	default:
 		return false

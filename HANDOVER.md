@@ -244,19 +244,23 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 读接口（`/api/posts`、`/api/tags`、`/api/categories`、`/api/posts/recent` 等）用的是 `WithOptionalAuth`：无 token 按匿名放行，有**坏/过期 token 仍 401**。曾因误套强鉴权导致未登录访客 401、前端重试又 429。改路由时**读接口务必保持 `withOptionalAuth`，不要换成 `withAuth`**。
 
-### 7.5 可见性判定全在 service 层（第 25 轮扩为五档状态）
+### 7.5 可见性判定全在 service 层（第 25 轮五档 → 第 73 轮收紧「私密」）
 
-任何"谁能看谁"的判定都在 `services.ListPostsPage` / `ListArchive` / `GetAuthor` / `GetPostPublic` / `canSeePost`，不在 handler/router。**第 25 轮起文章状态为五值**（`models.PostPublished/PostPrivate/PostPending/PostRejected/PostBanned`），`canSeePost` 是唯一权威判定：
+任何"谁能看谁"的判定都在 `services.ListPostsPage` / `ListArchive` / `GetAuthor` / `GetPostPublic` / `canSeePost`，不在 handler/router。`canSeePost` 是唯一权威判定（第 73 轮起 `private` 严格作者可见）：
 
 | 状态 | 谁能看 |
 |------|--------|
 | `published` | 所有人（含匿名） |
-| `private` | 作者 + admin + root |
-| `pending` | 作者 + admin + root |
-| `rejected` | 作者 + admin + root |
+| `private` | **仅作者本人**（admin / root 都读不到；「仅自己可见」字面成立） |
+| `draft`（第 22 轮已废的遗留值） | **仅作者本人**（与 private 同档） |
+| `pending` | 作者 + admin + root（审核流需要） |
+| `rejected` | 作者 + admin + root（审核流需要） |
 | `banned` | **仅 root**（作者本人和其他 admin 都看不到） |
 
-遗留 `draft`/`scheduled` 值在 `CreatePost`/`UpdatePost` 一律白名单兜底。改可见性逻辑只看 service，不要往 handler 里加权限判断。
+- **为什么 admin/root 读不到别人的 private**：私密文章永远不会进入公开区，也就没有审核/治理需求；而只要管理员能读，"仅自己可见"就是一句假话。审核流需要看的 `pending`/`rejected` 保持 admin/root 可读。
+- 列表过滤（`posts_list.go` 的 `applyFilters`）用同一个 `authorOnly := []string{PostPrivate, PostDraft}` 切片驱动，**改可见性时列表与单篇必须同步改**，否则会出现"列表里有、点进去 404"。
+- 后台「文章管理」因此对 admin 少看到别人的 private/draft 行，这是预期行为。
+- 遗留 `draft`/`scheduled` 值在 `CreatePost`/`UpdatePost` 一律白名单兜底。改可见性逻辑只看 service，不要往 handler 里加权限判断。
 
 ### 7.7 三层角色：root 唯一且不可经 API 创建 ⚠️
 

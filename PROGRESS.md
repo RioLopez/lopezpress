@@ -79,6 +79,7 @@
 | 第五十四轮（P0 立规矩） | `scripts/arch_check.py` 棘轮门禁 + `models.All()` 治漂移漏表 | ✅ 门禁全绿 | 见 §4 |
 | 第五十五轮（P1 分层） | service 层传输符号 12 处 → 0 + `internal/imghost` 抽出 | ✅ 门禁全绿 + 7 组真跑冒烟 | 见 §4 |
 | 第七十二轮（渗透报告核实 + 安全加固） | 作者敏感字段裁剪 / 安全头 / 上传内容校验 / 改密废旧 token / nginx 4 个 location | ✅ 门禁全绿 + 隔离冒烟 15/15 | 见 §4 |
+| 第七十三轮（私密语义收紧） | `private`/`draft` 改为严格作者可见，admin/root 也读不到 | ✅ 门禁全绿 + 三角色真机复测 | 见 §4 |
 
 > 第 43–52 轮为功能轮次，详情见 §4 对应小节；本节自第 53 轮起只收录"改了架构或门禁"的里程碑轮。
 
@@ -1188,6 +1189,37 @@
 备份 `data/app.db.bak-preclean-20261024` 后清除：账号 `securitest001`（被改邮箱 `sec001_new@test.com`）/ `seepriv2` / `otherguy`；其 5 篇测试文章 + 3 条修订 + 1 篇孤儿 `私密复现文章`（author 已不存在）；`uploads/` 下 2 个 43 字节 HTML 注入载荷（`<html><script>alert(1)</script></html>` 伪装成 `.png`）。清理后 users 3 / posts 15 / 孤儿 0。
 
 **未动**：`rio` 账号及其 2 篇文章（可能是用户真实数据）、`data/uploads/` 两个 418KB 真实 PNG（未被任何文章引用，但属有效图片）。
+
+---
+
+### 第七十三轮 — 「私密」改为严格作者可见（2026-10-24）
+
+**触发**：用户真机验证时发现 `lopez`（admin）登录后能看到 `admin`（root）标记「仅自己可见」的文章，质疑「这和市面上的网站都不一样」。
+
+**排查结论（三分现象、三个根因）**：
+
+| 现象 | 根因 | 是否 bug |
+|---|---|---|
+| 隐私窗口 2 未登录就已是 lopez 账号 | 同一 incognito 会话内的多个窗口**共享 cookies + localStorage**（Chrome/Edge 皆如此；只有关掉所有隐私窗口再开，才是全新会话） | 否，浏览器行为 |
+| 隐私窗口看到 admin 的私密文章 | 该隐私会话登录的是 `lopez`，而 `lopez.role = admin`；旧 `canSeePost` 允许 admin/root 读他人 `private` | **是，语义缺陷** |
+| 「以为是 admin 留下的缓存」 | 前端只在 localStorage 存 token / locale / theme / 字号 / 编辑器草稿，**从不缓存文章列表**，无 Service Worker | 否，无缓存参与 |
+
+实测证据（真实服务 + 三种角色令牌）：匿名 12 篇（全 published）；`rio`(user) 13 篇（含自己 1 篇 private）；`lopez`(admin) **15 篇**（含 root 的 private + draft）→ 确认是服务端按角色返回，与缓存无关。
+
+**改动（用户拍板：严格私密，只有作者本人能读）**：
+
+- `services/posts.go` `canSeePost`：`private` 拆出独立分支，只判 `post.AuthorID == user.ID`；`pending`/`rejected` 保持「作者 + admin/root」；`banned` 仍仅 root。
+- `models/models.go`：补回 `PostDraft = "draft"` 常量（第 22 轮已废状态，仅用于让遗留行与 `private` 同档处理），并在状态注释里写明 `private` 是"作者 ONLY"。
+- `services/posts_list.go` `applyFilters`：root / admin 分支从 `status <> banned` / 无条件放行，改为 `authorOnly := []string{PostPrivate, PostDraft}` 驱动——root「全部但排除他人 authorOnly」，admin「排除 banned 且排除他人 authorOnly」。列表与单篇共用同一份名单，防止出现"列表里有、点进去 404"。
+- `draft` 顺带收口：此前 admin 能在列表里看到别人的 draft，点进去必然 404（`canSeePost` default 返回 false）——现在 draft 与 private 同档，只是"作者能看自己"，这个不一致一并消失。
+
+**测试**（改 3 个、增 7 个断言）：
+
+- `TestGetPostPrivateVisibility`：新增 4 个 admin/root 用例 + 3 个 pending 用例（admin/root 可读 pending、他人/anonymous 不可读）。**关键坑**：原测试用 `CreatePost` 造"private"，但 `CreatePost` 对普通用户一律强制 `pending`，所以那个"private"根本没生效——改用 `makePostNoTime` 直写 DB 才造出真私密。
+- `TestListPostsPageVisibilityThreeBranches`：admin 期望 3→2（看不到 alice 的 private，能看到自己的）；新增 root 分支断言（只看到 1 篇 published）。
+- `TestListPostsNonAdminFilter`：root 期望 6 不变，但注释补明"alice/bob 的 private 请求已被强制成 pending，本用例不覆盖 author-only 规则"。
+
+**验证**：`go build`/`go vet`/`go test ./...` 全绿（183 用例）；`arch_check`、`contract_check`、`tsc --noEmit` 全绿。**真机复测**（重启二进制后）：匿名 12 / rio 13（含自己 private）/ lopez 12（不再有任何非公开）/ admin 14（仅自己的 private + draft）；单篇直取 `校园网自动登录系统`、`封面测试`、`rio的测试1`：lopez 全 404，admin 对自己的 200、对 rio 的 404。
 
 ---
 

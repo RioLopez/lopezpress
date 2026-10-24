@@ -221,13 +221,17 @@ func TestListPostsNonAdminFilter(t *testing.T) {
 		}
 	}
 
-	// root sees every post (2 public + 4 restricted = 6).
+	// root sees the whole moderation view: 2 public + 4 restricted = 6.
+	// NOTE: alice/bob's "private" requests were both forced to pending by
+	// CreatePost (plain users cannot create private posts), so this case does
+	// not exercise the "private is author-only" rule — that rule is covered
+	// by TestGetPostPrivateVisibility and TestListPostsPageVisibilityThreeBranches.
 	allPosts, err := svc.ListPosts(ctx, root, "")
 	if err != nil {
 		t.Fatalf("ListPosts(root): %v", err)
 	}
 	if len(allPosts) != 6 {
-		t.Fatalf("root should see 6 posts, got %d", len(allPosts))
+		t.Fatalf("root should see 6 posts (2 public + 4 pending), got %d", len(allPosts))
 	}
 }
 

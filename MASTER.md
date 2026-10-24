@@ -317,12 +317,12 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-24 01:10（第 72 轮：外部渗透报告核实——11 项报出 → 9 真 / 5 假阳性，落地 9 项安全加固，隔离冒烟 15/15） |
-| 对应提交 | 主题 `fix(security): harden author payload, upload, token revocation, headers`（本轮提交，用 `git log --oneline -3` 核对，**不写 sha**） |
-| 正在做 | 无进行中任务；代码 + 文档已落盘，`go build/vet/test`、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check` 全绿 |
-| 下一步第一件事 | ① **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`（存不下来）；`PostEditor` 把 `pending` 误显为「公开」 ② **nginx 改动需实测**（本轮补了 `/uploads` `/feed` `/sitemap.xml` `/robots.txt` 4 个 location + 静态 location 安全头），有 VPS 才能验证 ③ 浏览器真机回归（改密后会话保持、dev 下 `/uploads` 图片能显示） |
-| 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ `rio` 账号下 2 篇文章（`rio的测试1` / `浏览器自动化测试文章`）疑似测试残迹，**留给用户自行删除**（属真实账号数据，AI 不动）④ `data/uploads/` 两个 418KB PNG 未被任何文章引用 ⑤ WXR（WordPress XML）导入未做 |
-| 当前分支状态 | 本轮提交后与 `origin/main` 平齐（本机 `git push` 直连不通，推送走 `github-auto-upload`）；tag `v0.1.0` 之后尚未打新 tag |
+| 最后更新 | 2026-10-24 10:45（第 73 轮：`private`/`draft` 收紧为严格作者可见，admin/root 读不到他人私密；三角色真机复测通过） |
+| 对应提交 | 主题 `fix(visibility): make private author-only`（第 73 轮）/ `fix(security): harden author payload, upload, token revocation, headers`（第 72 轮，已推送 `5683a81`），用 `git log --oneline -3` 核对，**不写 sha** |
+| 正在做 | 无进行中任务；本轮代码 + 文档已落盘，`go build/vet/test`、`tsc`、`arch_check`、`contract_check` 全绿；本地服务已用新二进制重启（8080 + 5173） |
+| 下一步第一件事 | ① **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`（存不下来，本轮私密收紧后这个入口更矛盾）；`PostEditor` 把 `pending` 误显为「公开」 ② 第 73 轮改动需 commit + 推送 ③ **nginx 改动需实测**（`/uploads` `/feed` `/sitemap.xml` `/robots.txt` 4 个 location + 静态 location 安全头），有 VPS 才能验 ④ 浏览器真机回归（改密后会话保持、dev 下 `/uploads` 可显示） |
+| 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ `rio` 账号下 2 篇文章（`rio的测试1` / `浏览器自动化测试文章`）疑似测试残迹，**留给用户自行删除** ④ `data/uploads/` 两个 418KB PNG 未被任何文章引用 ⑤ WXR（WordPress XML）导入未做 ⑥ `ListCategoriesWithCount`/`ListTagsWithCount` 的计数仍含 private/pending/draft（只泄露"存在多少"，不泄露内容），未收口 |
+| 当前分支状态 | 第 72 轮提交 `5683a81` 已推送，远程 `main` 与本地一致；第 73 轮改动**尚未 commit**；tag `v0.1.0` 之后尚未打新 tag |
 
 ### 9.5 新会话开场自检（30 秒）
 

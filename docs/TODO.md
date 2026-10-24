@@ -19,7 +19,7 @@
 > - [x] **F-3 前台首页编辑/删除按钮越权显示** ✅ 第 69–70 轮完成：个人中心「内容管理」先给作者编辑入口（第 69 轮），首页 `ListPage` 再加 `canEditPost`/`canDeletePost` 条件渲染（第 70 轮）——不再对所有人显示，非作者不会再点出 403。
 > - [x] **F-4 `/archive` 全量加载** ✅ 第 47 轮完成（spec 28）：`GET /api/posts/archive/paged`（默认 50 / 上限 200 / body 恒空），前端改用服务端分页。
 > - [ ] **F-5 站点名仍是 `Echo`**（`site_configs.site_name`，DB 现值），改名 LopezPress 属数据修正，非代码问题。
-> - [ ] **F-6 一条 `draft` 状态脏数据**（文章「封面测试」，第 22 轮已废 draft 五态），五态之外的状态永不显示也管不到，需清理或迁移为 published/private。
+> - [ ] **F-6 一条 `draft` 状态脏数据**（文章「封面测试」，第 22 轮已废 draft 五态）。第 73 轮起 `draft` 与 `private` 同档（作者可见、他人 404），不再出现「列表里有、点进去 404」的不一致；剩下只是这条数据本身该迁移为 published/private。
 > - [x] **F-7 前台匿名阅读** ✅ 第 46 轮完成（spec 27）：改为 `site_configs.public_read` 开关，管理员在「站点设置 → 显示设置」切换；前后端同时执行（匿名关闭时 API 直接 401）。
 > - [x] **A-06 分类分层级** ✅ 第 46 轮完成（spec 27）：`parent_id` 两层树 + 预设分类树 + 删除父级时子级上移 + 父级筛选含子级。
 > - [x] **A-05 封禁闭环** ✅ 第 48 轮完成（spec 30）：后台文章管理页加 root 专属「封禁」按钮，封禁库不再是单向门。
@@ -45,8 +45,9 @@
 - [x] **S-7 dev 下 `/uploads` 返回 `index.html`**：`vite.config.ts` 补 4 条 proxy。
 - [x] **S-8 生产 nginx 漏反代**（报告未测出）：`/uploads/` `/feed` `/sitemap.xml` `/robots.txt` 各自 `location`。
 - [x] **S-9 nginx 静态 location 丢安全头**（报告未测出）：`add_header` 不继承，需重复声明。
-- [ ] **S-10 普通用户编辑器暴露「私密」选项但存不下来**（`CreatePost` 强制 pending）——**等用户拍板**：隐藏选项 or 明确提示「先过审核」。
+- [ ] **S-10 普通用户编辑器暴露「私密」选项但存不下来**（`CreatePost` 强制 pending）——**等用户拍板**：隐藏选项 or 明确提示「先过审核」。第 73 轮把 `private` 收成严格作者可见后，这个入口更矛盾：用户选了私密，实际进审核队列，通过后变公开。
 - [ ] **S-11 `PostEditor` 把 `pending` 误显示为「公开」**——**等用户拍板**。
+- [x] **S-12 「私密」对管理员可见**（用户真机发现 admin 能读他人 private）：`canSeePost` 拆出独立分支只判作者，`PostDraft` 同档；`ListPostsPage` 用同一份 `authorOnly` 名单驱动过滤。⚠️ **改可见性必须同时改列表过滤与单篇判定**，否则出现"列表有、点进去 404"。
 
 ## 🏗️ 架构债（2026-10-23 第 53 轮架构复审新增）
 
