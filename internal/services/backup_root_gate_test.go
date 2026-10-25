@@ -40,7 +40,7 @@ func TestImportAndRestoreAreRootOnly(t *testing.T) {
 		t.Errorf("admin ImportBackup: expected 403, got %v (err=%v)", StatusOf(err), err)
 	}
 	// 2. An admin cannot restore a snapshot either.
-	if _, err := svc.RestoreSnapshot(ctx, admin, "snapshot-20260101-000000.db"); StatusOf(err) != http.StatusForbidden {
+	if _, err := svc.RestoreSnapshot(ctx, admin, "snapshot-20260101-000000.db", RestoreSnapshotOptions{}); StatusOf(err) != http.StatusForbidden {
 		t.Errorf("admin RestoreSnapshot: expected 403, got %v (err=%v)", StatusOf(err), err)
 	}
 	// 3. The root passes the gate (dry run here so nothing is destroyed;

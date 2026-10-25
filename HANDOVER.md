@@ -2,18 +2,19 @@
 
 # LopezPress（原 Echo Content API）— 交接文档（AI 接手用）
 
-> 版本：v2.1
-> 更新时间：2026-10-22（第 38 轮文档校准）
+> 版本：v3.0
+> 更新时间：2026-10-24（第 79 轮文档校准）
 > 用途：**新接手的 AI / 工程师的第一份必读**。本文档覆盖项目全貌、当前实现状态、如何跑起来、关键陷阱、已知问题、未决决策，以及自测清单。
-> 配套文档：`docs/ARCHITECTURE.md`（设计稿）、`docs/AUDIT_2026-10-15.md`（最近一次全栈深度审计）、`PROGRESS.md`（第 1–38 轮开发全记录）、`README.md`（快速上手）、`docs/specs/*`（20 份功能规格 + 模板）、`docs/decisions/*`（4 项重大决策）。
+> 配套文档：`docs/ARCHITECTURE.md`（设计稿）、`docs/AUDIT_2026-10-15.md`（最近一次全栈深度审计）、`PROGRESS.md`（第 1–79 轮开发全记录）、`README.md`（快速上手）、`docs/specs/*`（36 份功能规格 + 模板）、`docs/decisions/*`（6 项重大决策）。
 > **AI 协作者另读**：根目录 `AGENTS.md`（速查 + 红线）与 `docs/AI_STANDARD.md`（五阶段工作流 + 验证门禁 + 十条红线）——2026-10-19 建立的协作标准，本文件 §7 的陷阱是它的红线来源。
+> **只想恢复上下文**：直接读 `MASTER.md`（唯一入口 + 自驱协议 + 事实基线），不必逐份翻。
 
 ---
 
 ## 0. 先读这一段（最重要）
 
 - **技术方向已定稿，不需要换框架。** 后端 Go 标准库 `net/http` + GORM + 纯 Go SQLite；前端 Preact + Vite + TS。目标机型是低配 VPS（1 vCPU / 1.5 GB / 5 GB 磁盘）。这套组合在"低资源 + 可维护"维度是最优解，不要为了"更现代"去改框架（详见 §9 决策记录）。
-- **当前代码已落地第 1–38 轮开发 + 10 项安全加固 + 7 项 P0 修复**，全部 `go build` / `go vet` / `go test` / `tsc --noEmit` / `vite build` 通过（2026-10-22 第 38 轮本机实测，基线见 `PROGRESS.md` §七）。
+- **当前代码已落地第 1–79 轮开发**（含 10 项安全加固、7 项 P0 修复、8 阶段架构债、图库与邮箱验证两族新功能），全部 `go build` / `go vet` / `go test` / `tsc --noEmit` / `vite build` 通过（2026-10-24 第 79 轮本机实测，基线见 `PROGRESS.md` §七与 `MASTER.md` §7）。
 - **有一个会反复咬人的陷阱**：`glebarez/sqlite` 驱动 + GORM `AutoMigrate` 在"误判需要重建表"时会走 copy-rename 路径，生成的 `INSERT` 可能漏掉 NOT NULL 列导致启动崩溃。修复方式见 §7.1，改 `internal/config/config.go` 时务必小心，**不要回退成无条件的 `AutoMigrate`**。
 - **AI 协作先读 `AGENTS.md` + `docs/AI_STANDARD.md`**：本仓库有一整套驱动 AI 干活的标准（五阶段工作流、验证门禁、十条红线、提示词模板库 `docs/prompts/`）。新接手的 AI 按它执行，用户说「继续」即触发「读上下文 → 选下一优先级 TODO → 实现 → 门禁 → 记录」循环。
 - **本地一键启动用 `LopezPress.bat`**（Windows）。它已检测端口、避免重复启动、自动开浏览器。服务器进程请用「独立窗口 / 后台任务」方式运行，否则对话会话结束会被回收（见 §3）。
@@ -26,8 +27,8 @@
 面向低配 VPS 的**可自托管全栈内容站点**：Go 单二进制 + SQLite 单文件（后端），Preact 单页（前端），前后端分离。定位"小而美的个人博客 / 轻 CMS"，功能深度优先于广度，追求极致资源占用比与可维护性。
 
 - 单二进制（Go，零 CGO）+ 单文件数据库（SQLite）= 部署即解压，无系统依赖。
-- 前端静态产物（~180 kB JS / ~48 kB CSS gzip 后 ~56 kB / ~8.8 kB），放 Nginx 任意静态目录即可。
-- 总依赖极少：后端 `go.mod` 直接依赖 6 个（+10 indirect）、前端 3 个 npm 包（`preact` / `wouter` / `marked`），供应链可审计。
+- 前端静态产物（JS 261 kB / CSS 67 kB，gzip 后 ~81 kB / ~12 kB），放 Nginx 任意静态目录即可。
+- 总依赖极少：后端 `go.mod` 直接依赖 7 个（+11 indirect）、前端 3 个运行依赖（`preact` / `wouter` / `marked`）+ 4 个 devDependency，供应链可审计。
 
 ---
 
@@ -42,8 +43,11 @@
 | 限流 | `golang.org/x/time/rate` 令牌桶 | 内存态，单实例 OK；多实例需换 Redis |
 | 前端 | Preact + Vite 5 + TypeScript | 核心 ~3 KB，手写 i18n（中英）/ 主题 / 路由（wouter） |
 | Markdown | `marked`（同步）+ DOMParser 清洗 | 前端 `web/src/core/md.ts` |
-| 可见性模型 | `published`（公开）/ `private`（仅作者） | 无 draft / 无 scheduled（第 22 轮定稿移除） |
-| 角色 | `user` / `admin` 两角色 | 文章维度仅公开/私密两态 |
+| 图片 | `golang.org/x/image`（`draw` 缩放 + `webp` 解码） | 第 78 轮新增；缩略图队列用 CatmullRom，上传校验仍走魔数 |
+| 图像存储 | 本地磁盘 + `upload_files` 元数据表 | sha256 去重、三层配额、软删撤下（文件仍留盘）、引用台账，见 spec 36 |
+| 邮件 | `net/smtp` 纯标准库 | 通知类「未配 SMTP 即静默跳过」；验证码类必须 503 报错，见 spec 37 |
+| 可见性模型 | `published`（公开）/ `private`（仅作者） | 无 draft / 无 scheduled（第 22 轮定稿移除）；`pending`/`rejected` 是审核态 |
+| 角色 | `user` / `admin` / `root` 三层 | root 全库唯一且**不可经任何 API 创建**（第 25 轮起）；权限 helper 集中在 `services/roles.go` |
 
 > ⚠️ **FTS5 全文搜索不可用**：纯 Go 驱动无 FTS5 扩展，搜索走 `LIKE '%...%'`（千级文章内可接受）。若要 FTS5 需换 cgo 驱动（`mattn/go-sqlite3`），代价是失去零 CGO 卖点 —— 当前决策是**不换**。
 > ⚠️ **不跨设备同步草稿**：草稿仅浏览器 `localStorage`（30 天 TTL）。
@@ -72,11 +76,12 @@ LopezPress.bat build      :: vite build 打包到 web/dist
 LopezPress.bat help       :: 查看子命令
 ```
 
-> 双击即用。Go 路径脚本会自动探测 `PATH` → `%USERPROFILE%\go-install\go\bin` → `C:\go\bin`。
+> 双击即用。Go 路径脚本会自动探测 `PATH` → `%USERPROFILE%\go-install\go\bin` → `%SystemDrive%\go\bin`。
+> **本机实际路径是 `C:\Users\LopezPC\go-sdk\go\bin`，不属于上面三个位置**，所以要么手动 `set PATH=C:\Users\LopezPC\go-sdk\go\bin;%PATH%`，要么依赖已构建好的 `lopezpress.exe`（脚本优先用它）。
 
 ### 3.2 手动启动（等价于 LopezPress.bat 内部逻辑）
 
-**后端**（需要 Go 1.22+，脚本里 Go 在 `C:\Users\Lopez\go-install\go\bin`）：
+**后端**（需要 Go 1.22+，本机 Go 在 `C:\Users\LopezPC\go-sdk\go\bin`）：
 
 ```powershell
 cd lopezpress
@@ -115,27 +120,60 @@ curl http://localhost:5173/api/site-config    # 经前端代理应 200
 cd lopezpress
 go build ./...              # 编译
 go vet ./...               # 静态检查
-go test ./...              # 单测（14 个 _test.go 文件，全绿）
-go test ./internal/services/... -run Visibility -v   # 可见性三分支等
+go test -count=1 ./internal/...   # 单测（48 个 _test.go 文件 / 212 用例，全绿）
+go test ./internal/services/ -run Visibility -v   # 可见性三分支等
 
 # 前端
 cd web
-npx tsc --noEmit           # 类型检查
+node node_modules/typescript/bin/tsc --noEmit   # 类型检查（.bin/tsc 是 bash 脚本，别直接喂 node）
+NODE_OPTIONS= npm test     # vitest，5 文件 43 用例（沙箱里 NODE_OPTIONS 注入 fs shim 会让 vitest 报 EPERM，故清空）
 npm run build              # 生产构建
+
+# 门禁（改代码 / 改文档后各跑对应的）
+python scripts/arch_check.py      # 架构棘轮，只许降不许升
+python scripts/contract_check.py  # 前后端 method+path 契约
+python scripts/doc_check.py       # 母文档是否失真
 ```
 
-测试文件清单（当前 14 个）：
-- `internal/config/`：`config_test.go`、`mig_test.go`（Windows Close 修复）
-- `internal/handlers/`：`handlers_test.go`
-- `internal/middleware/`：`limiter_test.go`、`login_limiter_test.go`（5 用例）、`middleware_test.go`
+测试文件清单（完整清单以 `ls internal/**/*_test.go` 为准，当前 48 个）：
+- `internal/config/`：`config_test.go`、`mig_test.go`、`recover_test.go`
+- `internal/handlers/`：`handlers_test.go`、`upload_test.go`、`mail_test.go`、`moderation_test.go`、`query_test.go`、`guard_test.go`、`feed_test.go`
+- `internal/middleware/`：`limiter_test.go`、`login_limiter_test.go`、`middleware_test.go`
 - `internal/models/`：`models_test.go`
-- `internal/services/`：`fts_test.go`、`round19_test.go`、`services_backup_test.go`（dry-run/schema 校验/snapshot）、`services_extra_test.go`、`services_test.go`、`services_visibility_test.go`（可见性三分支 + 私密 404 + 白名单兜底 + ListArchive + GetAuthor）、`testutil_test.go`
+- `internal/services/`：`services_visibility_test.go`（可见性五态）、`services_backup_test.go`、`media_library_test.go`（去重/配额/软删/台账）、`thumbs_test.go`（缩放/透明/skip）、`email_codes_test.go`（验证码全链路）、`update_me_test.go`、`testutil_test.go` 等
 
 ---
 
-## 5. 当前实现状态（截至 2026-10-15）
+## 5. 当前实现状态（截至 2026-10-24 第 79 轮）
 
 ### 5.1 功能轮次（PROGRESS.md 完整记录，这里只列结论）
+
+第 1–79 轮已全部完成。第 1–25 轮见下方原有记录，第 26 轮之后按主题归类：
+
+| 区间 | 主题 | 结论 |
+|---|---|---|
+| 26–42 | AI 协作体系与母文档 | `AGENTS.md` / `docs/AI_STANDARD.md` / `docs/prompts/` / `MASTER.md` / `scripts/doc_check.py`；第 40 轮首次推送 GitHub |
+| 43–52 | 读者端 + 写作端 + 运营端补全 | 浏览量去重、后台文章管理、阅读开关、分类层级、slug 永久链接、买家企业审查、修订历史、批量导入、统计趋势、每日自动备份、相关文章 |
+| 53–67 | 架构债（`ARCH_REVIEW` 8 阶段） | 棘轮门禁 `arch_check.py`；审计单点化；拆 `services.go`；路由表声明化；迁移注册表；前端数据层 `core/http.ts` + `useQuery`；i18n 按域拆；DTO 全进 `dto.go`；查询参数统一。**R1/R3/R4/R5/R7/R8/R9/R10 全 0** |
+| 68–75 | 真机走查 + 安全收口 | wouter query 失效、越权渲染、硬刷新掉登录；外部渗透报告两轮核实（9 真 + 8 类真问题），权限面/上传/备份/安全头全部收紧 |
+| 76–79 | 媒体与身份（本轮） | 图库（去重/配额/引用台账/软删/后台/缩略图队列）+ 头像裁剪 + 邮箱验证（注册码/找回密码/换绑，默认关闭） |
+
+### 5.1.1 图库与存储（第 77–78 轮，spec 36）
+
+- 表：`upload_files`（`live_key` 唯一索引：活=sha256、软删=`d:<id>`、历史=`legacy:<name>`）+ `upload_refs`（文章引用台账）。
+- 上传：magic-bytes → 真实解码（边长/像素上限）→ sha256 去重 → 三层配额 → 写盘。文件名 `crypto/rand` 22 字符 base62。
+- 删除：用户「撤下」= 软删（文件仍在盘上继续服务已发布文章，但离开图库且**永不可被他人复用**）；admin 可硬删（连带缩略图），返回受影响引用数。
+- 缩略图：库内 `thumb_status` 是唯一待办真相；单 goroutine + 150 ms 间隔 + 30 s sweep；长边 480，CatmullRom，透明走 PNG。
+- 前端：`/admin/media` 图库页；`/settings` 头像点击 → `AvatarCropper`（拖拽 + 缩放，输出 512×512 WebP）。
+
+### 5.1.2 邮箱验证（第 79 轮，spec 37，**实验性默认关闭**）
+
+- 三条流程：注册码（`/register`）、找回密码（`/forgot-password`）、换绑邮箱（`/settings`）。
+- 安全：6 位码 5 次错误作废、一次性、绑用途、库里只存 HMAC；同邮箱 60 s 冷却（落表）+ 同 IP 每小时 10 封。
+- **开着验证时 `PUT /api/auth/me` 改邮箱直接 403**（否则一次 PUT 绕过整套）。
+- 开关 root 专属；SMTP 未配置时接口 503 而不是假装发送成功。
+
+### 5.1.3 第 23–25 轮（历史记录，保留原文）
 
 第 1–25 轮已全部完成。除第 1–22 轮全部内容外，新增：
 
@@ -149,7 +187,7 @@ npm run build              # 生产构建
   - 迁移 `0003_root_migration`（最早 admin 升 root）+ `0004_add_review_columns`
   - 后端新端点 6 个（见 §5.3）；前端新增「内容审核」「封禁库」两个后台页面
 
-### 5.2 10 项安全加固（本轮新增，已全部完成并通过）
+### 5.2 10 项安全加固（2026-10-15 那轮，已全部完成并通过）
 
 > 顺序按落地顺序 1→2→4→5→10→8→9→3→6→7。以下是"改了什么 / 在哪 / 怎么验"。
 
@@ -187,26 +225,41 @@ npm run build              # 生产构建
 
 ```
 lopezpress/
-├── cmd/server/main.go        # 入口：loadDotEnv → Load → ValidateSecurity → InitDB → 建 svc → 建双限流器 → 优雅关闭
+├── cmd/server/main.go        # 入口：loadDotEnv → Load → ValidateSecurity → InitDB → 建 svc → 启缩略图 worker → 双限流器 → 优雅关闭
 ├── internal/
-│   ├── config/config.go      # .env 读取 + ValidateSecurity + InitDB（手动迁移门控 + AutoMigrate 门控）+ 种子数据
-│   ├── models/models.go      # GORM 实体（User/Post/Category/Tag/PostTag/SiteConfig/LoginLog/SchemaMigration）
-│   ├── services/
-│   │   ├── services.go       # 核心业务（Post CRUD + 可见性 + 备份 + 回收站 + 站点配置 + 用户统计 + 备份导出/导入/snapshot）
-│   │   └── accounts.go       # 用户/登录日志/注册/改密/个人资料/作者页/仪表盘
-│   ├── handlers/             # 薄处理器（auth/posts/categories/accounts/admin/upload）
-│   ├── middleware/           # Chain/Logger/CORS/Recover/Limiter + LoginLimiter（#3）
-│   └── router/router.go      # 路由装配（Go 1.22 ServeMux + 中间件链 + 登录限流器）
-├── web/                      # 前端（Preact + Vite + TS）
-├── deploy/                   # 部署脚本（systemd / Nginx / 一键上传）
-├── docs/                     # ARCHITECTURE / AUDIT_REPORT / specs(20) / decisions(0001-0004)
-├── LopezPress.bat               # 一键启动（Windows）
-├── .env.example              # 配置项示例（含全部新增项）
-├── go.mod
-└── PROGRESS.md               # 22 轮开发全记录
+│   ├── config/
+│   │   ├── config.go         # .env 读取 + ValidateSecurity + InitDB（AutoMigrate 只对新表）+ 种子数据
+│   │   ├── migrate.go        # 有序迁移注册表 0001–0013 + ensureColumns 泛型（R7 门禁禁止另写 add*Column）
+│   │   ├── uploads_backfill.go # 启动时把 data/uploads 里的历史文件登记为 legacy 行（幂等）
+│   │   └── recover.go        # root 密码离线恢复 CLI
+│   ├── models/
+│   │   ├── models.go         # User/Post/Category/Tag/PostTag/LoginLog/ActionLog/PostRevision/...
+│   │   ├── all.go            # AutoMigrate 的唯一实体清单（含 UploadFile/UploadRef/EmailCode）
+│   │   ├── site_config.go    # SiteConfig（最宽的实体，独立成文）
+│   │   ├── uploads.go        # UploadFile（live_key 唯一索引）+ UploadRef（引用台账）
+│   │   ├── email_codes.go    # EmailCode（只存 HMAC）
+│   │   ├── ids.go            # NewOpaqueID：crypto/rand → base62 22 字符
+│   │   └── presets.go        # 预设分类树
+│   ├── services/             # 领域层（36 个文件，按域切分，最大 314 行）
+│   │   ├── posts.go / posts_list.go / posts_edit.go / moderation.go / trash.go / revisions.go / slug.go / tags.go / taxonomy.go / related.go / views.go / batch.go
+│   │   ├── media.go / media_files.go / media_library.go / media_refs.go / thumbs.go   # 图库（spec 36）
+│   │   ├── email_codes.go / auth_email.go / mail.go / mail_code.go / mail_smtp.go    # 邮件与验证码（spec 37）
+│   │   ├── site_config.go / site_config_policy.go / accounts.go / accounts_profile.go / users.go / access.go
+│   │   ├── audit.go（全库唯一 ActionLog 写者）/ roles.go（权限 helper 集中地）/ dto.go（全部 API 契约）
+│   │   ├── backup.go / restore.go / autobackup.go / import_md.go / nav.go / auth.go / service.go
+│   ├── handlers/             # 薄处理器（auth/auth_email/posts/accounts/admin/upload/categories/moderation/import/feed/query）
+│   ├── middleware/           # Chain/Logger/CORS/Recover/Limiter/LoginLimiter/SecurityHeaders
+│   ├── imghost/              # 出站图床客户端（SM.MS），service 层不再碰 HTTP
+│   └── router/router.go      # 路由声明表 `var routes`（83 条，含 auth/roles 列）
+├── web/                      # 前端（Preact + Vite + TS，26 页面 + core/{http,useQuery,api,types,i18n,roles,...}）
+├── deploy/                   # systemd / Nginx / Docker
+├── docs/                     # ARCHITECTURE / specs(36+模板) / decisions(0001-0006) / TODO / 审计归档
+├── scripts/                  # arch_check.py / contract_check.py / doc_check.py / fakesmtp.py
+├── LopezPress.bat            # 一键启动（Windows）
+└── PROGRESS.md               # 79 轮开发全记录
 ```
 
-**审计优先阅读顺序**（见 AUDIT_REPORT §4.1）：`cmd/server/main.go` → `internal/config` → `internal/router` → `internal/services/*`（业务规则全在这）→ `internal/handlers/auth.go`（`WithAuth`/`WithOptionalAuth`）→ `internal/middleware/*` → `internal/models` → `web/src/core` + `web/src/pages`。
+**读代码的推荐顺序**：`cmd/server/main.go` → `internal/router/router.go`（**先看路由表，它现在就是端点清单**）→ `internal/services/*`（业务规则全在这）→ `internal/handlers/*`（只做解析与序列化）→ `internal/middleware/*` → `internal/models/*` → `web/src/core/`（`http.ts` 是唯一 fetch，`api.ts` 是纯类型化 facade）→ `web/src/pages/*`。
 
 ---
 
@@ -406,34 +459,82 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 本轮 4 处改了前端（导出按钮、置顶开关、SMTP 输入框、root 行登录历史），每一处都有对应的服务层 403。反过来说，前端隐藏是为了不提供「点了必失败」的控件，不是安全边界。`arch_check` 的 R4 门禁（handler 里不许 `require*`）保证了路由表这一层不会漏，但**字段级**授权（谁能写 `pinned`、谁能读 `smtp_pass`）只能在 service 里做。
 
+### 7.29 图片的"软删除"不能用 `gorm.DeletedAt`（第 77 轮）
+
+用户撤下自己的图之后，**已经发表的文章里还嵌着这张图**。用 `gorm.DeletedAt` 会让所有查询（包括静态文件服务）都看不到它 → 文章破图 → 让文章作者替上传者受罚。所以 `UploadFile.DeletedAt` 是普通的 `*time.Time`：列表接口自己加 `deleted_at IS NULL`，而 `GET /uploads/{name}` 完全不看这个字段。
+
+### 7.30 去重和所有权是同一件事，要靠数据不变式而不是纪律（第 77 轮）
+
+"用户删了图，就不能再给别人用"——如果靠"查重时记得跳过已删行"，任何一处漏写就侵权。做法是把 `live_key` 做成唯一索引：活跃 = `sha256`，撤下 = `d:<id>`，历史文件 = `legacy:<name>`。**唯一复用入口是按 `live_key` 查**，于是结构上永远查不到已撤下的图；同时文件仍在盘上继续服务老文章。站长原话是"这是所有权问题、是侵权的"——这类要求应该落到 schema 上，不要落到"记得判断"上。
+
+### 7.31 上传的三步顺序不能换：去重 → 配额 → 写盘（第 77 轮）
+
+- 配额在**写盘之前**：否则被拒的请求会留下半截文件，成为永不回收的垃圾。
+- 去重在配额**之前**：复用不产生新字节，不该计入额度。
+- 由此得出一个测试陷阱：**用同一份字节测配额永远拿不到 413**，它会先去重成功。必须每次换不同的内容。
+
+### 7.32 "缺省 = 关闭"的布尔项和"0 = 不限制"的数值项，必须从原始 map 判断是否出现（第 77/79 轮）
+
+`PUT /api/admin/site-config` 收到的是整份配置。若某个字段没提交，Go 解出来就是 `false` / `0`，直接赋值等于**静默关掉磁盘保护或头像开关**。做法：handler 从 `map[string]any` 判断 key 是否存在，不存在就从库值继承；数值再 `clampInt64` 到安全区间（`upload_max_image` 64 KB–20 MB 等）。同类字段：`allow_register` / `auto_backup` / `smtp_pass` / `email_verify_enabled` / `email_code_*`。
+
+### 7.33 后台 goroutine 的资源上限要比请求路径更严（第 78 轮）
+
+缩略图 worker 在后台解码。上传校验允许 4000 万像素（用户看得见图、能忍），但 worker 只解到 2400 万——因为**后台 goroutine OOM 会杀掉整个进程**，而没有缩略图只是列表慢一点。同理：队列必须单 goroutine + 张与张之间留间隔，1 核机器上并发解码 8 张大图会让 HTTP 服务不可用。
+
+### 7.34 队列的待办状态必须落在数据库（第 78 轮）
+
+内存 channel 只做"有新活"的唤醒，并且**满了一律丢弃**——因为 `thumb_status='pending'` 才是真相，下次扫描会补。这样进程被 kill 不丢任务。反过来也有坑：只在启动时扫一次的话，**积压超过单批上限（200 条）就只能靠重启才动**，所以必须有周期 sweep（30 s）。
+
+### 7.35 "发送成功"不能用通知类的邮件函数判断（第 79 轮）
+
+`sendMailFn` 对通知类邮件把"没配 SMTP"当成功（对通知是合理的：不该因为没配邮件就让审核失败）。验证码照搬这个语义就是骗人。所以验证码走 `requireSMTP` 显式 503，并且顺序是"冷却 → 查 SMTP → 发信 → 落库"——发信失败不留"有效但没人收到"的行。
+
+### 7.36 前端不渲染输入框 ≠ 服务端安全（第 79 轮）
+
+开着邮箱验证时，前端 `/settings` 把邮箱显示成只读 + "更换"面板。但 `PUT /api/auth/me` 原本仍然接受 `email` 字段——**一次 PUT 就绕过整套验证码**。修法是 `applyIdentityChange` 里 403，并补单测。凡是"换了个入口做同一件事"的新流程，都要回头堵住旧入口。
+
+### 7.37 真机冒烟的三个惯性误判（第 77–79 轮，都踩过）
+
+1. **本机 `lopez` 账号是 `admin` 不是普通用户**——拿它断言"普通用户 403"会假通过。要用 root 新建一个 `role=user` 的账号。
+2. **脚本连发几十个请求会撞通用令牌桶**（20 rps / burst 50），429 被误读成功能 bug。冒烟脚本要对 429 退避重试。
+3. **验证码冷却按邮箱地址存在库里**，重跑脚本必须换邮箱后缀或重建 DB 副本，否则第一次请求就 429。
+
 ---
 
 ## 8. 已知问题 & 待修复清单
+
+> 完整清单在 `docs/TODO.md`（唯一权威待办）。这里只留"接手后最该知道"的几条。
 
 | 等级 | 问题 | 位置 / 状态 |
 |------|------|------------|
 | 🟡 | 普通用户编辑器暴露「公开/私密」两个 radio，但 `CreatePost` 对非 root 一律强制 `pending` | `PostEditor.tsx` + `services/posts.go`；用户以为存成私密、实则进审核，通过后变公开。**待拍板**：隐藏该选项 or 明确提示「先过审核」 |
 | 🟢 | `PostEditor` 把后端返回的 `pending` 误显示为「公开」 | `PostEditor.tsx` 初始化逻辑 `status==='private'?'private':'published'`，**待拍板** |
+| 🟡 | 编辑器三栏在 1440 宽窗口下右侧面板溢出被裁 | 标签输入框只露约 80px，等于没法用（T-4，非某轮引入） |
+| 🟡 | 邮箱验证未用真实 SMTP 验过 | 只跑过 `scripts/fakesmtp.py`；上线前须用真邮箱验 TLS 与退信 |
+| 🟡 | 回收站只有"清空"，没有"单条永久删除" | `services/trash.go`；用户想彻底删一篇得先进回收站再整清 |
+| 🟢 | 缩略图 `failed` 是终态，不自动重试 | 需管理员手工清 `thumb_status`；解码失败的图本来也不值得重试 |
+| 🟢 | `upload_refs` 只在 API 保存/删除文章时同步 | 绕过 API 直接改库会留孤儿引用；无夜间对账任务 |
+| 🟢 | 邮箱验证码"同 IP 每小时 10 封"是内存固定窗口 | 重启清零、多实例各算各的；单实例部署可接受 |
 | 🟡 | 编辑器草稿仅 localStorage，不跨设备 | `PostEditor.tsx`（30 天 TTL，可接受）；服务端修订历史只管已保存版本 |
-| 🟡 | 第 25 轮未写独立功能 spec（用户口述需求直接实现） | `docs/specs/` 暂无 21 号；规则与端点已记入 HANDOVER §5.3/§7.7，建议后补 spec |
 | 🟢 | 登录限流器账号桶 key：`email` 优先、回退 `username`（7.2 已加固） | `login_limiter.go` + 单测 |
-| 🟢 | `/archive` 已改服务端分页（第 47 轮，50/页） | `ListArchivePage`；旧全量端点保留兼容 |
 | 🟢 | 全文搜索 LIKE `%...%`，千级后变慢 | 纯 Go 驱动无 FTS5，暂保留 |
-| 🟢 | GORM `Select("COUNT(*)")` 污染后续 scope | 已修，需警惕同类写法 |
 | 🟢 | JWT_SECRET 生产必须覆盖 | `.env.example` 已注明；`ValidateSecurity` 已校验 |
 | 🟢 | 审核/封禁无邮件服务时的通知 | `mail.go` 为 best-effort（SendMail 失败不阻断审核），已接受 |
+| 🟢 | `LopezPress.bat` 探测的 Go 路径不含本机实际位置 | 脚本找 `%USERPROFILE%\go-install\go\bin` 与 `%SystemDrive%\go\bin`，本机在 `go-sdk\go\bin`；有 `lopezpress.exe` 时无影响 |
 
 ---
 
 ## 9. 未决决策（需要你拍板或继续）
 
-> 2026-10-15 收敛：原「生产化优先级」已由第 24 轮（容器化）部分回答；「第 25 轮是否补 spec」已补齐（`specs/21-roles-moderation.md`）。当前真正未决的只剩下面 3 条。
+> 2026-10-15 收敛：原「生产化优先级」已由第 24 轮（容器化）部分回答。2026-10-24 第 79 轮再收敛一次——当前真正未决的只剩下面 4 条。
 
-1. **`internal/db` 是否拆分**（ARCHITECTURE §7 曾画独立包）：当前 `config.InitDB` 把"配置+建库+迁移+种子"揉在一起。低配机场景下"揉一起"更直观，**倾向暂不拆**；等真要上 PostgreSQL 再按 §7 拆。请确认。
-2. **生产部署验证**：`deploy/docker/` 已就绪但**未 docker build、未在真实 VPS 端到端跑过**（开发机无 Docker）。下一步需要一台 1 vCPU VPS 实测，或先在开发机装 Docker 做镜像构建验证。
-3. **PWA / Service Worker 离线化**：列入后续方向，未实现。
+1. **普通用户的「私密」入口怎么处理**（阻塞体验）：编辑器给普通用户看得到"私密"，但 `CreatePost` 强制 `pending`。要么隐藏该选项，要么明说"你的文章需先过审核，通过后按你选的可见性发布"。两条路都要改前端 + 一句产品定义。**等你拍板。**
+2. **生产部署验证**：`deploy/docker/` 已就绪但**未 docker build、未在真实 VPS 端到端跑过**（开发机无 Docker）。需要一台 1 vCPU VPS 实测，至少覆盖：nginx 的 4 个新 location、`/uploads` 静态与反代的边界、`TRUSTED_PROXIES` 配置。
+3. **邮箱验证上线前的真机验证**：`E-7`——必须用真 SMTP（QQ / Gmail / 自建）走一遍三条流程，尤其验 TLS 端口 587/465 与退信行为。当前只有本地假服务器证据。
+4. **PWA / Service Worker 离线化**：列入后续方向，未实现。
 
 > 框架选型已定稿不换：后端 Go 标准库 + GORM + 纯 Go SQLite、前端 Preact（见 `docs/decisions/` 与第 22 轮评审）。**不要为了"更现代"改框架**（除非有具体性能/功能瓶颈证据）。
+> 第 78 轮新增的 `golang.org/x/image` 是官方扩展库（纯 Go、无 CGO），属于对"不加重依赖"红线的一次**显式豁免**，理由记在 `docs/decisions/0005-media-ownership-and-thumbnails.md`。
 
 ---
 
@@ -444,14 +545,15 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 | `docs/README.md` | **文档体系入口**：specs / decisions / 设计系统 / 问题清单的分工与索引 |
 | `docs/ARCHITECTURE.md` | 设计稿（目标架构、技术选型、中间件链、审计指引、已知陷阱引用） |
 | `docs/AUDIT_REPORT.md` | 安全审计与 10 项加固记录（2026-09-24 轮） |
-| `docs/TODO.md` | **唯一权威待办清单**（P1/P2/P3 + 功能缺口 + 设计取舍；当前仅「评论」未做） |
-| `docs/specs/` | 21 份功能 spec（01–21，13 号跳空；21 = 第 25 轮角色/审核/封禁库） |
-| `docs/decisions/` | 重大决策：0001 纯 Go SQLite 无 FTS5、0002 localStorage 草稿 TTL、0003 token 存储、0004 CORS |
-| `docs/PROJECT_OVERVIEW.md` | 代码地图：路由 / API 端点 / 页面 / 数据模型 / 7 条改码红线 |
+| `docs/TODO.md` | **唯一权威待办清单**（P0–P3 + 架构债 + 媒体/邮箱两族 + 功能缺口 + 设计取舍） |
+| `docs/specs/` | 36 份功能 spec（01–37，部分号跳空）+ 模板；36 = 图库、37 = 邮箱验证 |
+| `docs/decisions/` | 重大决策：0001 纯 Go SQLite 无 FTS5、0002 localStorage 草稿 TTL、0003 token 存储、0004 CORS、0005 媒体所有权与缩略图、0006 邮箱验证默认关闭 |
+| `docs/PROJECT_OVERVIEW.md` | 代码地图：路由 / API 端点 / 页面 / 数据模型 / 改码红线 |
 | `docs/DESIGN_SYSTEM.md` | 全站 UI 唯一标准（改界面前先读） |
 | `docs/archive/` | 已归档快照（`2026-10-14-FUNCTIONAL_AUDIT.md` 首轮审计，结论已落入 TODO.md） |
-| `PROGRESS.md` | 25 轮开发全记录 + 风险 / 方向 / 验证基线 |
+| `PROGRESS.md` | 79 轮开发全记录 + 风险 / 方向 / 编译验证基线 |
 | `README.md` | 快速上手（运行/配置/演示账号） |
+| `MASTER.md` | **唯一入口**：文档总索引 + 自驱协议 + 事实基线 + 当前断点 |
 | `HANDOVER.md` | 本文（交接总览） |
 | `deploy/` | VPS 部署脚本 |
 
@@ -459,13 +561,16 @@ failed to init database: migrate: constraint failed: NOT NULL constraint failed:
 
 ## 11. 接手自测清单（建议你跑一遍再动手）
 
-1. `go build ./...` ✅ / `go vet ./...` ✅ / `go test ./...` ✅（14 测试文件全绿）
-2. `cd web && npx tsc --noEmit` ✅ / `npm run build` ✅
-3. 双击 `LopezPress.bat` → 浏览器开 `http://localhost:5173` → 首页/列表/归档/作者页能加载（无 500）
-4. 用首启随机密码登录 admin → 自动跳 `/change-password` → 改密成功
-5. 连续 5 次错误密码登录 → 第 6 次应 429 + `Retry-After` 头
-6. 管理页 → 备份导入 URL 加 `?dry_run=1` → 返回统计不落库
-7. `APP_ENV=prod` + 弱 `JWT_SECRET` 启动 → 应 `log.Fatalf` 拒绝（安全校验生效）
-8. 把窗口拖窄到 ≤768px → 用户菜单从 hover 浮层变 overlay+tap（#10）
+1. `go build ./...` ✅ / `go vet ./...` ✅ / `go test -count=1 ./internal/...` ✅（48 个测试文件 / 212 用例）
+2. `python scripts/arch_check.py` ✅ 退出 0 / `python scripts/contract_check.py` ✅ 方法不匹配 0 / `python scripts/doc_check.py` ✅ 73 份一致
+3. `cd web && node node_modules/typescript/bin/tsc --noEmit` ✅ / `NODE_OPTIONS= npm test` ✅ 43 用例 / `npm run build` ✅
+4. 双击 `LopezPress.bat` → 浏览器开 `http://localhost:5173` → 首页/列表/归档/作者页能加载（无 500）
+5. 用首启随机密码登录 admin → 自动跳 `/change-password` → 改密成功
+6. 连续 5 次错误密码登录 → 第 6 次应 429 + `Retry-After` 头
+7. 管理页 → 备份导入 URL 加 `?dry_run=1` → 返回统计不落库
+8. `APP_ENV=prod` + 弱 `JWT_SECRET` 启动 → 应 `log.Fatalf` 拒绝（安全校验生效）
+9. 登录后 `/settings` → 点头像 → 裁剪器能拖动缩放 → 保存后头像更新；下方"我的图库"显示配额条
+10. 管理员 `/admin/media` → 能看到缩略图、引用数徽标；撤下后原图 URL 仍 200 但列表里消失
+11. 把窗口拖窄到 ≤768px → 用户菜单从 hover 浮层变 overlay+tap（#10）
 
 若以上任一不过，先对照 §7 陷阱，再回到对应源文件。大部分"500 / 启动崩溃"都来自 §7.1 的 AutoMigrate 门控被改动。

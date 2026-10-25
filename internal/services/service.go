@@ -35,11 +35,29 @@ type Service struct {
 	publicReadMu  sync.RWMutex
 	publicRead    bool
 	publicReadSet bool
+
+	// thumbs is the bounded wake-up channel of the thumbnail worker
+	// (thumbs.go). The durable queue is the thumb_status column; this channel
+	// only carries hints, so a full one is safe to drop.
+	thumbs     chan string
+	thumbsOnce sync.Once
+
+	// codeIPMu / codeIP count how many verification codes one IP asked for in
+	// the current hour (email_codes.go). The per-address cooldown lives in the
+	// database and stops a single inbox being spammed; this stops one client
+	// from walking a list of a thousand addresses instead.
+	codeIPMu sync.Mutex
+	codeIP   map[string]*ipCodeWindow
 }
 
 // New builds a Service backed by db and cfg.
 func New(db *gorm.DB, cfg *config.Config) *Service {
-	return &Service{db: db, cfg: cfg, mailT: newMailThrottler()}
+	return &Service{
+		db:     db,
+		cfg:    cfg,
+		mailT:  newMailThrottler(),
+		thumbs: make(chan string, thumbQueueCap),
+	}
 }
 
 // --- error plumbing: map domain errors to HTTP status codes ---
@@ -62,6 +80,18 @@ func (e *ServiceError) Error() string {
 // newErr is a small constructor.
 func newErr(status int, msg string) *ServiceError {
 	return &ServiceError{Status: status, Msg: msg}
+}
+
+// AsServiceError returns the *ServiceError inside err, or nil when there is
+// none. Callers that need to tell "the operation was refused on purpose" from
+// "the operation blew up" use this instead of a type assertion, so an error
+// wrapped by a transaction still unwraps correctly.
+func AsServiceError(err error) *ServiceError {
+	var se *ServiceError
+	if errors.As(err, &se) {
+		return se
+	}
+	return nil
 }
 
 // StatusOf extracts the HTTP status from a ServiceError. Non-ServiceError

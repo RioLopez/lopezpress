@@ -53,7 +53,7 @@
 
 1. **是什么**：LopezPress（原 Echo Content API），面向低配 VPS（1 vCPU / 1.5 GB / 5 GB）的可自托管内容站点。
 2. **怎么搭**：Go 单二进制 + SQLite 单文件（后端，`net/http` 标准库路由 + GORM + 纯 Go 驱动）+ Preact 单页（前端）。
-3. **做到哪了**：61 轮开发，7 个 P0 全修。读者端（分页/归档/相关文章/面包屑/永久链接）、写作端（编辑器工具栏/修订历史/批量导入）、运营端（批量操作/审核/封禁闭环/统计趋势/每日自动备份/两层分类）均已就位；架构债已推进至 P6 收尾（门禁 + 分层边界 + 审计单点化 + 拆 `services.go` + 路由表声明化 + 迁移注册表 + 前端数据层 + `useQuery` 铺开到管理页，R1/R4/R5/R7/R8/R10 全归零、R2.files 4→1）；距 v1.0 只剩"生产部署端到端验证 + 推送"。
+3. **做到哪了**：79 轮开发，7 个 P0 全修。读者端（分页/归档/相关文章/面包屑/永久链接）、写作端（编辑器工具栏/修订历史/批量导入）、运营端（批量操作/审核/封禁闭环/统计趋势/每日自动备份/两层分类）均已就位；架构债已推进至 P6 收尾（门禁 + 分层边界 + 审计单点化 + 拆 `services.go` + 路由表声明化 + 迁移注册表 + 前端数据层 + `useQuery` 铺开到管理页，R1/R4/R5/R7/R8/R10 全归零、R2.files 4→1）。第 77–79 轮补齐了"磁盘与身份"两块短板：**图库**（去重/引用台账/三层配额/软删撤下/后台溯源/异步缩略图队列）与**邮箱验证**（注册码/找回密码/换绑邮箱，实验性默认关闭）。距 v1.0 只剩"生产部署端到端验证 + 推送"。
 
 ---
 
@@ -76,7 +76,7 @@
 
 ---
 
-## 3. 文档总表（按族分组，共 71 份，不含 memory 日志）
+## 3. 文档总表（按族分组，共 86 份，不含 memory 日志）
 
 > 类别：**A = 指挥/约束 AI**（怎么干、不能干什么）；**B = 项目参考**（项目是什么样）。
 > 每个文件顶部都有 `> 类别 A/B` 横幅，单独打开也能自识别。
@@ -109,18 +109,19 @@
 | `HANDOVER.md` | A | 交接总览：技术栈真实状态、启动方式、§7 关键陷阱、未决决策、自测清单 |
 | `PROGRESS.md` | B | 轮次史（第 1–52 轮）+ 已知风险表 + 编译验证基线（每次重测都更新） |
 | `docs/TODO.md` | A | **唯一权威待办**：P0/P1/P2/P3 + 功能缺口 + 设计取舍 + 「实测没问题」清单 |
+| `docs/SECURITY_BASELINE.md` | A | **上线安全基线**：按攻击面（不是按渗透报告）组织，每项写"防住什么/靠什么/怎么验/还剩什么"，§6 列出上线前**阻塞项**。**被问"能不能上线"就先看它** |
 | `docs/ARCHITECTURE.md` | B | 架构设计与分层理由 |
 | `docs/PROJECT_OVERVIEW.md` | B | 代码地图速查：路由 / API / 页面 / 改码红线 |
 | `docs/BUSINESS_LOGIC.md` | B | 业务逻辑反向梳理（代码反推，非设计意图） |
 | `README.md` | B | 快速上手：跑起来、演示账号、前端说明、文档导航 |
 | `api.md` | B | API 参考 |
 
-### 3.4 规格与决策（40 份，定义"应该是什么样"和"为什么"）
+### 3.4 规格与决策（45 份，定义"应该是什么样"和"为什么"）
 
 | 目录 | 数量 | 作用 |
 |---|---|---|
-| `docs/specs/01–35` | 34 + 模板 | 按页面/功能域切分的功能规范，EARS 语法（`WHEN … THEN …`），带状态机 Draft→In Progress→Done |
-| `docs/decisions/0001–0004` | 4 + 模板 | 跨页面重大决策，**append-only**：被推翻只能标 `Superseded by`，历史本身是价值 |
+| `docs/specs/01–37` | 36 + 模板 | 按页面/功能域切分的功能规范，EARS 语法（`WHEN … THEN …`），带状态机 Draft→In Progress→Done |
+| `docs/decisions/0001–0007` | 7 + 模板 | 跨页面重大决策，**append-only**：被推翻只能标 `Superseded by`，历史本身是价值 |
 
 ### 3.5 审计与归档（4 份）
 
@@ -139,14 +140,30 @@
 | `deploy/LOCAL.md` | 本机部署与联调 |
 | `deploy/docker/README.md` | Docker Compose 方案（未在本机 docker build 过，无 Docker） |
 
-### 3.7 记忆层（12 份，gitignored，不计入上表 70 份）
+### 3.7 记忆层（12 份，gitignored，不计入上表 76 份）
 
 | 路径 | 作用 |
 |---|---|
 | `.workbuddy/memory/MEMORY.md` | 项目长期记忆：技术栈定稿、事实基线、关键陷阱（跨会话） |
 | `.workbuddy/memory/YYYY-MM-DD.md` | 每日工作日志（append-only）：改了什么、验证结果、遗留 |
 
-### 3.8 其他参考（5 份）
+### 3.8 外部安全测试（9 份，授权渗透报告，2026-10-24/25）
+
+> 由 AI 安全工程师在用户授权下对本站执行的多轮黑盒+白盒渗透测试。**报告记录的是"当时的实测状态"，不代表当前代码**——每条的修复结论以 `PROGRESS.md` 对应轮次为准。想知道"某个编号修了没有"先查 PROGRESS，再回这里看原始证据。
+
+| 文档 | 类 | 作用 |
+|---|---|---|
+| `pentest/01-站点逻辑与攻击面.md` | B | 首轮资产梳理：角色模型、五态文章、攻击面清单、授权边界 |
+| `pentest/02-渗透测试作战手册.md` | B | 测试方法论：视角矩阵（匿名/user/admin/root）、工具与记录规范 |
+| `pentest/03-自用提示词.md` | B | 复现测试所用的提示词模板 |
+| `pentest/04-增量报告-R1.md` | B | R1：`public_read` 旁路 4 端点、登录体内存放大、弱口令 |
+| `pentest/05-增量报告-R2.md` | B | R2：标题存储型 XSS、SQLite 锁死、缩略图资源放大 |
+| `pentest/06-增量报告-R3.md` | B | R3：摘要实体注入 XSS、验证码 IP 预算失效、XFF 伪造、超长字段放大链 |
+| `pentest/07-增量报告-R4.md` | B | R4：恢复复活已撤销 token、验证码双花、账号锁定武器化、bcrypt CPU 放大 |
+| `pentest/08-增量报告-R5.md` | B | R5：消毒器绕过（协议相对/`DATA:`）、首页 XSS 复现、SMTP 口令复用 |
+| `pentest/09-增量报告-R6.md` | B | R6：禁用不撤销会话、slug 竞态、配额 TOCTOU、图片只验文件头、像素放大 |
+
+### 3.9 其他参考（5 份）
 
 | 文档 | 类 | 作用 |
 |---|---|---|
@@ -156,7 +173,7 @@
 | `docs/COMPETITIVE_GAP.md` | B | **竞品对标**：与 WP/Ghost/Halo/Hugo 的 15 域矩阵、完全缺失 10 项、有但浅 12 项、补强顺序 |
 | `docs/NEXT_VERSION_BACKLOG.md` | B | v0.2 规划草稿（未承诺的功能池） |
 
-> **份数校验**：3.1(3) + 3.2(8) + 3.3(8) + 3.4(40) + 3.5(4) + 3.6(3) + 3.8(5) = **71**，与 §7 事实基线一致。
+> **份数校验**：3.1(3) + 3.2(8) + 3.3(8) + 3.4(46) + 3.5(4) + 3.6(3) + 3.8(9) + 3.9(5) = **86**，与 §7 事实基线一致。
 > 新增文档时改完表格请重算这一行，避免母文档自身失真。
 
 ---
@@ -176,6 +193,7 @@
 | `scripts/doc_check.py` | 第 42 轮 | 机器校验母文档是否失真（份数 / 顶层文档是否被点名 / 批量目录是否索引 / A-B 横幅是否齐全），退出码非 0 即失败 |
 | `scripts/arch_check.py` + `arch_baseline.json` | 第 54 轮 | **架构棘轮**：R1 业务包禁传输符号（`ResponseWriter`/`*http.Request`/`ServeFile`/`http.Client`，状态码常量不计）/ R2 文件≤350 行·函数≤60 行 / R3 service 包 struct 堆积 / R4 handler 禁 `require*` / R5 handler 禁 `recordAudit` / R7 config 包禁 `add*Column` 克隆（迁移列只能在注册表）/ R8 前端禁裸 `fetch` / R9 注释重复 / R10 `ActionLog` 只能由 `services/audit.go` 构造。存量记基线，**只许降不许升**，回升即退出码 1 |
 | `~/.workbuddy/CREDENTIALS.md` | 第 40 轮 | 统一存放 token / 账号 / 工具用法（**仓库外**，防误提交泄露） |
+| `scripts/fakesmtp.py` | 第 79 轮 | 本地假 SMTP（只收不发，落 `.eml` 到指定目录），让"邮件验证码"这类必须真收信的功能在没有外网 SMTP 的机器上也能端到端验证 |
 | **`MASTER.md`（本文件）** | 第 41 轮 | 用户不用记任何路径：一句"去母文档找"即可 |
 
 ---
@@ -255,18 +273,18 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 ---
 
-## 7. 事实基线（第 75 轮实测，2026-10-24；改动后请重测并更新）
+## 7. 事实基线（第 79 轮实测，2026-10-24；改动后请重测并更新）
 
 | 指标 | 值 |
 |---|---|
-| 后端规模 | 97 个 `.go`，17,304 行；6 个直接依赖（+11 indirect） |
-| 前端规模 | 69 个 `.ts(x)`，10,827 行；24 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
-| 测试 | 45 个文件 / **188** 个 `Test*`（services 118 / handlers 29 / middleware 21 / config 9 / models 4 / clientip 5 / imghost 2）+ 前端 vitest 5 文件 **43** 用例 |
-| 路由 | 后端 **76** 条，前端接入 69 条，方法不匹配 **0**（`scripts/contract_check.py`） |
-| 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=26（仅状态码常量，观察项）/ R2.files=1 / R2.funcs=16 / **R3=0**（散落在 `dto.go` 外的 struct）/ R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
-| 构建产物 | JS 238.86 kB / gzip 74.35 kB；CSS 63.11 kB / gzip 11.80 kB |
+| 后端规模 | 144 个 `.go`，26,898 行；7 个直接依赖（+11 indirect；第 78 轮新增 `golang.org/x/image`，此后无新依赖） |
+| 前端规模 | 72 个 `.ts(x)`，12,225 行；26 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
+| 测试 | 61 个文件 / **290** 个 `Test*` + 前端 vitest **5 文件 54 用例**（第 81 轮新增 34 个 Go 用例、11 个前端用例；第 82 轮新增 16 个；第 83 轮新增 8 个；第 84 轮新增 9 个） |
+| 路由 | 后端 **84** 条（新增 /health/ready），前端接入 **76** 条，方法不匹配 **0**（`scripts/contract_check.py`） |
+| 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=31（仅状态码常量，**仅观察不设门禁**，随文件数自然增长）/ R2.files=1 / R2.funcs=15 / **R3=0**（散落在 `dto.go` 外的 struct）/ R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
+| 构建产物 | JS 261.38 kB / gzip 81.28 kB；CSS 66.75 kB / gzip 12.47 kB |
 | Git | 分支 `main`，tag `v0.1.0`，远程 `RioLopez/lopezpress`（private） |
-| 文档 | 仓库内 71 份（含本文件，不含 memory 日志） |
+| 文档 | 仓库内 86 份（含本文件，不含 memory 日志） |
 
 ---
 
@@ -317,12 +335,12 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-24 12:30（第 75 轮：核实外部渗透报告 root/admin 权限面，修 8 类真问题 —— 备份导入可清库、备份导出/下载未收归 root、site-config 泄露 SMTP 明文口令、`pinned` 普通用户可设、用户名 Unicode 同形字、上传只校验魔数、admin 可窥 root 登录记录、恢复备份复活旧 token） |
-| 对应提交 | 主题 `fix(visibility): make private author-only`（第 73 轮）/ `fix(security): harden author payload, upload, token revocation, headers`（第 72 轮，已推送 `5683a81`），用 `git log --oneline -3` 核对，**不写 sha** |
-| 正在做 | 无进行中任务；本轮代码 + 文档已落盘，`go build/vet/test`（188 用例）、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check`、前端 vitest（43 用例）全绿，隔离冒烟 28/28（复制 DB 到 18081，临时目录，独立二进制，验完即删） |
-| 下一步第一件事 | ① **第 75 轮改动需 commit + 推送** ② **用新二进制重启本地服务**（当前 8080 还是旧进程，`LopezPress.bat restart`）③ **用户拍板 2 个产品缺陷**：普通用户在编辑器看到「私密」选项但 `CreatePost` 强制 `pending`；`PostEditor` 把 `pending` 误显为「公开」 ④ **编辑器三栏在 1440 宽窗口下右侧面板溢出被裁**（T-4，非本轮引入）⑤ **nginx 改动需实测**（4 个 location + 静态 location 安全头），有 VPS 才能验 |
-| 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ `rio` 账号下 2 篇文章（`rio的测试1` / `浏览器自动化测试文章`）疑似测试残迹，**留给用户自行删除** ④ 库里 6 篇 pending 测试残迹（`deep-xss` / `x` / `pin-test` / `slug-clash` / `fk-test` / `deep-test-pub`）与 1 条 `category_id=999999` 的脏外键，未清 ⑤ `data/uploads/` 两个 418KB PNG 未被任何文章引用 ⑥ WXR（WordPress XML）导入未做 ⑦ `ListCategoriesWithCount`/`ListTagsWithCount` 的计数仍含 private/pending/draft（只泄露"存在多少"，不泄露内容），未收口 |
-| 当前分支状态 | 第 72 轮 `5683a81`、第 73 轮 `540b403`、第 74 轮 `fab0762` 均已推送；第 75 轮改动**尚未 commit**；tag `v0.1.0` 之后尚未打新 tag |
+| 最后更新 | 2026-10-25（**第 86 轮：备份完整性** —— 导出→导入不再丢站点：补上 `site_configs`/`revisions`/`upload_files` 三个表，其中 `SiteConfig.PublicRead` 的 `default:true` 会让 struct 导入把 `false` 吞成 `true`（私密站恢复成公开），改用 map 显式列 31 列；`upload_files.LiveKey` 受 UNIQUE 约束但 `json:"-"`，单独导 `upload_livekeys` map；图片文件本体诚实声明"不在 JSON 内、需单独备份 uploads 目录"） |
+| 对应提交 | 主题 `feat(media): upload library with dedupe, quotas and soft delete`（第 77 轮）/ `feat(media): serial thumbnail queue backed by the database`（第 78 轮）/ `feat(auth): experimental email verification`（第 79 轮）——**三轮均尚未 commit**；已提交未推送的是 `fix(security): close backup wipe, restore routes, site-config secrets, pinning`（第 75 轮），用 `git log --oneline -4` 核对，**不写 sha** |
+| 正在做 | 无进行中任务。代码 + 文档已落盘；`go build`/`go vet`/`go test`（**270 用例 / 56 文件**）、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check`、前端 vitest（**54 用例 / 5 文件**）全绿。第 83 轮做过一次**隔离实例真机 HTTP 验证**（35 项，独立 DB/uploads/backups，验完已停），但**没有覆盖并发/资源类的长时间压测**——那些仍需在真机按 R1–R6 原用例复测 |
+| 下一步第一件事 | ① **commit + 推送第 76–83 轮**（70+ 文件未提交；推送走 `github-auto-upload`，`git push` 直连不通）② **用新二进制重启本地服务**（双击 `LopezPress.bat`）③ 邮箱验证与 nginx 改动仍需真实环境验证 ④ 按 `pentest/` 的 R1–R6 原用例在真机复测（并发/资源类问题只能靠实测确认） |
+| 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ 回收站"单条永久删除"未做（只有清空）④ 缩略图 `skip` 判定按"长边≤480 且 ≤96KB"，小于该尺寸但体积大的图仍会生成缩略图，属可接受偏差 ⑤ `data/uploads/` 两个 418KB PNG 已被 77 轮回填为 `legacy` 行（无归属），未被任何文章引用，可后台硬删 ⑥ 库里 6 篇 pending 测试残迹（`deep-xss` / `x` / `pin-test` / `slug-clash` / `fk-test` / `deep-test-pub`）与 1 条 `category_id=999999` 的脏外键，未清 ⑦ WXR（WordPress XML）导入未做 ⑧ `ListCategoriesWithCount`/`ListTagsWithCount` 的计数仍含 private/pending/draft（只泄露"存在多少"，不泄露内容），未收口 ⑨ 邮箱验证码的"同 IP 每小时 10 封"是内存固定窗口，重启清零（仅防连续滥用，不追求精确） |
+| 当前分支状态 | 第 72–74 轮已推送；第 75 轮已 commit **未推送**；第 76–83 轮**未 commit**；tag 仍是 `v0.1.0`，之后未打新 tag。**注意**：`git status` 里 70+ 个未提交文件是第 75–79 轮的功能开发 + 第 81 轮的安全修复，两者混在同一工作区 |
 
 ### 9.5 新会话开场自检（30 秒）
 

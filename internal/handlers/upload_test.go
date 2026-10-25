@@ -15,14 +15,18 @@ import (
 func TestUploadImageOversizeReturns413(t *testing.T) {
 	_, _ = setup(t)
 
+	// The body cap now depends on the site policy (spec 36), so probe it with a
+	// bodyless request first and then write one byte past whatever it returns.
+	probe := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
+	limit := maxUploadBytes(probe)
+
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, err := mw.CreateFormFile("file", "big.jpg")
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	// Exceed the default cap (2 MB) by a little.
-	if _, err := fw.Write(bytes.Repeat([]byte("a"), int(maxUploadBytes())+1024)); err != nil {
+	if _, err := fw.Write(bytes.Repeat([]byte("a"), int(limit)+1024)); err != nil {
 		t.Fatalf("write file part: %v", err)
 	}
 	if err := mw.Close(); err != nil {

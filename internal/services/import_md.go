@@ -231,8 +231,18 @@ func (s *Service) ImportMarkdown(ctx context.Context, actor models.User, files [
 }
 
 // findOrCreateCategoryByName reuses a top-level category with the same name.
+//
+// The name is length-checked before it reaches the database. Without this the
+// importer was the one write path with no ceiling at all: R4-10 imported a
+// category whose name was ~1 MB, after which the ANONYMOUS /api/categories
+// endpoint served 1.05 MB to every visitor (and /api/tags 0.92 MB from a
+// 900 KB tag name) — a single admin action amplifying into a public
+// bandwidth/memory sink.
 func (s *Service) findOrCreateCategoryByName(ctx context.Context, name string) (int64, error) {
 	name = strings.TrimSpace(name)
+	if err := ValidateTaxonomyName(name, MaxCategoryNameLen); err != nil {
+		return 0, err
+	}
 	var cat models.Category
 	if s.db.WithContext(ctx).Where("name = ?", name).First(&cat).Error == nil {
 		return cat.ID, nil
@@ -245,11 +255,17 @@ func (s *Service) findOrCreateCategoryByName(ctx context.Context, name string) (
 }
 
 // attachTagsByName links existing tags and creates the missing ones.
+//
+// Same ceiling as categories (R4-10): an unbounded tag name becomes an
+// unbounded public response the moment the tag list is served.
 func (s *Service) attachTagsByName(ctx context.Context, postID string, names []string) {
 	for _, raw := range names {
 		name := strings.TrimSpace(raw)
 		if name == "" {
 			continue
+		}
+		if err := ValidateTaxonomyName(name, MaxTagNameLen); err != nil {
+			continue // skip this tag, keep importing the rest of the file
 		}
 		var tag models.Tag
 		if s.db.WithContext(ctx).Where("name = ?", name).First(&tag).Error != nil {

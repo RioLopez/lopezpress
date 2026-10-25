@@ -6,7 +6,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"lopezpress/internal/clientip"
 	"lopezpress/internal/config"
 	"lopezpress/internal/middleware"
 	"lopezpress/internal/models"
@@ -101,13 +100,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, res)
-}
-
-// clientIP extracts the best-effort client IP. The trust rules (proxy headers
-// are only honoured when they arrive from a configured proxy) live in
-// internal/clientip — see spec 23 / TODO P2-6.
-func clientIP(r *http.Request) string {
-	return clientip.Client(r)
 }
 
 // Me returns the public view of the currently authenticated user.

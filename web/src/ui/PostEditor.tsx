@@ -3,6 +3,7 @@ import { useI18n } from '../core/i18n'
 import { renderMD, wordCount } from '../core/md'
 import { listCategories, listTags, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
+import { useApp } from '../core/app'
 import { isAdmin, isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 import { normalizeTagInput, suggestTags } from '../core/tags'
@@ -109,6 +110,7 @@ export function PostEditor({
   onSubmit,
 }: PostEditorProps) {
   const { t } = useI18n()
+  const { pushToast } = useApp()
   const { user } = useAuth()
   // Spec 24: only root publishes straight to "published"; everyone else's
   // post enters the review queue server-side.
@@ -236,6 +238,10 @@ export function PostEditor({
     for (const f of imgs) {
       try {
         const r = await uploadImage(f)
+        // Spec 36: tell the author when the library already had these exact
+        // bytes. Nothing new was stored, and saying so avoids "why is my
+        // gallery full of the same picture".
+        if (r.deduped) pushToast('info', t('imgUpload.deduped'))
         insertImageMarkdown(r.url)
       } catch {
         /* ignore */

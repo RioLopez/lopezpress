@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -45,6 +46,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 	if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", in.Username, in.Email).
 		First(&existing).RowsAffected == 1 {
 		return nil, newErr(http.StatusConflict, "username or email already in use")
+	}
+
+	// Spec 37 (experimental, off by default): prove the address before the
+	// account exists. Ordered after the duplicate check so a rejected sign-up
+	// does not burn the code the user paid an email for.
+	if err := s.verifyRegisterCode(ctx, in); err != nil {
+		return nil, err
 	}
 
 	hash, err := models.HashPassword(in.Password)
@@ -230,4 +238,39 @@ func (s *Service) parseToken(header, secret string) (jwt.MapClaims, error) {
 	}
 	claims, _ := t.Claims.(jwt.MapClaims)
 	return claims, nil
+}
+
+// ResolveLoginIdentity returns the account behind a login identifier, without
+// verifying any credential.
+//
+// It exists because the login lockout has to be keyed by ACCOUNT rather than by
+// the string a client typed. Login matches `username = ? OR email = ?`, so a
+// lockout keyed on the typed string is a per-spelling speed bump: lock "admin"
+// with five wrong guesses and then submit "admin@example.com" with the right
+// password, and the counter starts from zero. Alternating the two spellings
+// also doubled the number of attempts available before anything locked.
+//
+// Nothing about the answer is secret — the caller is the login limiter, which
+// runs after the per-IP rate limit and before the password check.
+func (s *Service) ResolveLoginIdentity(ctx context.Context, identifier string) (userID, role string, ok bool) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", "", false
+	}
+	var row struct {
+		ID   string
+		Role string
+	}
+	// Scan into a struct rather than First(): "no such user" is an ordinary
+	// answer here, not an error, and First would log it as one.
+	if err := s.db.WithContext(ctx).Model(&models.User{}).
+		Select("id, role").
+		Where("username = ? OR email = ?", identifier, identifier).
+		Scan(&row).Error; err != nil {
+		return "", "", false
+	}
+	if row.ID == "" {
+		return "", "", false
+	}
+	return row.ID, row.Role, true
 }

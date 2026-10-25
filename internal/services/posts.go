@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"gorm.io/gorm"
 
 	"lopezpress/internal/models"
 )
@@ -24,11 +23,8 @@ import (
 // AND the caller is root. For admin/user the status is forced to "pending"
 // so a tampered request cannot bypass the review queue.
 func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePostInput) (models.Post, error) {
-	if in.Title == "" {
-		return models.Post{}, newErr(http.StatusBadRequest, "title is required")
-	}
-	if strings.TrimSpace(in.Body) == "" {
-		return models.Post{}, newErr(http.StatusBadRequest, "post body must not be empty")
+	if err := ValidatePostContent(in.Title, in.Body); err != nil {
+		return models.Post{}, err
 	}
 	// Resolve the initial status by role.
 	var status string
@@ -46,6 +42,14 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	default:
 		// admin / user / unknown: always enter the pending review queue.
 		status = models.PostPending
+	}
+
+	// The cover is a URL the reader's browser will fetch. Validate it before it
+	// reaches the row: a stored `javascript:` or a 1 MB data: URI is a value
+	// every downstream reader (RSS, sitemap, any future client) would have to
+	// defend against separately.
+	if err := ValidateCoverURL(in.Cover); err != nil {
+		return models.Post{}, err
 	}
 
 	post := models.Post{
@@ -81,32 +85,25 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	// association step fails, the whole post (incl. its row) is rolled back so
 	// we never end up with a "saved but tagless" orphan. Association errors are
 	// propagated now instead of being silently swallowed.
-	var created models.Post
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&post).Error; err != nil {
-			return err
-		}
-		if len(in.Tags) > 0 {
-			tags, ferr := s.findOrCreateTagsTx(ctx, tx, in.Tags)
-			if ferr != nil {
-				return ferr
-			}
-			if err := linkPostTagsTx(tx, post.ID, tags); err != nil {
-				return err
-			}
-		}
-		created = post
-		return nil
-	})
+	//
+	// R6-02: the slug was allocated by COUNT above, which is a probe and not a
+	// lock — two concurrent creates of the same title both see "free" and both
+	// insert. Migration 0014 puts a UNIQUE index on posts.slug, so the loser's
+	// INSERT now fails on the constraint instead of silently producing a second
+	// post with the same permanent link (the reported run: 20 concurrent creates,
+	// four of them sharing "r6slug-col-2026-7"). Retry with the next suffix so
+	// the caller gets "title-2" — exactly what the probe would have returned had
+	// it seen the winner — rather than a 500.
+	created, err := s.insertPostWithSlugRetry(ctx, post, in, slug)
 	if err != nil {
-		return models.Post{}, newErr(http.StatusInternalServerError, "failed to create post")
+		return models.Post{}, err
 	}
 
 	// Preload author and category so the returned post carries the full objects.
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").Where("id = ?", created.ID).First(&created).Error; err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
-	s.audit(ctx, user, "create_post", "post:"+created.ID, "title="+created.Title+"; status="+created.Status)
+	s.audit(ctx, user, "create_post", "post:"+created.ID, auditDetail("title="+created.Title, "status="+created.Status))
 	// The author is the caller themselves; still strip the account-internal
 	// fields so no post payload ever carries an email / login-IP.
 	created.SanitizeAuthor()
@@ -137,35 +134,9 @@ func (s *Service) GetPost(ctx context.Context, user models.User, id string) (mod
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 	post.SanitizeAuthor()
+	post.SanitizeReview()
 	return post, nil
 }
-
-// canSeePost reports whether the caller may view the given post, by its status
-// and the caller's role/id. It is the single source of truth shared by the
-// single-post read path and the list path so the two never drift apart.
-func canSeePost(user models.User, post models.Post) bool {
-	switch post.Status {
-	case models.PostPublished:
-		return true // public
-	case models.PostBanned:
-		// Banned vault: only root sees it.
-		return user.Role == models.RoleRoot
-	case models.PostPrivate, models.PostDraft:
-		// Strictly author-only. The UI promises "仅自己可见", so admins and
-		// root are deliberately excluded too: neither state is ever published,
-		// so there is nothing to moderate, and an admin who could read it
-		// would make the promise a lie. Draft is the retired legacy state and
-		// is treated the same way.
-		return post.AuthorID == user.ID
-	case models.PostPending, models.PostRejected:
-		// Review flow: the author reads their own submission, admins and root
-		// read it in order to review it.
-		return post.AuthorID == user.ID || user.Role == models.RoleAdmin || user.Role == models.RoleRoot
-	default:
-		return false
-	}
-}
-
 // ListPosts returns posts ordered newest first, filtered by author_id unless
 // the caller is an admin. Returns the FULL matching set (no pagination).
 // Kept as an internal helper for tests; production code should use ListPostsPage.
@@ -176,7 +147,6 @@ func (s *Service) ListPosts(ctx context.Context, user models.User, status string
 	}
 	return page.Items, nil
 }
-
 // ListArchive returns every published post for the /archive page, newest
 // first. The author and category are preloaded for display, but the body is
 // excluded to keep the payload small on the low-budget VPS.
@@ -203,6 +173,7 @@ func (s *Service) ListArchive(ctx context.Context, user models.User) ([]models.P
 		posts[i].Body = ""
 	}
 	models.SanitizePostAuthors(posts)
+	models.SanitizePostReviews(posts)
 	return posts, nil
 }
 
@@ -213,9 +184,9 @@ func (s *Service) ListArchive(ctx context.Context, user models.User) ([]models.P
 // page at a time (default 50, cap 200) and still strips the body so the
 // payload stays lean.
 func (s *Service) ListArchivePage(ctx context.Context, page, size int) (PostPage, error) {
-	if page < 1 {
-		page = 1
-	}
+	// Clamped, not merely floored: an unclamped page overflows the offset and
+	// silently serves page one (see ClampPageNumber).
+	page = ClampPageNumber(page)
 	if size < 1 {
 		size = 50
 	}
@@ -245,6 +216,7 @@ func (s *Service) ListArchivePage(ctx context.Context, page, size int) (PostPage
 		posts = []models.Post{}
 	}
 	models.SanitizePostAuthors(posts)
+	models.SanitizePostReviews(posts)
 	return PostPage{Items: posts, Total: total, Page: page, PageSize: size}, nil
 }
 
@@ -269,6 +241,7 @@ func (s *Service) FeedPosts(ctx context.Context, limit int) ([]models.Post, erro
 		posts = []models.Post{}
 	}
 	models.SanitizePostAuthors(posts)
+	models.SanitizePostReviews(posts)
 	return posts, nil
 }
 
@@ -283,6 +256,7 @@ func (s *Service) GetPostPublic(ctx context.Context, id string) (models.Post, er
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 	post.SanitizeAuthor()
+	post.SanitizeReview()
 	return post, nil
 }
 

@@ -2,13 +2,16 @@ import { useEffect, useState } from 'preact/hooks'
 import { PostEditor } from '../ui/PostEditor'
 import { RevisionList } from '../ui/RevisionList'
 import { useApp } from '../core/app'
+import { useAuth } from '../core/auth'
 import { useI18n } from '../core/i18n'
 import { getPost, updatePost, errMessage, errStatus } from '../core/api'
 import { useNav } from '../core/router'
+import { isRoot } from '../core/roles'
 import type { Post } from '../core/types'
 
 export function EditPage({ id }: { id: string }) {
   const { pushToast } = useApp()
+  const { user } = useAuth()
   const { t } = useI18n()
   const [, navigate] = useNav()
   const [post, setPost] = useState<Post | null>(null)
@@ -31,6 +34,22 @@ export function EditPage({ id }: { id: string }) {
 
   if (loading) return <p class="muted">{t('common.loading')}</p>
   if (!post) return <p class="muted">{t('post.notFound')}</p>
+
+  // R5-05: editing text is author-or-root only (the backend enforces it). The
+  // list page already hides the link for an admin looking at someone else's
+  // post, but /edit/{id} is a plain URL — without this check an admin lands in
+  // a fully rendered editor and only discovers the refusal when the save comes
+  // back 403, which reads like a bug rather than a permission rule.
+  if (user && post.author?.id !== user.id && !isRoot(user.role)) {
+    return (
+      <div class="card">
+        <p class="muted">{t('editor.notYourPost')}</p>
+        <button class="btn" onClick={() => navigate(`/read/${id}`)}>
+          {t('common.back')}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>

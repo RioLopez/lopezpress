@@ -20,8 +20,8 @@
 | 约束 | 说明 |
 |------|------|
 | **不换框架** | 后端 Go `net/http` + GORM + `glebarez/sqlite`(零 CGO);前端 Preact + Vite + TS。没有性能/功能瓶颈证据时,不为了"更现代"改栈 |
-| **不加重依赖** | 后端 `go.mod` 直接依赖 6 个（sqlite 驱动 / jwt / uuid / x-crypto / x-time / gorm，另有 11 个 indirect）；前端 3 个 npm 包(`preact` + `wouter` + `marked`)。加依赖前先问"能不能手写/标准库解决" |
-| **低资源优先** | SQLite 连接池 4/2、限流内存态、无 Redis、无后台常驻任务。任何改动都要过"1 vCPU / 1 GB 可用内存"这关 |
+| **不加重依赖** | 后端 `go.mod` 直接依赖 7 个（sqlite 驱动 / jwt / uuid / x-crypto / x-image / x-time / gorm，另有 11 个 indirect）；前端 3 个运行依赖(`preact` + `wouter` + `marked`)+ 4 个 devDependency。加依赖前先问"能不能手写/标准库解决"；非加不可时写进 `docs/decisions/` 说明豁免理由（先例：0005 的 `golang.org/x/image`） |
+| **低资源优先** | SQLite 连接池 4/2、限流内存态、无 Redis。**唯一的后台 goroutine 是缩略图 worker**（单协程 + 张间 150 ms），它也必须受此约束：解码上限比请求路径更严（24 MP vs 40 MP），因为后台 OOM 会杀掉整个进程 |
 | **root 唯一且不可经 API 创建/提升** | 角色 `root/admin/user`;root 全库唯一,仅首启 seed + 迁移 `0003_root_migration` 产生 |
 | **可见性判定只在 service 层** | `canSeePost`(`internal/services`)是文章五态 `published/private/pending/rejected/banned` 的唯一权威,handler/router 不写可见性 if |
 | **权限 helper 集中在 `services/roles.go`** | 不写散落的 `me.Role != "admin"`;`canManageUser` / `canReviewPost` 等是唯一入口 |
@@ -40,6 +40,11 @@
 8. **新增通配路由先查同前缀形状**（第 48 轮崩溃）：`GET /api/posts/by-slug/{slug}` 与 `GET /api/posts/{id}/public` 在 Go 1.22 ServeMux 里互为歧义，**注册时直接 panic，进程起不来**。新永久链接端点因此放在 `/api/permalinks/{slug}`。
 9. **`*int64` 不能直接进原生 SQL**（第 52 轮）：`database/sql` 没有 `*int64` 的 driver.Value，`Raw(...)` 传它会报 `unsupported type`；先解包成 `any`（nil 或值）。
 10. **root 专属设置不能被 admin 的整表单保存覆盖**（第 52 轮）：站点设置是「读全量 → 改 → 整体 PUT」，admin 提交时不带 `auto_backup` 就会把它重置为 false。服务端必须显式继承原值。
+11. **「缺省=关闭」的开关与「0=不限制」的数值一律继承**（第 77/79 轮）：`allow_*`、`email_verify_*`、四个配额字段都属于这一类。handler 要从**原始 map** 判断 key 是否出现，未出现则继承库值，数值再 clamp 到安全区间。
+12. **图片软删不能用 `gorm.DeletedAt`**（第 77 轮）：撤下的图必须继续服务已发布文章，否则破图的是无辜的作者。`UploadFile.DeletedAt` 是普通 `*time.Time`，列表自己过滤。
+13. **上传顺序固定：去重 → 配额 → 写盘**（第 77 轮）：配额在写盘前（否则留半截文件），去重在配额前（复用不占额度）。测配额时**每次必须换不同字节**，否则会先命中去重。
+14. **队列待办状态放数据库**（第 78 轮）：`thumb_status` 是唯一真相，内存 channel 只做唤醒且满了就丢；只启动时扫一次会漏积压，必须有周期 sweep。
+15. **换了个入口做同一件事，要回头堵旧入口**（第 79 轮）：开着邮箱验证时前端把邮箱改成只读，但 `PUT /api/auth/me` 原本仍能改 → 一次 PUT 绕过整套验证码。现在 403 + 单测。
 
 ## 4. 怎么跑 / 怎么验
 
@@ -50,14 +55,29 @@ LopezPress.bat status|stop|restart|dev|build|help
 
 ```powershell
 # 验证门禁(改完代码必须全绿,缺一不可)
-go build ./...          # 后端编译
-go vet ./...            # 静态检查
-go test -count=1 ./...   # 单测(跳过缓存)
-cd web; npx tsc --noEmit   # 前端类型
-npm run build           # 前端生产构建
-python scripts/doc_check.py   # 改过文档时必须跑:母文档索引/份数/横幅是否仍一致
-python scripts/arch_check.py  # 改过代码时必须跑:架构债只许降不许升(见 docs/ARCH_REVIEW_2026-10-23.md)
+go build ./...                    # 后端编译
+go vet ./...                      # 静态检查
+go test -count=1 ./internal/...   # 单测(跳过缓存;当前 279 用例)
+cd web
+node node_modules/typescript/bin/tsc --noEmit   # 前端类型(.bin/tsc 是 bash 脚本,别直接喂 node)
+NODE_OPTIONS= npm test -- --no-file-parallelism  # vitest(当前 54 用例);必须串行——并行时沙箱 EPERM 会静默漏掉测试文件(实测 54→32)
+npm run build                     # 前端生产构建
+cd ..
+python scripts/doc_check.py       # 改过文档时必须跑:母文档索引/份数/横幅是否仍一致
+python scripts/arch_check.py      # 改过代码时必须跑:架构债只许降不许升
+python scripts/contract_check.py  # 改过路由/前端调用时必须跑:method+path 契约
+python scripts/security_check.py  # 改过任何输入处理/路由/日志时必须跑:安全反模式棘轮(S1-S9)
 ```
+
+> `security_check.py` 也是**棘轮**。它拦的是"同一类漏洞换个入口又长回来":
+> 路由 auth 等级不自洽、handler 绕过体上限、**handler 自设上限 > 路由声明(S9)**、
+> 状态转换无条件 UPDATE、字段无上限、SQL 字符串拼接、`template.HTML`、日志里的密钥。基线和 `arch_baseline.json`
+> 一样只降不升。**上线级的安全结论看 `docs/SECURITY_BASELINE.md`(按攻击面组织),
+> 不是看渗透报告修了几条。**
+
+> **真机验证脚本**(需隔离实例,不是单测替代品):
+> `scripts/defence_smoke.py`(39 项攻击用例) / `scripts/backup_restore_drill.py`(备份恢复三阶段)。
+> 两者都用 `BASE_URL`/`*_URL` 参数化,非 0 退出即有攻击仍成立或恢复失败。
 
 > `arch_check.py` 是**棘轮**不是 linter:存量违规记在 `scripts/arch_baseline.json`,只拦"变多"。违规数下降后用 `--update` 锁住战果;`--baseline` 仅首次/重建时用。退出码 1 = 有规则回升,必须修,不许直接 `--update` 掩盖。
 
@@ -91,11 +111,11 @@ python scripts/arch_check.py  # 改过代码时必须跑:架构债只许降不�
 | 文档 | 角色 |
 |---|---|
 | `MASTER.md` | **唯一入口**:文档总索引 + 自驱协议 + 事实基线 + 断点表 + 用 `doc_check.py` 校验 |
-| `AGENTS.md`(本文件) | 速查卡:硬约束 + 10 条陷阱 + 验证命令 + 本两类制 |
+| `AGENTS.md`(本文件) | 速查卡:硬约束 + 15 条陷阱 + 验证命令 + 本两类制 |
 | `docs/AI_STANDARD.md` | 五阶段工作流 / 任务分级 T0–T3 / 验证门禁 / 十条红线 R1–R10 / 上下文纪律 |
-| `HANDOVER.md` | 项目现状 + 关键陷阱(§7,改代码前必读) |
+| `HANDOVER.md` | 项目现状 + 关键陷阱(§7 共 37 条,改代码前必读) |
 | `docs/TODO.md` | 待办权威(AI 选任务唯一依据) |
-| `docs/decisions/`(0001–0004) | 不可变跨页决策,AI 不得违反 |
+| `docs/decisions/`(0001–0006) | 不可变跨页决策,AI 不得违反 |
 | `docs/prompts/`(01–05) | 场景提示词模板(继续/新功能/修bug/自查/验证) |
 
 ### 6.2 Class B — 项目/内容/参考
@@ -105,7 +125,7 @@ python scripts/arch_check.py  # 改过代码时必须跑:架构债只许降不�
 |---|---|
 | `README.md` / `PROGRESS.md` / `api.md` | 上手 / 轮次史 / API 参考 |
 | `docs/ARCHITECTURE.md` / `docs/PROJECT_OVERVIEW.md` | 架构设计 / 代码地图速查 |
-| `docs/specs/`(01–35) | 页面功能规格(EARS 验收语法) |
+| `docs/specs/`(01–37) | 页面功能规格(EARS 验收语法);36 = 图库、37 = 邮箱验证 |
 | `docs/FEATURE_DESIGN_MATRIX.md` | 44 项功能 × 六维设计完整度(哪个功能只是能跑、设计没写清) |
 | `docs/PRODUCT_REVIEW.md` / `docs/COMPETITIVE_GAP.md` | 买家视角评分 / 竞品对标缺口 |
 | `docs/NEXT_VERSION_BACKLOG.md` | v0.2 未立项的想法池 |

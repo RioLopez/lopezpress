@@ -2,7 +2,12 @@ import { useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { registrationOpen, errMessage } from '../core/api'
+import {
+  registrationOpen,
+  getSiteConfig,
+  requestEmailCode,
+  errMessage,
+} from '../core/api'
 import { useNav } from '../core/router'
 
 export function RegisterPage() {
@@ -18,12 +23,45 @@ export function RegisterPage() {
   // Registration gate (spec 16): open registration is off by default for a
   // single-user install, so the form is hidden until the server confirms it.
   const [open, setOpen] = useState<boolean | null>(null)
+  // Spec 37 (experimental): when the owner has switched on email verification,
+  // the address must be proven before the account exists.
+  const [needCode, setNeedCode] = useState(false)
+  const [code, setCode] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  const [sending, setSending] = useState(false)
 
   useEffect(() => {
     registrationOpen()
       .then((r) => setOpen(r.open))
       .catch(() => setOpen(false))
+    getSiteConfig()
+      .then((c) => setNeedCode(!!c.email_verify_enabled))
+      .catch(() => setNeedCode(false))
   }, [])
+
+  // One tick per second while a resend is cooling down.
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const id = setTimeout(() => setCooldown((n) => n - 1), 1000)
+    return () => clearTimeout(id)
+  }, [cooldown])
+
+  const sendCode = async () => {
+    if (!email.trim()) {
+      pushToast('error', t('auth.codeRequired'))
+      return
+    }
+    setSending(true)
+    try {
+      await requestEmailCode({ email: email.trim(), purpose: 'register' })
+      setCooldown(60)
+      pushToast('success', t('auth.codeSent'))
+    } catch (e) {
+      pushToast('error', errMessage(e, t('auth.codeSent')))
+    } finally {
+      setSending(false)
+    }
+  }
 
   const submit = async () => {
     if (!username.trim() || !email.trim() || !password) {
@@ -34,9 +72,13 @@ export function RegisterPage() {
       pushToast('error', t('auth.passwordTooShort'))
       return
     }
+    if (needCode && !code.trim()) {
+      pushToast('error', t('auth.codeRequired'))
+      return
+    }
     setBusy(true)
     try {
-      await register(username.trim(), email.trim(), password)
+      await register(username.trim(), email.trim(), password, needCode ? code.trim() : undefined)
       pushToast('success', t('auth.welcomeBack') + username.trim())
       navigate('/')
     } catch (e) {
@@ -80,6 +122,31 @@ export function RegisterPage() {
         <label>{t('auth.email')}</label>
         <input type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} placeholder="bob@example.com" />
       </div>
+      {needCode && (
+        <div class="field">
+          <label>{t('auth.codeLabel')}</label>
+          <div class="code-row">
+            <input
+              value={code}
+              inputMode="numeric"
+              maxLength={6}
+              onInput={(e) => setCode((e.target as HTMLInputElement).value)}
+              placeholder={t('auth.codePlaceholder')}
+            />
+            <button
+              type="button"
+              class="btn btn-ghost"
+              disabled={sending || cooldown > 0}
+              onClick={sendCode}
+            >
+              {cooldown > 0 ? `${cooldown} ${t('auth.resendIn')}` : sending ? '…' : t('auth.sendCode')}
+            </button>
+          </div>
+          <p class="muted field-hint">
+            <span class="tag tag-warn">{t('auth.testFeature')}</span> {t('auth.testFeatureHint')}
+          </p>
+        </div>
+      )}
       <div class="field">
         <label>{t('auth.password')}</label>
         <div class="pwd-wrap">

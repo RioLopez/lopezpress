@@ -29,6 +29,7 @@ func (s *Service) GetPostPrevNext(ctx context.Context, id string) (PostNav, erro
 		First(&prev).Error
 	if err == nil {
 		prev.SanitizeAuthor()
+		prev.SanitizeReview()
 		nav.Prev = &prev
 	}
 
@@ -42,6 +43,7 @@ func (s *Service) GetPostPrevNext(ctx context.Context, id string) (PostNav, erro
 		First(&next).Error
 	if err == nil {
 		next.SanitizeAuthor()
+		next.SanitizeReview()
 		nav.Next = &next
 	}
 

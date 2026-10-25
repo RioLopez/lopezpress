@@ -84,7 +84,25 @@ lopezpress/
 - `services` 厚：所有业务规则在此，便于单元测试与"换框架/换 ORM 时业务不重写"。
 - `internal/` 保证不被外部包依赖，边界清晰。
 
-> **与当前代码的偏差（2026-09）**：本文档为设计稿，部分细节已演进。最重要的一条——DB 初始化与迁移当前位于 `internal/config/config.go`（`InitDB` / `runManualMigrations`），**并未**单独拆出 `internal/db/` 包；是否拆分见 HANDOVER.md §9 决策 1。实际源码结构以 `cmd/server/main.go` 与 `internal/*` 为准。
+> **与当前代码的偏差（2026-10-24 第 79 轮）**：上面的树是**设计意图**，不是现状。实际结构见 §3.1。最重要的一条——DB 初始化与迁移在 `internal/config`（`InitDB` / `migrate.go` 注册表），**并未**单独拆 `internal/db/` 包（HANDOVER §9 已决策"暂不拆"）。
+
+### 3.1 实际结构（第 79 轮实测）
+
+```
+internal/
+├── config/      config.go（加载/校验/InitDB/种子）+ migrate.go（迁移注册表 0001–0013）+ uploads_backfill.go + recover.go
+├── models/      models.go + all.go（AutoMigrate 唯一清单）+ site_config.go + uploads.go + email_codes.go + ids.go + presets.go
+├── services/    36 个域文件，单文件 ≤350 行；横切关注点各有唯一入口：
+│                  audit.go（唯一 ActionLog 写者）/ roles.go（权限 helper）/ dto.go（全部 API 契约）
+│                  + 域文件：posts* / media* / thumbs / email_codes / auth_email / mail* / site_config* / users / accounts* / backup / restore / trash / ...
+├── handlers/    auth / auth_email / posts / accounts / admin / upload / categories / moderation / import / feed / query
+├── middleware/  middleware（链/日志/CORS/Recover/SecurityHeaders）+ limiter（通用令牌桶）+ login_limiter（IP+账号双桶）
+├── clientip/    可信代理闸门（TRUSTED_PROXIES）
+├── imghost/     出站图床客户端（SM.MS）——service 层不再直接碰 HTTP（第 55 轮 R1 归零）
+└── router/      router.go：`var routes` 声明表（83 条，method/path/auth/roles/handler 五列）
+```
+
+**为什么拆成这样**：`services.go` 曾达 2,671 行、`R2.files` 门禁报红。第 57 轮按域切分（纯移动，172 测试零改动），第 66 轮把散落的 DTO 收进 `dto.go`，第 58 轮把权限从 handler 上移到路由表。现在**新加功能只需在对应域文件里加一个方法 + 在路由表加一行**，不需要动别的地方。
 
 ---
 
@@ -94,18 +112,20 @@ lopezpress/
 cmd/server (main)
    │  装配
    ▼
-internal/router  ──►  internal/middleware
+internal/router  ──►  internal/middleware ──►  internal/clientip
    │  │                 │
    │ ▼                 ▼
    └► internal/handlers ─► internal/services ─► internal/models
-                                        │
-                                        ▼
-                                   internal/db ─► GORM ─► SQLite
-                                        │
-                                        ▼
-                                   internal/config (被 db / router / services 读取)
+                                   │  │
+                                   │  └► internal/imghost  （出站图床，唯一 HTTP 客户端）
+                                   ▼
+                              GORM ─► SQLite
+                                   │
+                                   ▼
+                             internal/config （被 main / services 读取）
 ```
 禁止反向依赖（如 services 引用 handlers，或 models 引用 services）。
+`arch_check.py` 的 R1 门禁保证 **services 不再引用传输符号**（`ResponseWriter` / `*http.Request` / `ServeFile` / `http.Client`），所以这张图不靠自觉维持。
 
 ---
 
@@ -128,17 +148,20 @@ internal/router  ──►  internal/middleware
 loadDotEnv()                 // 读 .env 注入环境（不覆盖已存在的变量）
 config.Load()                // 读取 + 默认值
   → cfg.ValidateSecurity()   // 开库前校验 JWT_SECRET 强度（prod 严格，dev 仅 warn）
-  → config.InitDB(cfg)       // 建目录、Open GORM、runManualMigrations（手写迁移 + schema_migrations 门控）、仅对"不存在的表"AutoMigrate、seedDemoData（首启随机 admin 密码横幅）
+  → config.InitDB(cfg)       // 建目录、Open GORM、迁移注册表（migrate.go）、仅对"不存在的表"AutoMigrate、seedDemoData（首启随机 admin 密码横幅）
+  → backfillUploads(...)     // spec 36：把 data/uploads 里已有的历史文件登记为 legacy 行（幂等；必须在 AutoMigrate 之后）
   → services.New(db, cfg)    // 业务厚层
   → svc.BackfillSlugs()      // spec 29：给历史文章补 slug（幂等，一次索引查询）
-  → svc.MaybeAutoBackup()    // spec 34：今天没快照就做一份；之后每 30 分钟一次（命中文件即 stat 一次）
+  → svc.MaybeAutoBackup()    // spec 34：今天没快照就做一份；之后每 30 分钟一次
+  → svc.StartThumbWorker(ctx)// spec 36：单 goroutine 消费 thumb_status=pending + 30s sweep 补积压
   → handlers.Init(db, cfg, svc)
   → middleware.NewLimiter(...) + NewLoginLimiter()（仅套 POST /api/auth/login）
-  → router.New(cfg, limiter, loginLimiter)   // 组装中间件链 + 注册路由
+  → router.New(cfg, limiter, loginLimiter)   // 组装中间件链 + 路由表
   → http.ListenAndServe(":PORT", mux)
-  → 优雅关闭（SIGINT/SIGTERM → Shutdown，10s 超时）
+  → 优雅关闭（SIGINT/SIGTERM → Shutdown，10s 超时；同一个 ctx 也负责停掉缩略图 worker）
 
-> ⚠️ `glebarez/sqlite` + GORM `AutoMigrate` 在误判需重建表时会走有缺陷的 copy-rename 路径（漏 NOT NULL 列致启动崩溃）。当前用「仅对不存在的表 AutoMigrate + 手写迁移门控」规避；改 `internal/config/config.go` 务必谨慎（详见 HANDOVER.md §7.1）。
+> ⚠️ `glebarez/sqlite` + GORM `AutoMigrate` 在误判需重建表时会走有缺陷的 copy-rename 路径（漏 NOT NULL 列致启动崩溃）。当前用「仅对不存在的表 AutoMigrate + 迁移注册表门控」规避；**新列不要另写 `add*Column`，在 `config/migrate.go` 的 `var migrations` 加一条**（R7 门禁会拦克隆）。
+> ⚠️ `backfillUploads` 必须排在 `AutoMigrate` **之后**：手写迁移跑在建表之前，此时 `upload_files` 还不存在。
 ```
 
 ### 5.4 每日自动备份（spec 34）
@@ -172,16 +195,17 @@ func Chain(h http.Handler, mws ...Middleware) http.Handler {
 }
 ```
 
-装配顺序（外→内）：`Recover → Logger → Limiter → CORS → JWTAuth(仅受保护组)`。
+装配顺序（外→内，见 `router.New` 的 `middleware.Chain` 调用）：`Limiter → CORS → SecurityHeaders → Logger → Recover`，JWT 校验在路由层按 `var routes` 的 `auth` 列分组套用。
+- **SecurityHeaders**（第 72 轮）：`X-Content-Type-Options: nosniff`、`X-Frame-Options`、`Referrer-Policy`、CSP、HSTS（仅 https）。放在 CORS 内侧，避免预检短路时丢头。
 - **Logger**：`log/slog` 输出 method/path/status/耗时，JSON。
-- **Limiter**（令牌桶 `x/time/rate`，**默认 5 rps / burst 10**）：
-  - **粒度：用户 ID 优先，IP 兑底**。已登录请求用 `userID` 作限流 key；未登录请求用 `clientIP` 作 key。
-  - `clientIP` 取自 `X-Forwarded-For` 首段（兼容反向代理/Nginx），无则回退 `RemoteAddr` 主机部分。
-  - key 在内存 `sync.Map` 中缓存各自的 `*rate.Limiter`；上限 RPS 可被环境变量 `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` 覆盖（默认 `5` / `10`）。
-  - 超限返回 `429 Too Many Requests`，并带 `Retry-After` 头（按 `Wait` 估算）。
-  - 单机内 `sync.Map` 足够；多实例场景见 §7（换 Redis 计数）。
+- **Limiter**（令牌桶 `x/time/rate`，**默认 20 rps / burst 50**）：
+  - **粒度：用户 ID 优先，IP 兜底**。已登录请求用 `userID` 作 key；未登录用 `clientIP`。
+  - `clientIP` 走 `internal/clientip.Client(r)`：默认**只信回环**，其它来源的 `X-Forwarded-For` 一律忽略（反代部署必须配 `TRUSTED_PROXIES`，否则拿到的是代理 IP）。
+  - key 在内存 `sync.Map` 中缓存各自的 `*rate.Limiter`；可被 `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` 覆盖。
+  - 超限返回 `429` + `Retry-After`。
+- **LoginLimiter**（第 3 号安全加固）：只套 `POST /api/auth/login`，IP + 账号双桶，5 次失败锁 15 分钟。账号桶 key = `email` 优先、回退 `username`。
 - **CORS**：处理 `OPTIONS` 预检 + 同源响应头；生产收紧 `AllowOrigins`。
-- **JWTAuth**：解析 `Authorization`，校验签名/exp，把用户 ID 注入 `context`。
+- **JWTAuth**：解析 `Authorization`，校验签名/exp/`token_version`，把用户注入 `context`。
 
 ---
 
@@ -216,10 +240,12 @@ func Chain(h http.Handler, mws ...Middleware) http.Handler {
 | `CORS_ORIGINS` | `*` | 逗号分隔；生产收紧 |
 | `TRUSTED_PROXIES` | 仅回环 | **部署到 Nginx 后面必须配**（如 `127.0.0.1/32` 或 `172.16.0.0/12`），否则客户端 IP 全是反代地址，浏览量去重会退化成"全站一天一次" |
 | `BACKUP_DIR` | `data/backups` | 备份 JSON 与快照目录 |
-| `UPLOAD_DIR` / `UPLOAD_MAX_BYTES` | `data/uploads` / 2 MB | 本地图片存储与单文件上限 |
+| `UPLOAD_DIR` | `data/uploads` | 本地图片存储目录 |
+| `UPLOAD_MAX_BYTES` | 32 MB | **硬顶**。真正的单文件上限来自 `site_configs.upload_max_image`（默认 5 MB）/ `upload_max_avatar`（默认 512 KB），环境变量只防"配错成 10 GB" |
 | `SM_MS_TOKEN` | 空 | SM.MS 图床 token（服务端持有，优于存 DB） |
 | `ADMIN_INITIAL_PASSWORD` | 随机生成 | 首启 root 密码；不设则随机并打印到 stderr |
 | `PUBLIC_READ` | — | **不是环境变量**，是 `site_configs.public_read`（后台可切，即时生效） |
+| 存储配额 / 邮箱验证 | — | **全部在 `site_configs`**（后台可改）：`user_quota_bytes`、`site_quota_bytes`、`allow_user_delete_upload`、`allow_external_avatar`、`email_verify_enabled`、`email_code_ttl_min`、`email_code_cooldown` |
 
 > **目标机型**：1 vCPU / 1.5 GB 内存 / 5 GB 磁盘的 VPS，**硬性只用 70%**（≈1.0 GB 内存、≈3.5 GB 磁盘可用，1.5G 机型通常无 swap，内存超限即 OOM）。
 > 上述 `DB_MAX_OPEN=4 / DB_MAX_IDLE=2 / LOG_LEVEL=warn` 三项默认值即为该预算收紧：GORM 池更小、日志更安静、限流桶缓存上限降到 512（`internal/middleware`）。
@@ -228,14 +254,17 @@ func Chain(h http.Handler, mws ...Middleware) http.Handler {
 
 ## 9. 安全与生产化清单
 
-- [ ] 更换 `JWT_SECRET` 为强随机（≥32 字节）
-- [ ] 收紧 `CORS_ORIGINS` 为真实前端域名
-- [ ] 全链路 HTTPS（置于反向代理/TLS 终结）
-- [ ] 启用限流，注册接口额外加验证码/邮箱校验防注册滥用
-- [ ] 输入校验 + 参数化查询（GORM 已防注入）
-- [ ] 日志脱敏（不打印 token/密码）
-- [ ] 健康检查 `/health` + 就绪探针；优雅停机
-- [ ] 依赖与镜像扫描；最小化基础镜像（`gcr.io/distroless`）
+- [x] 更换 `JWT_SECRET` 为强随机（≥32 字节）—— `ValidateSecurity` 强制，prod 弱密钥直接 `log.Fatalf`
+- [x] 收紧 `CORS_ORIGINS` 为真实前端域名（`*` 与 credentials 永不同时）
+- [ ] 全链路 HTTPS（置于反向代理/TLS 终结）—— 代码侧已支持 HSTS（仅 https 生效），部署侧待 VPS 验证
+- [x] 启用限流 —— 通用令牌桶 + 登录专用 IP/账号双桶（5 次失败锁 15 分钟）
+- [x] 注册接口防滥用 —— 可选邮箱验证码（同邮箱 60 s 冷却 + 同 IP 每小时 10 封，默认关闭）
+- [x] 输入校验 + 参数化查询（GORM 已防注入）
+- [x] 日志脱敏（不打印 token/密码；验证码仅在 `LOG_LEVEL=debug` 时打印，便于自建站无 SMTP 时调试）
+- [x] 健康检查 `/health` + 优雅停机（SIGINT/SIGTERM，10 s 超时，同时停缩略图 worker）
+- [ ] 依赖与镜像扫描；最小化基础镜像 —— `deploy/docker/` 已用 distroless 与非 root，但**未在本机构建验证**
+- [x] 上传内容校验 —— magic bytes + `image.DecodeConfig` 真实解码 + 像素上限（第 72/75 轮）
+- [x] 磁盘保护 —— 三层配额 + 去重 + 软删（第 77 轮）
 
 ---
 
@@ -248,7 +277,7 @@ func Chain(h http.Handler, mws ...Middleware) http.Handler {
 2. ✅ **HTTP 层改标准库**：用 `http.ServeMux`（Go 1.22+）替换 Echo；自写 6 个中间件（Recover/Logger/Limiter/CORS/JWTAuth）。
    - **Limiter 现已改为纯标准库接入**：`internal/middleware` 的 Echo 桥（`EchoMiddleware` / `echoIdentity`）已删除，
      `resolveIdentity` 通过 `middleware.UserIDFrom(ctx)` 读取 JWT 鉴权处理器写入的用户 ID（`WithUserID`），无用户时回退到 `clientIP`。
-   - 路由装配集中在 `internal/router/router.go`，中间件链顺序为 `limiter → CORS → Logger → Recover`（limiter 最内层，最先看到请求）。
+   - 路由装配集中在 `internal/router/router.go`，中间件链顺序为 `Limiter → CORS → SecurityHeaders → Logger → Recover`（limiter 最先看到请求，SecurityHeaders 在 CORS 内侧以免预检短路丢头）。
 3. **保留 GORM**：`models`/`db` 基本不动，仅把连接封装进 `internal/db`。
 4. **补测试**：`httptest` 对 handlers + `testing` 对 services（登录、CRUD、权限 403）。
 5. **生产化**：`.env` 示例、优雅关闭、`Dockerfile`、CI（`go build` + `go vet` + `go test`）。

@@ -17,7 +17,6 @@ import type {
   DashboardData,
   ListPostsQuery,
   LoginLog,
-  LocalUpload,
   Post,
   PostNav,
   Revision,
@@ -30,6 +29,8 @@ import type {
   TrashPost,
   ActionLog,
   UpdatePostInput,
+  UploadDeleteResult,
+  UploadPage,
   UploadResult,
   UserPublic,
   UserStats,
@@ -38,11 +39,41 @@ import type {
 
 // --- auth ---
 // Registering issues a JWT, so the new account is signed in straight away.
+// `code` is only required while the site has email verification switched on
+// (spec 37, experimental); the server ignores it otherwise.
 export const register = (b: {
   username: string
   email: string
   password: string
+  code?: string
 }) => request<AuthResult>('/api/auth/register', { method: 'POST', body: JSON.stringify(b) })
+
+// Ask for a one-time code. The server answers identically whether or not the
+// address belongs to an account, so the UI must not infer anything from it.
+export const requestEmailCode = (b: { email: string; purpose: 'register' | 'reset_password' }) =>
+  request<{ message: string }>('/api/auth/email-code', { method: 'POST', body: JSON.stringify(b) })
+
+// Finish a self-service reset. Every session is revoked by the reset, so the
+// caller must sign in again afterwards.
+export const resetPasswordWithCode = (b: { email: string; code: string; password: string }) =>
+  request<{ message: string }>('/api/auth/password/reset', {
+    method: 'POST',
+    body: JSON.stringify(b),
+  })
+
+// Verified email change: request mails a code to the NEW address, confirm
+// applies it and returns the refreshed account.
+export const requestEmailChange = (b: { email: string }) =>
+  request<{ message: string }>('/api/me/email-change/request', {
+    method: 'POST',
+    body: JSON.stringify(b),
+  })
+
+export const confirmEmailChange = (b: { email: string; code: string }) =>
+  request<UserPublic>('/api/me/email-change/confirm', {
+    method: 'POST',
+    body: JSON.stringify(b),
+  })
 
 export const login = (b: { email: string; password: string }) =>
   request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify(b) })
@@ -346,10 +377,29 @@ export const listSnapshots = () =>
 
 // Root-only: replace the whole database with a snapshot file. The service
 // auto-snapshots the current state first, so the restore is undoable.
-export const restoreSnapshot = (file: string) =>
+//
+// The confirmation phrase is required by the server: a snapshot restore
+// replaces the content AND the account table, so it is gated like the backup
+// import rather than trusted because the caller clicked twice in the UI.
+// `allowDataLoss` is a separate, explicit acknowledgement for the case the
+// server refuses by default — a snapshot that would delete every article.
+export const RESTORE_CONFIRM_PHRASE = 'RESTORE-SNAPSHOT'
+export const restoreSnapshot = (file: string, allowDataLoss = false) =>
   request<BackupStats>('/api/backup/restore-snapshot', {
     method: 'POST',
-    body: JSON.stringify({ file }),
+    body: JSON.stringify({
+      file,
+      confirm: RESTORE_CONFIRM_PHRASE,
+      ...(allowDataLoss ? { allow_data_loss: true } : {}),
+    }),
+  })
+
+// Root-only: preview what a snapshot holds without applying it. Used to tell
+// the operator "this restores 0 articles over your 42" BEFORE they commit.
+export const previewSnapshotRestore = (file: string) =>
+  request<BackupStats>(`/api/backup/restore-snapshot?dry_run=1`, {
+    method: 'POST',
+    body: JSON.stringify({ file, confirm: RESTORE_CONFIRM_PHRASE }),
   })
 
 // Backups are written to the server's disk, so the file itself must be
@@ -402,16 +452,56 @@ export const emptyTrash = () =>
 // --- image upload ---
 // Sends an image as multipart/form-data. The browser sets the multipart
 // boundary automatically; do NOT set Content-Type here.
-export const uploadImage = (file: File) => {
+//
+// `kind` picks the server-side per-file ceiling and the record's purpose:
+// article images default to 5 MB, avatars to 512 KB.
+export const uploadImage = (file: File, kind: 'post' | 'avatar' | 'site' = 'post') => {
   const form = new FormData()
   form.append('file', file)
+  form.append('kind', kind)
   return upload<UploadResult>('/api/upload', form)
 }
 
-// --- image library (browse + delete locally-stored uploads) ---
-export const listUploads = () => request<LocalUpload[]>('/api/uploads')
+// --- image library (admin: site-wide assets, spec 36) ---
+export const listUploads = (opts?: {
+  owner?: string
+  kind?: string
+  status?: 'live' | 'deleted' | 'all'
+  page?: number
+  size?: number
+}) => {
+  const q = new URLSearchParams()
+  if (opts?.owner) q.set('owner', opts.owner)
+  if (opts?.kind) q.set('kind', opts.kind)
+  if (opts?.status) q.set('status', opts.status)
+  if (opts?.page) q.set('page', String(opts.page))
+  if (opts?.size) q.set('size', String(opts.size))
+  const qs = q.toString()
+  if (qs) return request<UploadPage>(`/api/uploads?${qs}`)
+  return request<UploadPage>('/api/uploads')
+}
+
+// Soft delete (default): the file stays on disk so published articles keep
+// rendering, but it leaves every list and can never be re-used.
 export const deleteUpload = (name: string) =>
-  request<{ message: string }>(`/api/uploads/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  request<UploadDeleteResult>(`/api/uploads/${encodeURIComponent(name)}`, { method: 'DELETE' })
+
+// Hard delete: removes the bytes. Only admins, and it breaks any article that
+// still embeds the image — which is exactly why it is a separate call.
+export const purgeUpload = (name: string) =>
+  request<UploadDeleteResult>(`/api/uploads/${encodeURIComponent(name)}?hard=1`, { method: 'DELETE' })
+
+export const restoreUpload = (name: string) =>
+  request<{ message: string }>(`/api/uploads/${encodeURIComponent(name)}/restore`, { method: 'POST' })
+
+// --- my uploads (any signed-in author) ---
+// Scoped to the caller by the server: there is no `owner` parameter here on
+// purpose, and passing one would be ignored.
+export const listMyUploads = (page = 1, size = 20) =>
+  request<UploadPage>(`/api/me/uploads?page=${page}&size=${size}`)
+
+export const deleteMyUpload = (name: string) =>
+  request<UploadDeleteResult>(`/api/me/uploads/${encodeURIComponent(name)}`, { method: 'DELETE' })
 
 // --- SM.MS image hosting ---
 // Spec #7: the SM.MS token is now held server-side (.env SM_MS_TOKEN or the

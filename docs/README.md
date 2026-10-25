@@ -61,7 +61,7 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 ### 2.1 specs/（按页面 / 按功能域）
 
 > 状态三档：`已实现（spec 未写）`＝代码已在跑、规范待补；`已实现（spec 已写）`＝代码与规范均已就位；`已废弃`。
-> 截至 2026-10-23（第 52 轮），**01–35 号 spec 全部为「已实现（spec 已写）」**。
+> 截至 2026-10-24（第 79 轮），**01–37 号 spec 全部为「已实现（spec 已写）」**。
 > 注：13 号未使用（编号跳空）；21 号为事后补录（第 25 轮口述需求直接实现，事后按本规范补齐）。
 
 | 编号 | 页面 / 功能域 | 路由 | 状态 | spec 文件 |
@@ -100,8 +100,11 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 | 33 | 仪表盘统计（趋势/待审/Top5） | `/admin` | 已实现 | `specs/33-dashboard-insights.md` |
 | 34 | 每日自动备份 | `/admin/backup` | 已实现 | `specs/34-auto-backup.md` |
 | 35 | 相关文章 + 面包屑 | `/read/:id` | 已实现 | `specs/35-related-and-breadcrumb.md` |
+| 36 | **图库 / 头像 / 存储策略**（去重、配额、引用台账、软删撤下、缩略图队列） | `/admin/media`, `/settings` | 已实现 | `specs/36-media-library.md` |
+| 37 | **邮箱验证**（注册码 / 找回密码 / 换绑，实验性默认关闭） | `/register`, `/forgot-password`, `/settings`, `/admin/site` | 已实现 | `specs/37-email-verification.md` |
 
 > 模板：`specs/_TEMPLATE.md`。新页面加编号 + 一行索引。
+> 编号一旦占用**不回收**：36/37 曾被「后台精细化 / feeds-and-errors」两批计划预定，实际落地是图库与邮箱验证，那两批顺延到 38/39（见 `FEATURE_DESIGN_MATRIX.md` §6）。
 
 ### 2.2 decisions/（跨页面决策，append-only）
 
@@ -111,6 +114,8 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 | 0002 | 编辑器草稿 localStorage TTL 30 天 + 保存后回收 | Accepted | `decisions/0002-localstorage-draft-ttl-30d.md` |
 | 0003 | Token 存储写死 localStorage（Bearer 方案） | Accepted | `decisions/0003-token-storage.md` |
 | 0004 | CORS 白名单模式（受限模式不回显未知 origin） | Accepted | `decisions/0004-cors.md` |
+| 0005 | **图片所有权用 `live_key` 数据不变式表达 + 缩略图用库内队列** | Accepted | `decisions/0005-media-ownership-and-thumbnails.md` |
+| 0006 | **邮箱验证做全套但默认关闭、root 专属开关** | Accepted | `decisions/0006-email-verification-opt-in.md` |
 
 > 模板：`decisions/_TEMPLATE.md`。新决策顺延编号。
 

@@ -110,8 +110,11 @@ func TestRevisionPermissionsAndScope(t *testing.T) {
 		t.Fatalf("expected 1 revision")
 	}
 
-	if _, err := svc.ListRevisions(ctx, bob, post.ID); StatusOf(err) != 403 {
-		t.Fatalf("bob must be 403, got %v", err)
+	// Bob is a plain user, not the author, and the post is still in the review
+	// queue (invisible to him). The endpoint answers 404, not 403, so it does
+	// not reveal that a post he cannot see exists.
+	if _, err := svc.ListRevisions(ctx, bob, post.ID); StatusOf(err) != 404 {
+		t.Fatalf("bob must be 404 (the pending post is invisible to him), got %v", err)
 	}
 	if _, err := svc.ListRevisions(ctx, admin, post.ID); err != nil {
 		t.Fatalf("admin should read a plain user's history: %v", err)

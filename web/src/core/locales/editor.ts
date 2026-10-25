@@ -19,6 +19,7 @@ export type EditorTexts = {
     saved: string
     createFailed: string
     saveFailed: string
+    notYourPost: string
     titlePlaceholder: string
     heading: string
     bodyPlaceholder: string
@@ -72,6 +73,13 @@ export type EditorTexts = {
     tooLarge: string
     badFormat: string
     noFile: string
+    // Spec 36: the library already held these exact bytes.
+    deduped: string
+    // Avatar picker (crop + resize happens in the browser).
+    cropTitle: string
+    cropHint: string
+    cropApply: string
+    cropCancel: string
   },
   rev: {
     title: string
@@ -102,6 +110,7 @@ export const editorZh: EditorTexts = {
     saved: '已保存',
     createFailed: '创建失败',
     saveFailed: '保存失败',
+    notYourPost: '只有作者本人或 root 可以修改这篇文章的标题与正文。你可以把它退回给作者并附上修改意见。',
     titlePlaceholder: '文章标题',
     heading: '写文章',
     bodyPlaceholder: '在这里写正文…',
@@ -152,9 +161,14 @@ export const editorZh: EditorTexts = {
     localHint: '上传到服务器，生成本地链接',
     uploaded: '图片已上传',
     failed: '图片上传失败',
-    tooLarge: '文件过大，最大 2MB',
+    tooLarge: '文件超过本站允许的大小',
     badFormat: '仅支持 JPG / PNG / WEBP / GIF',
     noFile: '请选择图片文件',
+    deduped: '图库中已有相同图片，已直接复用（未重复占用空间）',
+    cropTitle: '调整头像',
+    cropHint: '拖动图片调整位置，滚轮或滑块缩放。头像会按 1:1 裁剪。',
+    cropApply: '使用这张',
+    cropCancel: '取消',
   },
   rev: {
     title: '历史版本',
@@ -185,6 +199,7 @@ export const editorEn: EditorTexts = {
     saved: 'Saved',
     createFailed: 'Failed to create',
     saveFailed: 'Failed to save',
+    notYourPost: 'Only the author or the root can change this post\u2019s title and body. Send it back to the author with a review note instead.',
     titlePlaceholder: 'Post title',
     heading: 'Write a post',
     bodyPlaceholder: 'Write your content here…',
@@ -235,9 +250,14 @@ export const editorEn: EditorTexts = {
     localHint: 'Upload to server, generates a /uploads/ link',
     uploaded: 'Image uploaded',
     failed: 'Failed to upload image',
-    tooLarge: 'File too large, max 2 MB',
+    tooLarge: 'File exceeds the size this site allows',
     badFormat: 'Only JPG / PNG / WEBP / GIF are allowed',
     noFile: 'Please select an image file',
+    deduped: 'This image is already in the library — reusing it, nothing new was stored',
+    cropTitle: 'Adjust avatar',
+    cropHint: 'Drag to position, scroll or use the slider to zoom. The avatar is cropped 1:1.',
+    cropApply: 'Use this',
+    cropCancel: 'Cancel',
   },
   rev: {
     title: 'Revision history',

@@ -66,6 +66,14 @@ export function LoginPage() {
           </button>
         </div>
       </div>
+      {/* Shown even when the site has email verification switched off: the
+          reset page then explains that in one line, which is more useful than
+          a link that silently disappears. */}
+      <p class="muted link forgot-link">
+        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/forgot-password') }}>
+          {t('auth.forgotPassword')}
+        </a>
+      </p>
       <button class="btn btn-primary btn-block" disabled={busy} onClick={submit}>
         {busy ? t('auth.loginBusy') : t('auth.loginBtn')}
       </button>

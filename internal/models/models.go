@@ -91,8 +91,29 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// bcryptMaxConcurrency bounds how many bcrypt operations may run at once.
+//
+// bcrypt is deliberately expensive — that is the point of using it — but the
+// asymmetry is that an attacker spends one cheap request while the server burns
+// ~60 ms of CPU hashing (DefaultCost = 10). On a 1-core box a handful of
+// concurrent login or register attempts saturate the CPU for seconds (R4-05
+// measured ~1.4 s for 20 concurrent attempts). The semaphore caps the
+// parallelism without weakening the hash or adding latency for the honest
+// single login, which is the only case that matters.
+const bcryptMaxConcurrency = 2
+
+var bcryptSemaphore = make(chan struct{}, bcryptMaxConcurrency)
+
+// acquireBcrypt blocks until a bcrypt slot is free and returns its release.
+func acquireBcrypt() func() {
+	bcryptSemaphore <- struct{}{}
+	return func() { <-bcryptSemaphore }
+}
+
 // HashPassword returns the bcrypt hash of the given plain password.
 func HashPassword(plain string) (string, error) {
+	release := acquireBcrypt()
+	defer release()
 	b, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
@@ -102,6 +123,8 @@ func HashPassword(plain string) (string, error) {
 
 // VerifyPassword reports whether plain matches the stored hash.
 func VerifyPassword(plain, hash string) bool {
+	release := acquireBcrypt()
+	defer release()
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
 }
 
@@ -184,6 +207,30 @@ func SanitizePostAuthors(posts []Post) {
 	}
 }
 
+// SanitizeReview blanks the reviewer identity from a post payload.
+//
+// ReviewedBy is an administrator's user id. Publishing it to anonymous readers
+// (and to the post's own author) handed out the moderator's account id for
+// free — a stable identifier that is one half of an admin-targeted attack, and
+// that no client in this codebase actually reads: the SPA declares the field in
+// its types and never renders it. ReviewNote is kept, because a rejected author
+// needs to know why; only the WHO is dropped.
+//
+// The database column is untouched — the moderation workflow and the backup
+// dump still carry it — so this is purely an outbound-payload rule, applied by
+// the public read paths the same way SanitizeAuthor is.
+func (p *Post) SanitizeReview() {
+	p.ReviewedBy = ""
+	p.ReviewedAt = nil
+}
+
+// SanitizePostReviews applies SanitizeReview to every post in the slice.
+func SanitizePostReviews(posts []Post) {
+	for i := range posts {
+		posts[i].SanitizeReview()
+	}
+}
+
 // PostRevision is one saved-before-edit snapshot of a post (spec 31).
 // Only the fields that are painful to lose are kept: title, body, status and
 // who changed it. Tags/category/cover are cheap to re-set and are not
@@ -240,52 +287,6 @@ type PostView struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// SiteConfig is a single-row table (id is always 1) holding site-level
-// settings: branding, footer/compliance text, image-host config, and the
-// public-registration flag. The friend_links field stores a JSON array of
-// {name,url} objects as text (see services for marshal/unmarshal helpers).
-// Round 19 replaces the old browser-localStorage SM.MS token with the
-// server-held img_host_token below.
-type SiteConfig struct {
-	ID            int64  `gorm:"primaryKey" json:"id"`
-	SiteName      string `gorm:"size:128" json:"site_name"`
-	SiteTitle     string `gorm:"size:128" json:"site_title"`
-	SiteLogo      string `gorm:"size:512" json:"site_logo"`
-	SiteFavicon   string `gorm:"size:512" json:"site_favicon"`
-	SiteURL       string `gorm:"size:512" json:"site_url"`
-	FooterText    string `gorm:"type:text" json:"footer_text"`
-	IcpNo         string `gorm:"size:128" json:"icp_no"`
-	FriendLinks   string `gorm:"type:text" json:"friend_links"`
-	ImgHostMode   string `gorm:"size:16;default:'local'" json:"img_host_mode"`
-	ImgHostToken  string `gorm:"type:text" json:"img_host_token"`
-	AllowRegister bool   `gorm:"default:false" json:"allow_register"`
-	// PageSize is the number of posts per page on the public list page
-	// (spec 24). Admin-configurable (5/10/20/30, default 10). The server —
-	// not the client — decides the page size so that ?page=N means the same
-	// thing for every visitor and stays shareable.
-	PageSize int `gorm:"default:10" json:"page_size"`
-	// PublicRead decides whether anonymous visitors may read the site
-	// (spec 27). true = public blog; false = everything behind the login.
-	// Enforced in BOTH layers: WithOptionalAuth rejects anonymous reads when
-	// it is false, and the SPA bounces to /login. Defaulting to true keeps the
-	// "public blog" positioning; an admin can lock the site down in one click.
-	PublicRead bool `gorm:"default:true" json:"public_read"`
-	// AutoBackup / BackupKeep drive the daily snapshot (spec 34). Off by
-	// default: an unrequested background job writing files is a surprise, and
-	// the operator may keep backups at the filesystem level instead.
-	AutoBackup bool `gorm:"default:false" json:"auto_backup"`
-	BackupKeep int  `gorm:"default:7" json:"backup_keep"`
-	// SMTP settings for security notifications (login-failure / password
-	// change / new-location login). Empty host disables the feature. The
-	// password is stored in the DB (admin-configurable) — acceptable because
-	// the row is only readable by admins; the public endpoint omits it.
-	SmtpHost  string    `gorm:"size:128" json:"smtp_host"`
-	SmtpPort  int       `json:"smtp_port"`
-	SmtpUser  string    `gorm:"size:128" json:"smtp_user"`
-	SmtpPass  string    `gorm:"type:text" json:"smtp_pass"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // LoginLog records every login attempt (success or failure) for security
 // auditing. A successful attempt carries user_id; a failed attempt carries the
 // attempted identifier (username/email) with a nullable user_id. See spec 14.
@@ -324,19 +325,4 @@ type ActionLog struct {
 type SchemaMigration struct {
 	Version   string    `gorm:"primaryKey;size:64" json:"version"`
 	AppliedAt time.Time `json:"applied_at"`
-}
-
-// All returns every persisted entity, and it is the ONLY such list.
-//
-// Why it exists: schema bootstrap used to keep two hand-written lists -- one
-// for AutoMigrate (11 models) and one for the drift check (9 models). The
-// drift list had silently lost PostRevision and SchemaMigration, so the rule
-// "a new column needs a hand-written migration" simply did not apply to
-// post_revisions. Two lists of the same thing always diverge; one cannot.
-// Add a new entity here and both paths pick it up.
-func All() []interface{} {
-	return []interface{}{
-		&User{}, &Post{}, &PostRevision{}, &Category{}, &Tag{}, &PostTag{},
-		&PostView{}, &SiteConfig{}, &LoginLog{}, &ActionLog{}, &SchemaMigration{},
-	}
 }

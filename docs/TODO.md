@@ -1,16 +1,19 @@
 > 类别 A · AI 指挥/约束（母文档族）— 由根目录 `AGENTS.md` 统管，新对话须先读。
 
-# lopezpress 待办清单（2026-10-15 建立 · 2026-10-24 第 72 轮校准）
+# lopezpress 待办清单（2026-10-15 建立 · 2026-10-24 第 79 轮校准）
 
 > 来源：功能逻辑审计 + 二轮严格自查 + **2026-10-15 全栈深度审计**（均基于读实现，非猜测）。
 > 完成后把 `[ ]` 改 `[x]`。
 > **本文件是唯一权威待办清单**。首轮审计快照已归档至 `docs/archive/2026-10-14-FUNCTIONAL_AUDIT.md`（勿再当作待办）。
 >
-> **当前状态（2026-10-23 第 52 轮后，勾选状态与正文结论逐条对齐）**：
+> **当前状态（2026-10-24 第 79 轮后，勾选状态与正文结论逐条对齐）**：
 > - 早期 P1/P2/P3 与功能缺口全部完成（见下方各节勾选）；
 > - **P0 级 7 项已全部修复**（P0-1～P0-6 修复轮 1，P0-7 第 30 轮）；
 > - **P1 级仅剩 P1-1 余部**（roles.go helper 全量化，架构美化非缺陷，暂缓）；P1-17（root 密码恢复）第 39 轮已修；P1-15/P1-16 第 28/29 轮已修；P1-11 的计数行（写死 20）第 43 轮随分页改造修掉；
 > - P2 级仅剩 **P2-3 剩余 7 类（经核查为纯样式，不做）**；**P2-6（可信代理闸门）第 43 轮已修**；P2-16（无用依赖）第 39 轮已修；
+> - **架构债 AR-0～AR-8 全部完成**（第 54–67 轮），只剩 AR-1b 状态码语义化——用户 2026-10-24 决定跳过；
+> - **媒体与存储（M 系列，第 77–78 轮）**：主体完成，剩 3 项非阻塞改进（缩略图无自动重试、台账不对账、回收站只能整清）；
+> - **邮箱验证（E 系列，第 79 轮）**：三条流程完成且默认关闭，剩 3 项（真实 SMTP 未验、无退信处理、IP 闸是内存态）；
 > - 「评论」仍为唯一明确不做的方向（用户 2026-10-22 决定）；SEO/OG 因纯 SPA 抓不到卡片，暂缓。
 >
 > **第 43 轮新增待办（产品功能，用户已拍板，尚未实现）**：
@@ -62,8 +65,16 @@
 - [x] **S-19 上传只校验魔数**：PNG/JPEG/GIF 追加 `image.DecodeConfig`（真实可解码 + 边长 ≤12000 + 像素 ≤4000 万）；WebP 仍只有魔数。
 - [x] **S-20 恢复备份复活旧 token**：`ImportBackup`/`RestoreSnapshot` 事务末尾全站 `token_version + 1`，恢复后必须重新登录。
 - [x] **S-21 admin 可窥 root 登录记录与邮箱/IP**：`GET /api/users/{root}/logins` 对非 root 403；用户列表对非 root 置空 root 的 email/ip。
-- [ ] **S-22 XFF 取最左一跳 → nginx 透传时可伪造**（报告误判为「已可伪造」，实际只在直连回环时成立）：待 VPS 上连同 `deploy/nginx.conf` 一起改——要么 `proxy_set_header X-Forwarded-For $remote_addr`（覆盖），要么 `clientip.Client` 改取最右一跳。
-- [ ] **S-23 admin 可删任意用户上传的媒体**（`DELETE /api/uploads/{name}` 为 adminRoles，无归属校验）：与「admin 可删 user 文章」一致，暂判**设计如此**；若要收口需给上传加 `owner_id` 元数据（当前文件名不记作者）。
+- [x] **S-22 XFF 取最左一跳 → nginx 透传时可伪造**：**第 81 轮修复**。`clientip.Client` 改从右往左剥离可信代理、取最右非可信地址，所以 `$proxy_add_x_forwarded_for` 的追加写法下客户端伪造的前缀变成惰性；`deploy/nginx.conf` 的覆盖写法仍可保留作为纵深防御。第 R3-04 轮实测：伪造前缀下 520 次登录 4.4s 全部放行，修复后同一伪造被归并到同一个 IP 桶。
+- [x] **S-25 admin 可改写并发布他人文章正文 + 读全部修订**：**第 82 轮已修（决策：收紧）**。`UpdatePost` 现在对 admin 修改他人 `title`/`body`/`cover` 一律 403（提示改用审核意见让作者改）；admin 保留全部审核动作（下架为 private、改分类、改标签、approve/reject）。修订权限拆成两个闸：`assertCanReadHistory`（作者/admin/root，审核需要看上下文）与 `assertCanWriteContent`（仅作者/root，因为恢复旧版等于把正文塞回已发布文章）。前端同步：`ListPage.canEditPost` 只对作者/root 生效（新增 `canModeratePost` 保住删除权），`EditPage` 加权限守卫避免 admin 直连 `/edit/{id}` 撞 403。跨用户操作现在在 `action_logs` 里记 `by=<操作者>; author_id=<作者>`。
+
+- [x] **S-26 恢复快照只回滚 5 张表**：**第 82 轮已修（决策：不回滚是正确设计，但要修它带来的副产物）**。审计日志/登录日志**不应该**被恢复覆盖 —— 否则一次恢复就能抹掉攻击痕迹，所以"内容回滚、痕迹不回滚"是有意为之。真正的问题是副产物：恢复替换了 `posts` 却没动 `upload_refs`/`ref_count`，图库的"删除这张图会破坏 N 篇文章"提示变成假话（要么吓退安全删除，要么放行破坏性删除）。新增 `rebuildUploadRefsTx` 在 Import/Restore 事务末尾按新正文**批量重建**引用台账（一次读映射 + 批量插入 + 一条 SQL 重算，与文章数无关）。
+
+- [x] **S-27 账号锁定可被武器化**：**第 82 轮已修（决策：分级锁定 + 放宽 IP 桶）**。锁定从"5 次错口令 → 固定 15 分钟"改为**升级制**：第 1 次 60 秒、第 2 次 5 分钟、第 3 次起 15 分钟；成功登录清零并回到 60 秒档。理由：完全豁免管理员会让爆破速率放大 450 倍（锁定期内 0 次 → 0.5 rps 持续尝试），而 60 秒首档已足以挡住脚本、又不至于把管理员锁在门外。同时 IP 桶 burst 3→10，缓解同 NAT 互相连坐（爆破防线在账号桶 + 锁定，不靠 IP 桶）。锁定时记 `slog.Warn`。
+
+- [x] **S-28 审核/删除/回收站并发竞态**：**第 82 轮已修**。新增 `transition.go`：状态前置条件放进 UPDATE 的 `WHERE`，`RowsAffected == 0` 即"别人先动了"→ 409，绝不静默重试。覆盖 `ReviewPost`、`BanPost`、`SendBackPost`、`DeleteBannedPermanently`（条件硬删 + 事务内清 tag）、`DeletePost`（条件软删）、`RestoreTrash`（用读到的 `deleted_at` 精确匹配）。另修两个同类问题：`UpdatePost` 原本整行 `Save` 会把读到的 status 写回，作者改错别字时会**静默撤销管理员的 approve**；改为只写作者字段 + 状态走独立条件转换（顺带修好"编辑覆盖 view_count"）。全部用文件库并发测试验证（`newFileTestService`）。
+
+- [x] **S-23 admin 可删任意用户上传的媒体**：**第 77 轮解决**——上传有了 `upload_files.owner_id` 元数据，`services.DeleteUpload` 按"谁"判定：非 admin 只能删自己的且受 `allow_user_delete_upload` 开关限制，硬删仅 admin/root 且返回受影响引用数。同名双路由（`/api/uploads/{name}` admin、`/api/me/uploads/{name}` 本人）都进同一个 service 方法。
 - [ ] **S-24 发布权限两套口径**：`POST /api/admin/review/{id} approve` 允许 admin，`POST /api/admin/posts/batch` 的 `publish` 却 root-only。同一效果两个门槛，建议抽 `canPublish()` 统一（当前维持严格侧，未改）。
 
 ## 🧩 分类 / 标签体验（2026-10-24 第 74 轮，全部完成）
@@ -72,6 +83,36 @@
 - [x] **T-2 前台看不出分类层级**：侧边栏父/子拉开字号字重 + 缩进 + 肘形引导线；筛选与编辑器下拉用 `　└ ` 前缀；卡片 chip 与阅读页面包屑显示「父 › 子」。逻辑抽到 `core/taxonomy.ts`。
 - [x] **T-3 标签只能手输、大小写会分裂**：编辑器改自动补全（↑↓/回车/Esc/Backspace）+ 无匹配时「创建标签」入口；后端 `findOrCreateTagsTx` 改 `LOWER(name)` 查重、`?tag=` 与 `UpdateTag` 改 `COLLATE NOCASE`。补全逻辑抽到 `core/tags.ts`。
 - [ ] **T-4 编辑器三栏在 1440 宽窗口下右侧面板溢出被裁**（真机走查发现，非第 74 轮引入）：标签输入框只露出约 80px，等于没法用。待重排网格或加容器查询。
+
+## 💾 媒体与存储（2026-10-24 第 77–78 轮，spec 36）
+
+> 设计依据 `docs/specs/36-media-library.md`（Accepted）。核心不变式：**`live_key` 唯一索引**——活跃=sha256、软删=`d:<id>`、历史=`legacy:<name>`。因此"已撤下的图不会复活给下一个人"由数据库保证，不靠调用方记得判断。
+
+- [x] **M-1 上传无元数据、文件名可枚举、无法溯源**：新增 `upload_files`（sha256 / live_key / owner_id / ip / 尺寸 / 原名 / kind）与 `upload_refs`（文章引用台账）；文件名改 `crypto/rand` 16 字节 → base62 22 字符，URL 不泄露上传时间、用户、原名。
+- [x] **M-2 同一张图重复上传会存多份**：sha256 去重，命中返回 `deduped=true` 与原文件名，不写盘不占配额。
+- [x] **M-3 磁盘无上限**：三层配额（单文件分级：正文 5 MB / 头像 512 KB；单账号 20 MB；全站 500 MB）。全站统计**含软删行**（字节仍在磁盘），个人统计只算活跃行。顺序是"去重 → 配额 → 写盘"，被拒的请求不留半截文件。
+- [x] **M-4 用户传错了删不掉**：软删即"撤下"——文件仍被 `GET /uploads/{name}` 服务（已发布文章不破图），但离开所有图库列表且**永不可被他人复用**（`live_key` 已轮换）。管理员可在后台看到"被谁撤下"并执行硬删（即便有文章引用）。
+- [x] **M-5 后台看不到谁传了什么**：`/admin/media` 图库页：统计条（含"已撤下仍占用"）、状态/类型筛选、缩略卡片 + 引用数徽标、详情弹窗（上传者/IP/时间/尺寸/sha256/引用列表）、撤下/恢复/彻底删除、分页 24。
+- [x] **M-6 头像可指向任意 URL**：默认只接受本站图库 `/uploads/<live-name>`；站长显式开启 `allow_external_avatar` 后才允许 http(s) 外链。前端 canvas 1:1 裁剪 + 拖拽微调 → 512×512 WebP，后端只校验不修图。
+- [x] **M-7 图库列表加载原图很重**：异步缩略图队列。**待办状态在数据库**（`thumb_status`），内存 channel 只做唤醒且满了就丢；单 goroutine + 每张之间 150 ms；启动扫描 200 条封顶 + **30 s sweep 补积压**。长边 480，CatmullRom，不透明→JPEG q82 / 有透明→PNG。
+- [ ] **M-8 缩略图失败即终态**：`failed` 不会被自动重试，需管理员手工清 `thumb_status`。够用但不够优雅（解码失败的图本来也不值得重试，暂时压着）。
+- [ ] **M-9 引用台账只在通过 API 保存/删除文章时同步**：绕过 API 直接改库会产生孤儿引用与 `ref_count` 偏差。spec 36 §8 提过"夜间全目录对账"，**未做**。
+- [ ] **M-10 回收站清空才清台帐**：单条永久删除（T-5）还没有，所以用户只能"删进回收站 → 再清空"两步。
+
+## ✉️ 邮箱验证（2026-10-24 第 79 轮，spec 37，**实验性**）
+
+> 默认关闭，界面标「测试功能」，开关 root 专属。设计依据 `docs/specs/37-email-verification.md`。
+
+- [x] **E-1 注册不校验邮箱真实性**：开关打开时 `POST /api/auth/register` 必须带 `code`。
+- [x] **E-2 忘记密码无路可走**（此前只能找管理员重置）：`/forgot-password` 页 + `POST /api/auth/password/reset`；成功后 bump `token_version`，所有会话失效。
+- [x] **E-3 换邮箱会绕过验证**：`/settings` 改为"向新地址发码 → 确认"两步（收到码本身就是所有权证明），成功后给**旧**地址发变更通知；同时 `PUT /api/auth/me` 在开关打开时改邮箱直接 **403**——否则一次 PUT 就能绕过整套验证码。
+- [x] **E-4 六位码可爆破**：每码最多 5 次错误、一次性、绑用途（HMAC 参与 `purpose`）、库里只存 HMAC（key=`JWT_SECRET`）；同邮箱 60 s 冷却（存表，重启不清零）+ 同 IP 每小时 10 封。
+- [x] **E-5 "发送成功"但其实没配 SMTP**：`requireSMTP` 显式返回 503 并说明原因，不让前端显示"已发送"却收不到信。
+- [x] **E-6 开关权限**：`email_verify_enabled` 与两个时限 root 专属；普通 admin 保存时三字段从库值继承（`allow-*` 类字段一律"未提交 = 继承"，否则旧表单会静默关掉）。
+- [ ] **E-7 未用真实 SMTP 验证过**：只用本地假服务器（`scripts/fakesmtp.py`，故意不实现 STARTTLS）走过全流程。上线前必须用真邮箱（QQ / Gmail / 自建 Postfix）验一遍 TLS 与退信。
+- [ ] **E-8 无退信处理**：地址填错时用户只能等 60 s 重发，系统不知道信没送到，`email_codes` 里那条记录仍然"有效"。
+- [ ] **E-9 "同 IP 每小时 10 封"是内存固定窗口**：重启清零、多实例各算各的。当前单实例部署，可接受。
+
 
 ## 🏗️ 架构债（2026-10-23 第 53 轮架构复审新增）
 
@@ -90,7 +131,7 @@
   **R1 口径同时修正**（不是"调低门槛"）：旧口径数"import net/http 的文件数"=11，其中 10 个只是 `http.StatusXxx` 整数常量——换成自定义常量是改名，零架构收益。新口径数**真正耦合传输的符号**（`ResponseWriter` / `*http.Request` / `ServeFile` / `NotFound` / `http.Client` / `NewRequest` / `MaxBytesReader` / `http.Handler`），P1 前 12 处 / 1 个文件 → 现在 **0**。剩下 11 个文件只 import 状态码常量，记为新观察项 **R1b=11**（只显示、不阻断）。
   行为验证（真跑，非推断）：上传→取回字节一致 + `Content-Type: image/png`；`Range: bytes=0-9` → 206；`If-Modified-Since` → 304；非图片扩展名 → 400 白名单文案；缺 `file` 字段 → 400；未授权 → 401；`/uploads/../go.mod`、`%2f` 编码、子路径 → 全 404；备份下载 200 + `Content-Length` 与实际字节一致 + `Content-Disposition` 正确；备份名穿越（`../app.db`、`a%2Fb.json`、空名）→ 全 404。
   **测试移动**：`services/upload_test.go` 随被测代码迁到 `imghost/imghost_test.go`，断言不变，另加 1 条 `TestUploadTimeoutIsBounded`（Q11 的防挂死属性）。
-- [ ] **AR-1b（可选，低优先级）状态码语义化**：295 处 `http.StatusXxx` 让领域层仍在说 HTTP 数字。真正做法是把 `newErr(404, ...)` 换成 `newErr(ErrNotFound, ...)` + 单一映射表，而不是复制一份整数常量。收益是领域可脱离 HTTP 表达错误，成本是 295 处替换 + 全量测试复核，故不并入 AR-1。
+- [ ] **AR-1b（可选，低优先级）状态码语义化**：295 处 `http.StatusXxx` 让领域层仍在说 HTTP 数字。真正做法是把 `newErr(404, ...)` 换成 `newErr(ErrNotFound, ...)` + 单一映射表，而不是复制一份整数常量。收益是领域可脱离 HTTP 表达错误，成本是 295 处替换 + 全量测试复核，故不并入 AR-1。**2026-10-24 用户决定跳过**（收益不足，风险不低）。
 - [x] **AR-1c（真 bug）上传超限返回 400 而非 413** ✅ 2026-10-23 第 63 轮完成
   原：`MaxBytesReader(maxUploadBytes())` 在 `ParseMultipartForm` 阶段就截断，导致 `header.Size > maxUploadBytes()` 的 413 分支走不到（死代码），用户看到的是 `invalid multipart form`（400）。
   修：`handlers/upload.go` 的 `ParseMultipartForm` 错误处理里，用 `errors.As(*http.MaxBytesError)` 单独映射成 413 `"file too large"`（与 `ImportBackup` 的 P1-6 修法同构）；`header.Size` 检查保留（防御"声明超限但 body 未超"的伪造）。
@@ -306,6 +347,7 @@
   ✅ 已做（2026-10-14）：① JWT 吊销——`User` 加 `token_version`，`SignToken` 写入 `ver` claim，`Authenticate` 校验版本（bump 后旧 token 401）；首部署无 `ver` 的旧 token 在 version=0 时仍兼容。② 新增 `svc.RevokeAllSessions` + `POST /api/auth/logout-all`（加白名单）+ 前端 `logoutAll()`。③ 自助登录历史 `GET /api/me/login-history`（`svc.ListUserLogins`，limit≤100）。④ 前端 `SecurityCenter` 由占位改为：账号信息（邮箱脱敏可切）+ 改密表单（复用 `changePassword`，前端校验 ≥8/一致）+ 登录历史列表（成功/失败 badge、IP/UA/时间）+「登出所有设备」（confirm→调 `logout-all`→清本地会话→跳登录）。i18n 中英双语文案 + `.sec-card`/`.login-list`/`.badge--ok/--fail` 样式。后端 `go build/vet/test` ✅、前端 `tsc`+`vite build` ✅；运行时冒烟验证吊销链路（旧 token 401、新登录 200）。
 - [x] **图片管理**：目前只能上传，不能浏览/删除已上传图片。
   ✅ 已做（2026-10-14）：新增 `svc.ListLocalUploads`（列本地上传目录，按时间新→旧，空目录返 `[]` 非 null）+ `svc.DeleteLocalUpload`（按名删本地文件，严格校验防路径穿越，`..`/`/`/`\` 一律拒）；端点 `GET /api/uploads` + `DELETE /api/uploads/{name}`（均 JWT）。仅管本地存储图——SM.MS 远端图删除会留死链，故不在管理范围。前端 `SettingsPage` 加「图片库」区块（`ImageLibrary` 组件：网格预览 + 上传 + 逐张删除 + 大小/时间），i18n `imageLib.*` 中英 + `.image-grid`/`.image-card` 样式。运行时冒烟验证上传→列出→删除→再列 `[]`。
+  ⬆️ **第 77–78 轮升级为完整图库**（spec 36）：元数据表 + sha256 去重 + 三层配额 + 引用台账 + 软删撤下 + 后台 `/admin/media` 溯源 + 异步缩略图。此条保留作历史，**新能力看本文件「💾 媒体与存储」节**。
 - [ ] **评论**：外接（Giscus/Disqus）或自建。
   📌 **未做（增强方向，非缺陷）**。个人博客场景下评论价值取决于读者互动意愿，且外接方案会引入第三方脚本/隐私考量。候选：Giscus（GitHub Discussions，零后端成本，但有 GitHub 账号门槛）/ 自建（需新表 + 审核 + 反垃圾，与第 25 轮审核流可复用）。**建议等有真实读者需求再启动。**
 - [x] **操作审计日志**：目前只有登录历史；谁改了文章/配置无记录。
@@ -332,6 +374,9 @@
 - 角色提权：`UpdateUser`/`CreateUser` 遇 `RoleRoot` 直接 403（root 不可经 API 创建）✅
 - 封禁可见性：`canSeePost` 中 `banned` 仅 root 可达，作者本人与其他 admin 均被过滤 ✅
 - 审核作用域：admin 队列只含 user 发文，admin/root 发文仅 root 可审 ✅
+- 软删图不会复活给下一个人：`live_key` 唯一索引，撤下即轮换为 `d:<id>`，去重查询结构上查不到 ✅（第 77 轮实测：撤下后重传同一份字节，返回新文件而非复用）
+- 软删图仍能服务已发布文章：`DeletedAt` 是普通 `*time.Time` 而非 `gorm.DeletedAt`，`GET /uploads/{name}` 不看该字段 ✅
+- 开着邮箱验证时 `PUT /api/auth/me` 改邮箱：403，无法绕过验证码 ✅（有单测）
 
 ---
 

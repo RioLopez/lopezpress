@@ -13,6 +13,43 @@ type RegisterInput struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	// Code is the emailed verification code. Required only while the site has
+	// email verification switched on (spec 37, experimental); ignored
+	// otherwise so existing clients keep working.
+	Code string `json:"code"`
+}
+
+// EmailCodeRequestInput asks the server to mail a one-time code.
+// POST /api/auth/email-code (anonymous).
+type EmailCodeRequestInput struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"` // register | reset_password
+}
+
+// PasswordResetInput completes a self-service reset. The code replaces the old
+// password as proof of ownership.
+// POST /api/auth/password/reset (anonymous).
+type PasswordResetInput struct {
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
+// EmailChangeInput serves both halves of the verified email change:
+// Code is empty for the request step and required for the confirm step.
+// POST /api/me/email-change/{request,confirm}.
+type EmailChangeInput struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// EmailCodePolicy is the effective (already clamped) timing policy for
+// verification codes. A struct rather than three return values so a caller
+// cannot swap the TTL and the cooldown at the call site.
+type EmailCodePolicy struct {
+	Enabled  bool
+	TTL      time.Duration
+	Cooldown time.Duration
 }
 
 // LoginInput is the decoded payload for POST /api/auth/login. The Email
@@ -151,6 +188,28 @@ type BackupStats struct {
 	Posts      int64 `json:"posts"`
 	Categories int64 `json:"categories"`
 	Tags       int64 `json:"tags"`
+	// Revisions and UploadFiles are what a full backup carries that a content
+	// migration does not: the edit history and the image library.
+	Revisions   int64 `json:"revisions"`
+	UploadFiles int64 `json:"upload_files"`
+}
+
+// RestoreSnapshotOptions carries the three gates a database restore must pass.
+//
+// They are not optional ergonomics: before this existed, one POST naming a
+// stale or empty snapshot replaced the live site — content, accounts and all —
+// with whatever that file happened to hold. ImportBackup already had a confirm
+// phrase and a dry run; the strictly more destructive operation did not.
+type RestoreSnapshotOptions struct {
+	// Confirm must equal RestoreConfirmPhrase.
+	Confirm string
+	// DryRun reports what the snapshot holds and changes nothing.
+	DryRun bool
+	// AllowDataLoss permits restoring a snapshot that would delete every post.
+	// It is a separate flag rather than a different phrase because the two
+	// failures need different answers: a missing phrase is a client bug, while
+	// this one is a human decision.
+	AllowDataLoss bool
 }
 
 // ImportResult is the response shape for the enhanced import endpoint:
@@ -305,6 +364,20 @@ type ImportData struct {
 	Tags           []models.Tag      `json:"tags"`
 	Posts          []models.Post     `json:"posts"`
 	PostTags       []models.PostTag  `json:"post_tags"`
+	// The three slices below are what made a restore a *restore* rather than a
+	// content migration. Before they existed, exporting a site and importing it
+	// back silently dropped the whole site configuration (name, theme, SMTP,
+	// quotas), every article's revision history, and the entire image library —
+	// so a "backup" could not rebuild the site it came from.
+	SiteConfigs []models.SiteConfig   `json:"site_configs,omitempty"`
+	Revisions   []models.PostRevision `json:"revisions,omitempty"`
+	UploadFiles []models.UploadFile   `json:"upload_files,omitempty"`
+	// UploadLiveKeys carries the de-duplication key for each upload, keyed by
+	// name. models.UploadFile marks LiveKey json:"-" (it is an internal key),
+	// but the UNIQUE index on it means an import that left it empty would make
+	// every row collide — and a dump that dropped it would silently break
+	// de-duplication for every image restored from it.
+	UploadLiveKeys map[string]string `json:"upload_livekeys,omitempty"`
 }
 
 // BatchPostInput is the decoded payload of POST /api/admin/posts/batch.
@@ -432,12 +505,99 @@ type MarkdownImportResult struct {
 	Skipped []MarkdownSkip `json:"skipped"`
 }
 
-// UploadImageInfo describes one locally-stored upload in the image library.
-type UploadImageInfo struct {
-	Name    string    `json:"name"`     // file name (relative to the upload dir)
-	URL     string    `json:"url"`      // public /uploads/<name> URL
-	Size    int64     `json:"size"`     // bytes
-	ModTime time.Time `json:"mod_time"` // last modified
+// UploadResult is what an upload endpoint returns (spec 36). `deduped` tells
+// the editor "the library already had this exact picture, nothing was stored
+// twice", which it surfaces as a small notice instead of silently pretending a
+// new file appeared.
+type UploadResult struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Size    int64  `json:"size"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Mime    string `json:"mime"`
+	Kind    string `json:"kind"`
+	Deduped bool   `json:"deduped"`
+	// Remote marks an image that lives on the external host (SM.MS). It has no
+	// row in upload_files: this instance does not own the bytes.
+	Remote bool `json:"remote,omitempty"`
+}
+
+// UploadFileInfo is one row of the image library / "my uploads" list.
+// OwnerName, OriginalName, IP and Sha256 are admin-visible metadata; none of
+// them ever appears in the URL, which is just /uploads/<opaque-id>.<ext>.
+type UploadFileInfo struct {
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	URL          string     `json:"url"`
+	ThumbURL     string     `json:"thumb_url"`
+	Size         int64      `json:"size"`
+	Width        int        `json:"width"`
+	Height       int        `json:"height"`
+	Mime         string     `json:"mime"`
+	Kind         string     `json:"kind"`
+	OwnerID      string     `json:"owner_id"`
+	OwnerName    string     `json:"owner_name"`
+	OriginalName string     `json:"original_name"`
+	IP           string     `json:"ip"`
+	Sha256       string     `json:"sha256"`
+	RefCount     int        `json:"ref_count"`
+	Legacy       bool       `json:"legacy"`
+	Deleted      bool       `json:"deleted"`
+	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// UploadStats are the storage counters shown above the gallery.
+//
+// DeletedBytes is reported separately on purpose: soft-deleted files still
+// occupy the disk, so a site that looks 40% full to its users can be 90% full
+// in reality. The admin needs to see both numbers to know whether "clean up"
+// means "remove withdrawn uploads" or "the site is genuinely out of room".
+type UploadStats struct {
+	LiveCount    int64 `json:"live_count"`
+	LiveBytes    int64 `json:"live_bytes"`
+	DeletedCount int64 `json:"deleted_count"`
+	DeletedBytes int64 `json:"deleted_bytes"`
+	OrphanCount  int64 `json:"orphan_count"`
+	TotalCount   int64 `json:"total_count"`
+	TotalBytes   int64 `json:"total_bytes"`
+}
+
+// UploadPage is one page of the library plus the quota counters, so the page
+// opens with a single request instead of three.
+type UploadPage struct {
+	Items          []UploadFileInfo `json:"items"`
+	Total          int64            `json:"total"`
+	Page           int              `json:"page"`
+	Size           int              `json:"size"`
+	Stats          UploadStats      `json:"stats"`
+	UserUsedBytes  int64            `json:"user_used_bytes"`
+	UserQuotaBytes int64            `json:"user_quota_bytes"`
+	SiteUsedBytes  int64            `json:"site_used_bytes"`
+	SiteQuotaBytes int64            `json:"site_quota_bytes"`
+}
+
+// UploadListQuery is the filter for both the admin gallery and "my uploads".
+// OwnerID is what turns the admin view into a personal one; the handlers decide
+// which of the two a caller gets, not the service.
+type UploadListQuery struct {
+	OwnerID string
+	Kind    string
+	// Status: "" (live only, the default), "deleted", or "all".
+	Status string
+	Page   int
+	Size   int
+}
+
+// UploadDeleteResult tells the caller what a delete actually did. AffectedRefs
+// is non-zero only for a hard delete of an image that articles embed — the UI
+// uses it for the "this will break N articles" warning.
+type UploadDeleteResult struct {
+	Name         string `json:"name"`
+	Hard         bool   `json:"hard"`
+	AffectedRefs int64  `json:"affected_refs"`
 }
 
 // SnapshotInfo describes one VACUUM INTO snapshot file on disk.

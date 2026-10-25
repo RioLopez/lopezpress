@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -29,7 +30,11 @@ func newTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Category{}, &models.Tag{}, &models.PostTag{}, &models.SiteConfig{}, &models.LoginLog{}, &models.PostView{}, &models.PostRevision{}); err != nil {
+	// models.All() is the single entity list — the same one InitDB uses.
+	// This line used to be a hand-copied subset and had already lost ActionLog
+	// (every audited test printed "no such table: action_logs") plus the spec-36
+	// upload tables, which made every post-save fail on a missing ledger.
+	if err := db.AutoMigrate(models.All()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -280,8 +285,15 @@ func TestUpdateAndDeleteForbiddenForNonAuthor(t *testing.T) {
 	}
 }
 
-// TestAdminCanEditOthersPost verifies an admin may update/delete a plain
-// user's post (but not another admin's or root's).
+// TestAdminCanEditOthersPost verifies an admin may DELETE a plain user's post
+// (but not another admin's or root's).
+//
+// R5-05 changed the UPDATE half of this: an admin may no longer rewrite another
+// author's title or body. The change is not a permissions regression — it closes
+// a content-impersonation path, since editing a PUBLISHED post's text made it go
+// live at once while the article still carried the original author's name. The
+// editorial actions a reviewer actually needs (recategorise, retag, unpublish,
+// approve/reject) are covered by TestAdminKeepsEditorialActionsOnOthersPosts.
 func TestAdminCanEditOthersPost(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -295,9 +307,11 @@ func TestAdminCanEditOthersPost(t *testing.T) {
 		t.Fatalf("create post: %v", err)
 	}
 
-	if _, err := svc.UpdatePost(ctx, admin, post.ID, UpdatePostInput{Title: "admin edited"}); err != nil {
-		t.Fatalf("admin update: %v", err)
+	// Rewriting the author's words is refused…
+	if _, err := svc.UpdatePost(ctx, admin, post.ID, UpdatePostInput{Title: "admin edited"}); StatusOf(err) != http.StatusForbidden {
+		t.Fatalf("admin rewriting another author's title: expected 403, got %v (err=%v)", StatusOf(err), err)
 	}
+	// …but taking the post down is still an admin action.
 	if err := svc.DeletePost(ctx, admin, post.ID); err != nil {
 		t.Fatalf("admin delete: %v", err)
 	}
@@ -526,4 +540,54 @@ func TestDeleteLocalUploadPathTraversal(t *testing.T) {
 		}
 	}
 	t.Fatalf("unexpected error class for safe name: %v", err)
+}
+
+// newFileTestService opens a FILE-backed SQLite DB for the concurrency tests.
+//
+// The suite's :memory: database is shared by nothing: database/sql keeps a
+// pool, and every pooled connection to ":memory:" opens its own private
+// database. That is fine for the single-goroutine tests (they always land on
+// the same connection) and useless for a race test — the racers would be
+// reading and writing different stores, so "exactly one caller wins" would
+// pass or fail for the wrong reason. A real file gives them all one store.
+//
+// WAL + busy_timeout are set so concurrent writers queue instead of erroring,
+// which is what production runs with (docs/decisions/0007).
+func newFileTestService(t *testing.T) (*Service, *gorm.DB) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "conc.db")
+	// Same pragmas production uses (config.sqliteDSN), including
+	// _txlock=immediate — without it the concurrency tests below would be
+	// exercising a different locking regime than the one that ships.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=journal_mode(WAL)&_txlock=immediate"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open file sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(models.All()...); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	// The partial UNIQUE index on posts.slug comes from migration 0014, which
+	// AutoMigrate does not reproduce (it creates tables and columns, not
+	// hand-written indexes). Without it this fixture's schema differs from
+	// production's, and any test that depends on the constraint would pass here
+	// and fail in the field.
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_unique ON posts(slug) WHERE slug <> ''`).Error; err != nil {
+		t.Fatalf("create slug index: %v", err)
+	}
+	if err := db.Where("id = ?", 1).First(&models.SiteConfig{}).Error; err != nil {
+		_ = db.Create(&models.SiteConfig{ID: 1, SiteName: "Echo", SiteTitle: "Echo", ImgHostMode: "local", AllowRegister: true, PageSize: 10, PublicRead: true}).Error
+	}
+	cfg := config.Load()
+	cfg.JWTSecret = "test-secret"
+	cfg.JWTExpiryHours = 1
+	svc := New(db, cfg)
+	t.Cleanup(func() {
+		if sqlDB, e := db.DB(); e == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return svc, db
 }

@@ -22,3 +22,12 @@ export function fmtDate(iso?: string, locale?: string): string {
 export function fmtDay(iso?: string): string {
   return iso ? iso.slice(0, 10) : ''
 }
+
+// Human-readable byte size (spec 36). Shared by the media library and the
+// profile page so the two never disagree on rounding.
+export function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`
+  return `${(n / 1073741824).toFixed(1)} GB`
+}

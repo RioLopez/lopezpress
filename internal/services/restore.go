@@ -30,7 +30,7 @@ import (
 // Root-only (as-built audit Q7): restoring replaces the whole database
 // including the users table, so it shares ImportBackup's takeover risk and
 // is gated to the single root at the service layer.
-func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filename string) (BackupStats, error) {
+func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filename string, opt RestoreSnapshotOptions) (BackupStats, error) {
 	if !IsRoot(actor) {
 		return BackupStats{}, newErr(http.StatusForbidden, "only the root can restore a snapshot")
 	}
@@ -64,11 +64,74 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 		}
 	}()
 
+	// Count what the snapshot holds BEFORE anything is destroyed. Three gates
+	// hang off these numbers, and all three exist because a snapshot restore is
+	// the most destructive single request the app exposes: it replaces the
+	// whole content set, plus every account and password hash, in one call.
+	var snapStats BackupStats
+	if err := snapDB.Model(&models.User{}).Count(&snapStats.Users).Error; err != nil {
+		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read snapshot users: "+err.Error())
+	}
+	if err := snapDB.Unscoped().Model(&models.Post{}).Count(&snapStats.Posts).Error; err != nil {
+		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read snapshot posts: "+err.Error())
+	}
+	if err := snapDB.Model(&models.Category{}).Count(&snapStats.Categories).Error; err != nil {
+		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read snapshot categories: "+err.Error())
+	}
+	if err := snapDB.Model(&models.Tag{}).Count(&snapStats.Tags).Error; err != nil {
+		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read snapshot tags: "+err.Error())
+	}
+
+	// Gate 1 — the confirmation phrase. Import has had this since spec #6; the
+	// snapshot restore, which is strictly more destructive (it also replaces
+	// the account table), did not. A single POST against a stale or empty
+	// snapshot replaced a live site with an empty one.
+	if opt.Confirm != RestoreConfirmPhrase {
+		return BackupStats{}, newErr(http.StatusBadRequest,
+			"refusing to restore without confirmation: preview with ?dry_run=1, then resend with confirm=\""+RestoreConfirmPhrase+"\"")
+	}
+
+	// Gate 2 — a snapshot with no accounts cannot describe a usable site. There
+	// is no recovery from it: the root account that could restore something else
+	// is gone with it.
+	if snapStats.Users == 0 {
+		return BackupStats{}, newErr(http.StatusBadRequest,
+			"this snapshot contains no users, so restoring it would leave the site with no way to log in; refusing")
+	}
+
+	// A dry run stops here. It is deliberately checked BEFORE the data-loss gate
+	// below: the preview's whole job is to let an operator see that a snapshot
+	// would delete everything, and refusing to preview the dangerous case hides
+	// exactly the information they came for. It changes nothing, so there is
+	// nothing to protect.
+	if opt.DryRun {
+		return snapStats, nil
+	}
+
+	// Gate 3 — the case that actually happened: an empty (or nearly empty)
+	// snapshot silently replaced a populated site. An operator restoring a
+	// genuinely older snapshot may well have FEWER posts, so the rule is not
+	// "never fewer" — it is "not everything". Deleting all content requires
+	// saying so explicitly.
+	var livePosts int64
+	if err := s.db.WithContext(ctx).Unscoped().Model(&models.Post{}).Count(&livePosts).Error; err != nil {
+		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read the live post count")
+	}
+	if snapStats.Posts == 0 && livePosts > 0 && !opt.AllowDataLoss {
+		return BackupStats{}, newErr(http.StatusConflict,
+			"this snapshot has no posts but the site has "+itoa(int(livePosts))+
+				"; restoring it would delete every article. Resend with allow_data_loss=true if that is really intended")
+	}
+
 	// Auto snapshot the current state first (so the operator can undo this
 	// restore by restoring the older snapshot).
 	if _, err := s.snapshotBeforeImport(ctx); err != nil {
 		return BackupStats{}, newErr(http.StatusInternalServerError, "failed to snapshot before restore: "+err.Error())
 	}
+
+	// The live token ceiling must be read BEFORE the transaction rewrites the
+	// users table, because the rewrite destroys it (see token_epoch.go).
+	liveMax := s.maxTokenVersion(ctx)
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Clear live tables in dependency order.
@@ -147,14 +210,19 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 				return err
 			}
 		}
-		// Same reason as ImportBackup: the snapshot carries the token_version
-		// values from when it was taken, so restoring it would resurrect
-		// tokens revoked after that point. Bump everyone and force a re-login.
-		if err := tx.Model(&models.User{}).Where("1 = 1").
-			UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error; err != nil {
+		// R4-01: the snapshot carries the token_version values from when it was
+		// taken, so restoring it would resurrect tokens revoked after that point
+		// — and a plain "+1" lands exactly on the version of a token issued
+		// between the snapshot and the operator's logout-all. Land everyone above
+		// the pre-restore ceiling instead (see token_epoch.go).
+		if err := raiseAllTokenVersions(tx, tokenRevokeFloor(liveMax)); err != nil {
 			return err
 		}
-		return nil
+		// R4-03: the image ledger lives outside the snapshot, so it now
+		// describes the pre-restore content. Rebuild it from the restored posts
+		// or the gallery will warn about the wrong articles — and clear the
+		// warning for images the restored content actually uses.
+		return rebuildUploadRefsTx(tx)
 	})
 	if err != nil {
 		return BackupStats{}, newErr(http.StatusInternalServerError, "failed to restore snapshot")

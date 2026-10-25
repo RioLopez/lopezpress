@@ -2,7 +2,7 @@
 
 # LopezPress（原 Echo Content API）— 阶段总结与问题记录
 
-> 更新时间：2026-10-23（第 55 轮：P1 拿回分层边界）
+> 更新时间：2026-10-25（第 84 轮：上线级安全工程 —— 按攻击面系统建设，新增安全门禁与上线基线）
 > 用途：存档各轮次进度、已知风险、待解决问题，供后续接续开发参考。
 > 说明：仓库早期名为 echo-content-api，2026-10-20 第 38 轮前正式更名 LopezPress；下文历史记录中偶见的旧名指同一项目。
 
@@ -24,8 +24,8 @@
 | 鉴权 | golang-jwt/v5 HS256 | JWT 无状态 |
 | 前端 | Preact + Vite 5 + TypeScript | ~3KB 框架，手写 i18n/主题/路由 |
 | Markdown | marked@18（同步） | DOMParser 清洗，零沙箱 |
-| 依赖总量 | 后端 12 模块，前端 2 NPM 包 | 符合低资源目标 |
-| 前端产物 | 133.64 kB（gzip 43.61 kB） | 极低体积 |
+| 依赖总量 | 后端 7 个直接依赖（+11 indirect），前端 3 个运行依赖（`preact` / `wouter` / `marked`）+ 4 个 devDependency | 符合低资源目标；第 78 轮新增 `golang.org/x/image`（缩略图缩放 + WebP 解码） |
+| 前端产物 | JS 261.38 kB（gzip 81.28 kB）+ CSS 66.75 kB（gzip 12.47 kB） | 单页全量，含编辑器与整个后台 |
 
 ---
 
@@ -78,9 +78,31 @@
 | 第五十三轮（架构复审） | 同题异构取证 + 目标分层 + 8 阶段路线 | ✅ 只读，未改代码 | 见 `docs/ARCH_REVIEW_2026-10-23.md` |
 | 第五十四轮（P0 立规矩） | `scripts/arch_check.py` 棘轮门禁 + `models.All()` 治漂移漏表 | ✅ 门禁全绿 | 见 §4 |
 | 第五十五轮（P1 分层） | service 层传输符号 12 处 → 0 + `internal/imghost` 抽出 | ✅ 门禁全绿 + 7 组真跑冒烟 | 见 §4 |
+| 第五十六轮（P2 审计单点化） | 全库唯一 `models.ActionLog` 写者 `s.audit` + context 传身份/IP | ✅ R10 0→0 并锁死 | 见 §4 |
+| 第五十七轮（P3 拆 services.go） | 2,671 行 → 15 个域文件；顺带拆 accounts/mail | ✅ 172 测试零改动全绿 | R2.files 4→1 |
+| 第五十八轮（P4 路由表声明化） | 76 条路由改 `var routes` 表 + `RequireRole` 中间件 | ✅ R4 39→0 | 见 §4 |
+| 第五十九轮（P5 迁移注册表） | `internal/config/migrate.go` 有序注册表 10 条 + `ensureColumns` 泛型 | ✅ R7 新增门禁；顺带修真 bug `users.token_version` 无迁移 | 见 §4 |
+| 第六十轮（P6 前端数据层） | `core/http.ts` 唯一 fetch + `core/useQuery.ts` | ✅ R8 3→0；`instanceof ApiError` 54→2 | 见 §4 |
+| 第六十一轮（P6 收尾） | `useQuery` 扩成 superset（enabled/onError/可 await 的 reload） | ✅ 两管理页迁移 | 见 §4 |
+| 第六十二轮（i18n 按域拆 + 守卫收敛） | `i18n.tsx` 1775→113 行；`core/roles.ts` | ✅ `role ===` 25→3 | 见 §4 |
+| 第六十三轮（前端最小测试） | `vitest` + 3 个纯函数测试 22 用例 | ✅ 前端首次有测试 | 见 §4 |
+| 第六十四轮（上传 413 + 审核收敛） | 上传体积修复 / `ReviewPost` 收敛 `canReviewPost` / `useQuery` 铺开 9 页 | ✅ 全绿 | 见 §4 |
+| 第六十五轮（CSS 可维护性） | 放弃按域拆（会打乱覆盖顺序），改文件头「域导航索引」 | ✅ 零移动 | 见 §4 |
+| 第六十六轮（R3 真正收敛） | 24 个散落 DTO 全搬进 `dto.go`（44 struct） | ✅ R3 24→0 | 见 §4 |
+| 第六十七轮（参数解析统一） | `parseInts` / `parseID` 替代手写 `Atoi` | ✅ 顺带修 4 处静默吞错 | 见 §4 |
+| 第六十八轮（脏数据与筛选） | draft 脏数据致封禁 400；文章管理「全部标签」；后台 footer 贴底 | ✅ | 见 §4 补记 |
+| 第六十九轮（个人中心与权限矩阵） | 只显示自己文章；用户名邮箱可改；后台权限可视化矩阵 | ✅ | 见 §4 补记 |
+| 第七十轮（后台真机走查） | wouter query 失效 / 按钮越权渲染 / 硬刷新掉登录 3 个真 bug | ✅ 已推送 | 见 §4 补记 |
+| 第七十一轮（私密文章泄漏排查） | 实测不泄漏，根因是浏览器残留 admin token | ✅ 无代码改动 | 见 §4 补记 |
 | 第七十二轮（渗透报告核实 + 安全加固） | 作者敏感字段裁剪 / 安全头 / 上传内容校验 / 改密废旧 token / nginx 4 个 location | ✅ 门禁全绿 + 隔离冒烟 15/15 | 见 §4 |
 | 第七十三轮（私密语义收紧） | `private`/`draft` 改为严格作者可见，admin/root 也读不到 | ✅ 门禁全绿 + 三角色真机复测 | 见 §4 |
 | 第七十四轮（分类/标签/层级细节） | `?category=分类名` / 三处层级视觉 / 标签自动补全 + 大小写归并 | ✅ 门禁全绿 + Chrome 实点验证 | 见 §4 |
+| 第七十五轮（root/admin 权限面） | 备份可清库 / 导出未收归 root / SMTP 明文 / `pinned` 越权 / 同形字用户名 / 上传只验魔数 | ✅ + 隔离冒烟 | 见 §4 |
+| 第七十六轮（图库设计稿） | `docs/specs/36-media-library.md` 讨论稿 + 5 个决策点 | 📝 文档 | 见 §4 |
+| 第七十七轮（图库三层落地） | `upload_files` / `upload_refs`，sha256 去重、三层配额、软删撤下、后台图库页、头像 1:1 裁剪 | ✅ 门禁全绿 + 隔离冒烟 31/31 | 见 §4 |
+| 第七十八轮（缩略图队列） | 库内 `thumb_status` 作唯一待办 + 单 goroutine + 30s sweep；新增 `golang.org/x/image` | ✅ 隔离冒烟 23/23 | 见 §4 |
+| 第七十九轮（邮箱验证全套） | 注册码 / 找回密码 / 换绑邮箱，实验性默认关闭，root 专属开关 | ✅ 隔离冒烟 28/28（本地假 SMTP） | 见 §4 |
+| 第八十轮（文档校准） | 14 份文档按第 79 轮实测校正；新增 decisions 0005/0006 | ✅ 三门禁 PASS，未改代码 | 见 §4 |
 
 > 第 43–52 轮为功能轮次，详情见 §4 对应小节；本节自第 53 轮起只收录"改了架构或门禁"的里程碑轮。
 
@@ -1317,6 +1339,392 @@
 
 ---
 
+### 第 76–77 轮 — 图库、头像与账号资料策略（spec 36）
+
+第 76 轮立项（`docs/specs/36-media-library.md`），第 77 轮实现 P0–P2。核心判断：**「图库管理」和「磁盘保护」不是两件事** —— 没有元数据表就没有配额、没有配额就防不住爆盘、没有归属就没有「谁的图」。
+
+**① 元数据表是地基**
+
+新增 `upload_files`（归属、字节、尺寸、sha256、来源 IP、用途、引用数、软删标记、缩略图状态）与 `upload_refs`（「这张图被谁用在这儿」的边）。在此之前「图库」只是目录列表：谁传的、多大、传过没，全无依据。
+
+`upload_files.deleted_at` 刻意是 `*time.Time` 而不是 `gorm.DeletedAt` —— 软删的图必须**继续能被 `GET /uploads/{name}` 提供**，否则已发布文章会破图，那等于让文章作者替上传者的决定受罚。
+
+**② 所有权用数据不变式保证，不靠流程约束**
+
+站长要求：用户撤下自己的图之后，哪怕文件还在盘上，也**绝不能再被别的用户复用**。做法是 `live_key` 唯一索引轮换：
+
+| 状态 | `live_key` |
+|---|---|
+| 活跃 | sha256 十六进制 |
+| 已撤下 | `d:<id>` |
+| 历史回填文件 | `legacy:<name>` |
+
+于是「去重查询」这个唯一的复用入口，**结构上**永远查不到已撤下的图 —— 不需要任何一层代码记得再判断一次。文件继续服务，台账照常记账，管理员在后台看得到「被谁撤下」并可以执行真实删除（连缩略图一起），哪怕文章还在引用。
+
+**③ 三层配额，检查在写盘之前**
+
+单文件（正文 5 MB / 头像 512 KB，可配）、单账号 20 MB、全站 500 MB。顺序是**先配额、后写文件**，所以被拒的请求不会留下半截文件；**先去重、后配额**，所以复用别人的图不占自己的额度。全站统计包含软删行（字节还在盘上），个人统计只算活跃行（否则「删了腾空间」对用户就是假的）。
+
+**④ 后台图库 + 我的上传是同一套代码的两种视角**
+
+`GET /api/uploads` 收归 admin（此前**任何登录用户都能列全站图片**，与「不是免费图床」的定位直接冲突），`GET /api/me/uploads` 强制 `OwnerID = 当前用户`。`/admin/media` 有统计条（活跃 / 已撤下仍占用 / 孤儿）、状态与类型筛选、引用数徽标、详情弹窗（原名 / IP / sha256），`/settings` 下方是本人的上传与配额进度条。
+
+**⑤ 头像：强制 1:1 裁剪，用户可微调**
+
+前端 canvas 裁剪（拖动 + 缩放 1–3x + 边界钳制）→ 512×512 → WebP 0.85 → 上传。后端只校验不修图：必须是本站图库里的活跃文件，或站长显式开启后的 `http(s)` 外链。三个开关（用户可删自己的图 / 用户可改头像 / 允许外链头像）都在站点设置里，且**保存时缺省即继承**，避免旧表单静默关掉保护。
+
+**⑥ 顺带修的两个真问题**
+
+- **匿名 `/api/posts` 泄露全站作者 email 与登录 IP**（第 72 轮遗留的同类面）：`upload_files` 的列表接口带 owner 信息，因此 owner 只返回 id 与显示名，不含 email/IP。
+- **WebP 拿不到宽高**：标准库没有 WebP 解码器，图库一直显示 `—`。第 78 轮引入 `golang.org/x/image` 后修复。
+
+**测试**：新增 6 条服务层用例（去重、软删不破链、删除权限、个人配额、正文引用台账、头像来源）。隔离冒烟 **31/31**：普通用户 403 列图库、撤下后文件仍 200 但离开列表、**撤下字节再上传不命中去重**（所有权不变式的直接验证）、同 hash 存在时 restore 409、admin 硬删后文件 404。
+
+---
+
+### 第 78 轮 — 缩略图队列
+
+站长原话：*「缩略图很有必要，这样显示的时候节省资源……生成需要一个队列，慢慢来，防止一下上传太多图片，一下子把服务器资源占用」*。约束是资源，不是功能。
+
+**队列在数据库里，不在内存里。** `upload_files.thumb_status` 是唯一的待办真相：`pending` → `ready` / `skip` / `failed`。内存 channel 容量 32，只是唤醒提示，**满了直接丢** —— 因为行还是 pending，下一次扫描会补。进程被 kill 不丢任务。
+
+**单消费者 + 节流。** 一个 goroutine 一次解一张，之间睡 150 ms。1C 机器上并发解码 8 张 1200 万像素的图，等于把 HTTP 服务饿死。启动时一次最多排 200 条（`thumbResumeBatch`），剩下的由 30 秒一次的 sweep ticker 补 —— 否则积压超过 200 张就只能靠重启才动。
+
+**规格**：长边 480 px（卡片约 200 CSS px，覆盖 2x 屏），CatmullRom 重采样；不透明输出 JPEG q82，有透明输出 PNG（JPEG 会把透明像素变黑）。
+
+**宁可不做也不做坏**，三种情况判 `skip`：长边 ≤480 且 ≤96 KB、重编码后反而更大、格式解不开。前端一律 `thumb_url || url`，所以「没有缩略图」永远不会表现成「破图」。解码上限比上传上限更严（上传 40 MP，worker 只解 24 MP）：后台 goroutine OOM 会直接杀掉整个进程，而一张没缩略图的图只是慢一点。
+
+**新依赖 `golang.org/x/image`**（`draw` 缩放 + `webp` 解码）：官方扩展库、纯 Go、无 CGO，二进制 +0.5 MB。顺带修掉 WebP 无法测尺寸的问题。
+
+**实测**（隔离冒烟 23/23）：900×600 噪声 PNG 1.62 MB → **480×320 JPEG 73 KB（22×）**；三张图上传完队列里还有 2 张 pending（证明没有在请求路径里同步生成）；200×150 纯色图判 `skip`；重启后遗留的 pending 行在启动扫描中补跑成 `ready`；硬删把缩略图一起删掉。
+
+---
+
+### 第 79 轮 — 邮箱验证全套（注册 / 找回密码 / 换绑）
+
+站长第 ④ 点原话：*「把全套都做好吧 不过同样的 属于测试功能 目前默认关闭 并且提示是测试 然后呢 管理员也可以开启和关闭之类的」*。三条流程一起做，开关默认关闭，界面明确标「测试功能」。
+
+**六位数字不靠它自己硬。** 单码 5 次机会、用完即废、绑定用途（注册码不能拿去重置密码）、请求时永远同一句回答（不泄露邮箱是否注册）、库里只存 HMAC（key = `JWT_SECRET`，裸 sha256 就是一张 10^6 彩虹表）。再加两道频率闸：同邮箱 60 秒冷却（存活在表里，重启不清零）+ 同 IP 每小时 10 封（内存固定窗口，防止换着邮箱刷别人的收件箱）。
+
+**「看起来成功其实没发信」是本轮重点防的错误。** `sendMailFn` 对通知类邮件把"没配 SMTP"当成功（对通知合理），验证码要是也这么干就是骗人。所以 `requireSMTP` 显式检查，没配就 503 并说清楚该先配 SMTP；顺序也定成「冷却 → 查 SMTP → 发信 → 落库」，发信失败不留一行"有效但没人收到"的码。
+
+**最容易被漏掉的一条守卫**：开着验证时，`PUT /api/auth/me` 仍能直接改邮箱——前端不渲染输入框不等于服务端安全，一次 PUT 就跳过整套验证码。`applyIdentityChange` 里加 403，并配了单测。
+
+**换绑发到新地址、通知发到旧地址**。收到码本身就是所有权证明；成功后给旧地址发一封 `MailEmailChanged`——万一不是本人操作，旧邮箱是唯一还能发现的地方。
+
+**开关是 root 专属**，和 `allow_register`、`smtp_*` 同层：开着意味着任何匿名访客都能让这台 1C 机器往外发信，是滥用面不是展示偏好。普通 admin 保存设置时这三个字段一律继承库值（端到端已验证"普通 admin 关不掉开关"）。
+
+**前端**：注册页多一行验证码（60 秒倒计时 + 测试标签）、登录页加「忘记密码」、新增 `/forgot-password`、设置页邮箱改为「当前地址 + 更换」面板、后台新增「邮箱验证」区块（非 root 只读）。
+
+**测试**：Go +9（默认关闭 403 / 无 SMTP 503 / 冷却 429 / 5 次作废后正确码也失效 / 过期 / 注册必须有码 / 重置后 token_version 与新老密码 / 换绑地址不匹配 / PUT 绕过被拒）。端到端 **28/28**：隔离实例 `:18083` + 数据库副本 + **本地假 SMTP**（真收信、真取码、真注册），覆盖"码死后正确码也无效""关掉开关后注册不再要码"。假 SMTP 留在 `scripts/fakesmtp.py` 可复用。
+
+**门禁收敛**（本轮 R2/R3 一度全红）：`SiteConfig` 拆成独立文件（`models/site_config.go`）、策略合并函数拆到 `site_config_policy.go`、`EmailCodePolicy` 挪进 `dto.go`、`IssueEmailCode` 的冷却与 SMTP 检查抽成 `ensureCodeCooldown` / `requireSMTP`。最终 arch/contract/doc 三门禁回到基线。
+
+---
+
+### 第 80 轮 — 全量文档校准（2026-10-24）
+
+**起因**：用户要求"读母文档，一步一步补文档"。`doc_check.py` 一直是 PASS，但它只校验**结构**（份数/横幅/索引），不校验**内容是否还成立**。
+
+**做了什么**：14 份文档逐份核对抬头日期与正文数字，全部改成第 79 轮实测值：
+
+| 文档 | 主要失真 | 修法 |
+|---|---|---|
+| `MASTER.md` | §1「61 轮」；§9.4 断点停在第 75 轮 | 重写 §1 与 §9.4（含"三轮未 commit"的真实状态） |
+| `PROGRESS.md` | 抬头第 55 轮；依赖/产物数字停在第 39 轮 | 抬头 79；技术栈表与 §七 按实测重写；总览补 20 行 |
+| `HANDOVER.md` | v2.1 / 第 38 轮；§5 停在第 25 轮；§7 缺 77–79 | v3.0；§5 分区重写；§6 目录树重画；§7 加 9 条（7.29–7.37） |
+| `AGENTS.md` | 依赖 6；陷阱 10 条 | 依赖 7（记 x/image 豁免）；陷阱 15 条；验证命令补 vitest/contract |
+| `PROJECT_OVERVIEW` / `ARCHITECTURE` | 76 路由 / 24 页 / 7 红线；private 可见性写反；限流默认值 5/10（实为 20/50） | 83 / 26 / 10 红线；可见性按第 73 轮；中间件顺序与默认值按代码 |
+| `TODO` / `README` / 两份矩阵 / `deploy/LOCAL` | 缺媒体与邮箱两族；spec/decision 表停在 35/0004；矩阵汇总 16/16/12 与逐格不符；Go/Node 路径失效 | 新增 M-1~M-10 与 E-1~E-9；序号补齐；矩阵改脚本按行重算（46 条 = 1/33/12）；路径改 `go-sdk` |
+
+**新增两份决策**：`docs/decisions/0005-media-ownership-and-thumbnails.md`、`0006-email-verification-opt-in.md`（含被否决方案与已知不足）。
+
+**结论**：`doc_check` PASS（75 份自洽）、`arch_check` 无回升、`contract_check` 83/76 匹配；Go 212 用例、vitest 43 用例、tsc、vite build 全绿。**没有改任何代码。**
+
+---
+
+### 第 81 轮 — 外部渗透报告 R1–R6 全量修复（2026-10-25）
+
+**起因**：用户提供 `pentest/` 目录 —— 一位 AI 安全测试工程师在授权下对本站做了 6 轮多方位渗透（R1–R6），累计报出约 50 条问题。本轮逐条核实并修复。
+
+**方法**：不直接照单改代码，先**逐条对代码核实**（第 72 轮教训：报告有假阳性）。核实结论：去重后约 38 个独立问题，**全部为真**（无假阳性），但严重度分级有偏差（几条被报告标为"中"的实为高危）。
+
+**已修（按危害排序）**
+
+| # | 编号 | 问题 | 修法 |
+|---|---|---|---|
+| 1 | R2-01/R3-01/R3-02/R5-03 | **存储型 XSS**：`highlight()` 空查询分支原样返回未转义文本 → 首页标题与摘要执行任意 JS（CVSS 8.2） | `highlight()` 全分支先 `escapeHTML`；`stripHTML` 的实体解码链随之失效 |
+| 2 | R5-02/R3-09 | **消毒器绕过**：`//evil.example` 协议相对链接通过（`/` 被当同源）、`DATA:` 大小写绕过、`srcset`/`poster` 完全不检查 | 重写 URL 政策为「解析 scheme」而非前缀匹配（`isSafeHref`/`isSafeSrc`/`isSafeSrcset`）；`renderMD` 对 URL 属性逐项校验并剥离 `target` |
+| 3 | R1-02/R3-05/R5-01 | **登录体无上限**：两条 25MB 请求 → RSS +284MB、库 +53MB，且原样入库 | 登录体 `MaxBytesReader(8KB)` → 413；去掉二次拷贝；identifier 入库前截断 ≤254 |
+| 4 | R4-01 | **恢复/导入复活已撤销 token**：先写回快照值再 +1，恰好等于"快照后、logout-all 前"签发的 token 版本 | 恢复前读 live 最大 version，恢复后全员抬到 `liveMax + 1000 + 随机`（同一快照多次恢复结果不同） |
+| 5 | R3-03/R4-06 | **验证码每 IP 预算完全失效**：匿名路由无 IP 注入 → `allowCodeFromIP("")` 直接放行（实测 12 个地址发 12 封信、0 次 429） | `authPublic` 路由统一注入 clientIP；`allowCodeFromIP("")` 改 fail-closed |
+| 6 | R4-02/R2-05 | **验证码双花 + 次数并发放大**：SELECT→比较→UPDATE 三步，正确码可被并发用两次，5 次上限放大到 19 | 改为原子条件 UPDATE + RowsAffected 检查（尝试额度、消费各一条） |
+| 7 | R3-04 | **XFF 取第一跳**：nginx `$proxy_add_x_forwarded_for` 追加真实 IP，攻击者可控制被读的那一段 → 限流完全绕过（实测 520 次登录 4.4s 全放行） | 改从右往左剥离可信代理，取最右非可信地址 |
+| 8 | R6-01 | **禁用不撤销会话**：只写 `disabled`，重新启用后旧 JWT 完整复活 | 禁用时 bump `token_version`（与改密/reset/logout-all 语义统一） |
+| 9 | R3-07/R6-07/R4-10 | **字段无长度上限**：一篇 1MB 标题 + 5MB 正文 → 创建响应 6.29MB、管理列表 9.30MB、修订 18.88MB、审计单页 4.20MB、库 +27MB | 集中式 `limits.go`：标题 ≤500、正文 ≤256KB、审计 detail ≤512（rune 边界安全）、分类/标签名 ≤64；请求体 ≤1MB |
+| 10 | R4-09/R6-04 | **上传只验文件头**：PNG 头 + 任意尾字节被接受并以 `image/png` 分发（可作任意二进制托管） | 完整 `image.Decode` 后**从解码位图重新编码**落盘，IEND 之后字节全部丢弃 |
+| 11 | R4-08/R6-03 | **上传配额 TOCTOU**：SELECT SUM → 比较 → INSERT 非原子，8 并发超额 1.4MB | 检查与插入同事务；DSN 加 `_txlock=immediate` 使写事务在 BEGIN 即取锁 |
+| 12 | R6-05/R2-03 | **配额只计字节不计像素**：24MP 纯色 PNG 仅 23KB，4 张（93.8KB）让 RSS +97MB | 新增压缩比守卫：≥4MP 且 <1 字节/200 像素 直接拒收 |
+| 13 | R2-04 | **backfill 把缩略图当用户上传**：`_t.jpg` 被判为 legacy 上传，63 条无主行占满画廊 | 新增 `isDerivedImageName`，backfill 跳过派生文件 |
+| 14 | R1-01 | **`public_read=false` 被 4 端点绕过**：`/public`、`/feed`、`/sitemap.xml`、`/api/authors/{u}` 匿名仍读全文 | 改注册为 `authOptional`（`AllowAnonymous` 只在 `WithOptionalAuth` 里，是路由表问题不是 handler 问题） |
+| 15 | R1-04/R2-07 | 公开载荷泄露审核人 `reviewed_by` | 新增 `SanitizeReview()`，6 个公开出站口接上；**保留** `review_note`（作者要知道原因） |
+| 16 | R6-02 | **slug 唯一性竞态**：COUNT 探测非锁，20 并发同标题产生重复永久链接（4 篇共用一个） | 迁移 0014 建 partial UNIQUE 索引（先消歧历史重复）+ 插入冲突重试后缀 + `GetPostBySlug` 加 ORDER |
+| 17 | R6-06 | **分页整数溢出**：`(page-1)*size` 溢出为负 → SQLite 把负 OFFSET 当 0 → 超大页码返回首页 | `maxPageNumber=100000` 前置校验 |
+| 18 | R6-08 | **站点配置全量覆盖**：只发两个字段就静默关掉 `public_read`（全站对外只读关闭）与 `auto_backup` | 三项关键开关「缺省即继承」，与 `allow_*` 同模式 |
+| 19 | R6-09 | `friend_links` 类型混淆静默清空 + name 无长度上限 | 非字符串类型 → 400；name ≤50 |
+| 20 | R5-04 | **SMTP 口令复用管理员口令且 root 明文回显** | 读接口对所有角色（含 root）永不回显；空值语义改「保持不变」 |
+| 21 | R1-05 | `email_verify` 可在无 SMTP 时开启，随后功能整体 503 | 保存时校验「开启需 smtp_host」 |
+| 22 | R3-06 | 登录失败计数 map 只增不减，key 可控 | 记录最后失败时间，随锁窗口一起回收 |
+
+**测试**：新增 40 个回归用例（Go 212→252 量级，前端 vitest 43→54）。其中 3 个并发用例（验证码双花、attempts 上限、上传配额、slug 唯一）必须用**文件库** —— `:memory:` 下连接池的每个连接是独立数据库，并发 racer 看的是不同的库，测试会假过。为此新增 `newFileTestService`。
+
+**顺带修的两个真 bug（测试抓出来的）**
+- `clampDetail` 第一版按字节截断，把多字节字符切成两半 → 审计页出现替换字符。改 rune 感知。
+- 迁移 0014 在**全新库**上先于 AutoMigrate 运行（表还不存在）被跳过，之后表建好但唯一索引永远不建。`InitDB` 在 AutoMigrate 后补建（幂等）。
+
+**未修 / 待用户拍板**
+- R5-05（admin 可改写并发布他人文章正文 + 读全部修订）：**产品语义决策**，涉及后台功能收缩，不擅自改。建议二选一：① 编辑他人正文限 root；② 保留但强制审计 before/after。
+- R4-03（恢复只回滚 5 张表，审计/上传/配置不回滚）：语义问题，需产品定义"恢复"的边界。
+- R4-04（账号锁定可武器化）：标准防护，锁定本身是必要的；只在报告建议的"root/admin 渐进延迟"上留待决策。
+- R4-11（审核/删除/回收站并发 500 与永久删除竞态）：需要逐条改条件 UPDATE，工作量大，建议单开一轮。
+- R2-02（SQLite 锁死）：R3 已回归确认 WAL+busy_timeout 生效，不可复现。
+- R1-06（vite dev server 暴露源码）：生产用 `vite build` 静态产物，dev-only，不修。
+- R1-07（RSS link 硬编码 localhost）：需 `site_url` 配置，属部署配置项。
+
+**验证**：Go 8 包全 PASS、前端 tsc + vitest 54 + build 全绿、`arch_check` 无回升、`contract_check` 0 不匹配、`doc_check` PASS。
+
+---
+
+### 第 82 轮 — 渗透遗留 4 项决策与实施（2026-10-25）
+
+**起因**：第 81 轮把 4 项标为"待用户拍板"。用户授权自行决策并实施，另加一轮自主检查。
+
+**决策与实施**
+
+| # | 编号 | 决策 | 实施 |
+|---|---|---|---|
+| 1 | R5-05 | **收紧**：审核者不是作者 | admin 改他人 `title`/`body`/`cover` → 403（提示用审核意见）；保留全部审核动作（下架/分类/标签/approve/reject）。修订权限拆成「读历史」（作者/admin/root）与「写内容」（作者/root）。前端同步 `canEditPost`/`canModeratePost` + `EditPage` 守卫 + i18n。跨用户操作审计记 `by=<操作者>; author_id=<作者>` |
+| 2 | R4-11 | **修**：所有状态转换条件化 | 新增 `transition.go`：状态前置条件进 `WHERE`，`RowsAffected==0` → 409。覆盖 `ReviewPost`/`BanPost`/`SendBackPost`/`DeleteBannedPermanently`/`DeletePost`/`RestoreTrash`。另修 `UpdatePost` 整行 `Save` 静默撤销 approve 的问题（改为只写作者字段 + 状态走独立条件转换） |
+| 3 | R4-03 | **保留不回滚，修副产物** | 审计/登录日志不被恢复覆盖是**正确设计**（否则恢复即可抹掉痕迹）。真问题是 `upload_refs`/`ref_count` 失真，使图库"删除破坏 N 篇"的提示变假话。新增 `rebuildUploadRefsTx` 在 Import/Restore 事务末尾批量重建 |
+| 4 | R4-04 | **分级锁定 + 放宽 IP 桶** | 锁定改为 60s → 5min → 15min 升级制，成功登录清零回 60s 档。拒绝"完全豁免管理员"方案，因为那会把锁定期内的爆破速率从 0 放大到 0.5 rps（450 倍）。IP 桶 burst 3→10 缓解同 NAT 连坐 |
+
+**自主检查发现的 3 个真问题（都已修）**
+1. **`UpdatePost` 重构漏了 `slug` 列**：改用显式 `Updates(map)` 时忘了 `slug`，`in.Slug` 变成静默 no-op。`TestUpdatePostCanChangeSlug` 抓到。
+2. **`UpdatePost` 整行 `Save` 会覆盖 `view_count`**：读到的是旧值，读者在编辑期间新增的浏览量被回滚。改成显式列清单后**顺带修好**，加了 `TestEditDoesNotRollBackViewCount` 守住。
+3. **`snapshotBeforeImport` 文件名只到秒**：同一秒内两次恢复/导入 → `VACUUM INTO` 报 "output file already exists"。改到微秒（保持字典序单调，`pruneSnapshots` 的假设不变）。
+
+**另一个被测试挡住的坑**：`rebuildUploadRefsTx` 第一版逐篇调用 `syncPostUploadRefsTx`（每篇 3 条 SQL），5000 篇 = 15000 次往返且在写事务内，会长时间占住 SQLite 写锁。改成「一次读 name→id 映射 + 批量插入 + 一条 SQL 重算」。
+
+**测试**：新增 15 个用例（Go 246 → 261）。并发类全部用 `newFileTestService`（`:memory:` 下连接池每连接独立库，racer 会假过）。
+**验证**：Go 8 包全 PASS、前端 tsc + vitest 54 + build 绿、三个门禁绿。
+
+---
+
+### 第 83 轮 — 防守方演练：真机验证 + 第二轮自审（2026-10-25）
+
+**起因**：用户要再跑一次攻防演练，让我负责防守。防守方该做的不是等报告，而是在对方之前找到自己的洞。
+
+**第一阶段：真机 HTTP 验证（不靠单测）**
+启动完全隔离的实例（独立 DB / UploadDir / BackupDir，不碰 `data/`），用真实请求重打 R1–R6 的用例。首轮脚本化后 **39 项断言全部通过**（过程中修掉了 4 处脚本自身的错误：改密字段是 `current_password`、上传端点是 `/api/upload` 且成功返回 200、审核字段是 `decision` 不是 `action`、root 首登强制改密）。
+
+实测确认通过的关键项：25MB 登录体 → 413；200KB identifier → 413（体上限生效）；7KB identifier → 401（不 500）；SMTP 口令对 root 也回显为空；配置缺省继承（`public_read`/`auto_backup`/`backup_keep` 三项都不被部分保存抹掉）；`friend_links` 传数组 → 400；`email_verify` 无 SMTP → 400；字段超限 → 400；分页溢出 → 400；**PNG+IEND 后挂 payload 上传成功，但服务端存的文件里 payload 已被剥掉**；24MP 纯色图 → 400；**伪造 XFF 前缀换不到新桶**（`401,401,429,...`）；**public_read=false 时 5 个匿名端点全部挡住**。
+
+**固化资产**：验证过程写成 `scripts/defence_smoke.py`（39 项断言，每项标注对应的报告编号），参数化 `BASE_URL`/`ROOT_PASSWORD`。最终实跑：**PASS=39 FAIL=0**。下次改完代码可直接重跑，不必重新推导攻击步骤。
+
+**第二阶段：第二轮自审 —— 按"字段无上限"这一类系统性复扫，抓到 6 个真漏洞**
+
+| # | 漏洞 | 为什么之前漏了 | 危害 |
+|---|---|---|---|
+| 1 | **`findOrCreateTagsTx` 无长度上限** | R4-10 报告写的是"导入器无上限"，我只修了导入器 | **任意普通作者** `POST /api/posts` 带 1MB 标签 → 匿名 `/api/tags` 全站分发。一个请求、零权限 |
+| 2 | **分类 CRUD 无上限** | 同上，只有 import 和 tags 有校验 | `CreateCategory`/`UpdateCategory` 可存 1MB 名字，匿名 `/api/categories` 分发 |
+| 3 | **`Cover` 完全无校验** | 第一轮只看了 title/body | 可存 `javascript:` / `data:` / 1MB 串，前端 `<img src>`、RSS、sitemap 都消费它 |
+| 4 | **`DisplayName`/`Bio` 无上限** | 没人把它当"内容字段" | 作者署名出现在**每篇**文章的公开列表里，一个用户的巨型 bio 全站放大 |
+| 5 | **`review_note` 无上限** | 审核意见看起来不像用户内容 | 管理员一个 reject 就能给作者返回 1MB 响应 |
+| 6 | **`clientip.Client()` 不做 IP 归一** | XFF 修完了就以为 IP 层收口了 | 双栈监听下同一客户端有 `127.0.0.1` / `::ffff:127.0.0.1` / `::1` / IPv6 大小写压缩等多种写法，**每种一个限流桶**——这就是下一轮必打的绕过面 |
+
+**顺带修的两个语义问题**
+- **事务里的 `ServiceError` 被吞成 500**：`CreatePost`/`UpdatePost` 把事务内任何错误都映射成 500，于是"标签太多（400）"对客户端表现为"服务器坏了"。改为透传 `ServiceError`。
+- **`UpdateTag` 用字节判长、其他地方用 rune**：30 个中文的标签在 `UpdateTag` 被拒、在 `CreatePost` 通过，同一名字行为不一致。
+
+**修完再自查自己上一轮的改动，发现 1 个越权**
+- **admin 可改他人 `slug`**：R5-05 的守卫只列了 title/body/cover，**漏了 slug**。永久链接被审核者改掉 = 静默破坏所有既有引用，且能把作者的 URL 重新指向别的内容。已补入受保护集合。
+
+**新增校验（`limits.go` 集中）**：`ValidateCoverURL`（只接受 `/uploads/` 或 http(s)，拒 `//host`）、`ValidateProfileText`、`ValidateReviewNote`、`MaxTagsPerPost=20`、`MaxReviewNoteLen=2000`、`MaxDisplayNameLen=64`、`MaxBioLen=2000`、`MaxCoverURLLen=500`。
+
+**测试**：新增 8 个用例（262 → 270），覆盖 tags 全路径上限、分类 CRUD 上限、审核意见上限、cover URL 政策、profile 文本上限、admin 改 slug 越权、IP 归一化与跨 socket 家族一致性。
+
+**验证**：Go 8 包全 PASS、`arch_check` 无回升、`contract_check` 0、`doc_check` PASS。
+
+**给下一轮渗透的提示**（我这轮扫过但认为不是洞，供对方验证）：JWT 已用 `WithValidMethods(["HS256"])` 锁死算法、无 `kid`；avatar 外链只存 URL 后端不抓取（无 SSRF）；动画 GIF 经重编码后只剩首帧。
+
+---
+
+### 第 84 轮 — 上线级安全工程：从"修报告"到"按攻击面建设"（2026-10-25）
+
+**起因**：用户指出方向错了 —— "上线不是应付攻击，是要让项目稳定跑下去，开源或商业化后用户能安全使用"。前 8 轮我做的是**被动响应式**安全：报告列什么我修什么。报告是抽样，同一个类别换个入口就漏（§本轮发现）。
+
+**本轮改变方法**：按攻击面系统盘点，用机器验证能验证的部分。
+
+#### A. 抓到的 6 个上线级问题（都不是渗透报告提的）
+
+| # | 问题 | 危害 |
+|---|---|---|
+| 1 | **21 个 `json.Decode` 点里 18 个没有体上限** | R3-05 只修了 login、R3-07 只修了 posts。其余全部可以收 1GB JSON → 内存暴涨。修法：`route.maxBody` 声明在路由表，注册时统一包，**新增路由漏了就是声明错误** |
+| 2 | **`JWT_SECRET` 有硬编码默认值** | `APP_ENV` 默认 dev → `ValidateSecurity` 只警告 → 忘设一个环境变量就用源码里公开的密钥启动。**读过仓库的人可以伪造任意 root token**，而症状只是启动日志里一行 WARN |
+| 3 | **`/health` 不碰数据库** | SQLite 损坏 / 磁盘满时仍返回 `{"status":"ok"}`。所有监控都认为健康，实际每个请求都失败 |
+| 4 | **nginx 没有 `client_max_body_size`** | nginx 默认 1MB，应用图片上限 5MB → **开发能传、上线 413**，而且报错页是 nginx 的，不是应用的 |
+| 5 | **systemd 只有 `User=`，无沙箱** | 应用被 RCE 后可以 exec shell、读 `/home`、改系统文件 |
+| 6 | **Dockerfile 没有 HEALTHCHECK** | 容器永远显示 healthy |
+
+#### B. 逐项修法与决策
+
+1. **统一体上限**（`internal/router/bodylimit.go` + `route.maxBody`）：默认 1 MiB，`/api/upload` 16 MiB。`Content-Length` 超限**读前即 413**（一个字节都不读）；chunked 由 `MaxBytesReader` 兜底（400，请求仍被拒）。实测：1.5MB → 413，chunked → 400，正常请求 200。
+2. **`JWT_SECRET` 无默认**（`config.EnsureJWTSecret`）：dev 生成随机 48 字节并缓存到 `data/.dev-jwt-secret`（0600）避免每次重启登出；**prod 直接拒绝启动**（临时密钥 = 每次重启全员登出 =  outage）。同时发现并补了 `.gitignore` —— 不加会把 dev 密钥提交进仓库。
+3. **liveness / readiness 分离**：`/health` 不碰 DB（避免"DB 坏了 → 编排重启 → 重启风暴"），`/health/ready` 探 DB（500ms 级 `SELECT 1`，失败 503 且不泄露原因）。加二进制 `-healthcheck`（distroless 镜像没有 curl/shell，探针只能用自己）。
+4. **nginx**：`client_max_body_size 32m`（后端 clamp 到 20MB，留足 multipart 余量）+ `client_body_timeout` + `server_tokens off`。
+5. **systemd 沙箱**：`NoNewPrivileges` / `ProtectSystem=strict` / `ProtectHome` / `PrivateTmp` / `ProtectKernel*` / `SystemCallFilter` / `RestrictAddressFamilies` / `ReadWritePaths` 白名单 / `CapabilityBoundingSet` 收窄。
+6. **Docker**：`HEALTHCHECK` 调 `-healthcheck`（readiness，不是 liveness）。
+
+#### C. 新增两个长期资产
+
+- **`scripts/security_check.py`**（S1–S8 安全反模式棘轮）：路由 auth 等级不自洽、handler 绕过体上限、状态转换无条件 UPDATE、字段无上限、SQL 字符串拼接、`template.HTML`、日志里的密钥。**从 0 容错起步**（基线全 0）。
+  写它的过程中它自己误报了 5 项（响应 DTO 当输入、测试文件、浏览量端点、内容更新当状态转换），逐一修正后才是可信的 —— 一个满屏假阳性的门禁等于没有门禁。
+- **`docs/SECURITY_BASELINE.md`**：按攻击面（认证/授权/输入/输出/并发/敏感数据/部署）组织，每项写"防住什么、靠什么、怎么验、还剩什么"，§6 列上线前**阻塞项**。这份文档回答"能不能上线"，而不是"报告修完了吗"。
+
+#### D. 顺手修/发现
+- `arch_check` 抓到我新增的 `router.go` 超 350 行 → 拆出 `bodylimit.go`。
+- `doc_check` 抓到新文档未入索引 → 补 MASTER §3 并重算份数（85→86，含 §3.4 的 45→46）。
+- 验证 `-healthcheck` 时先写了一个**不存在**的子命令，实跑发现后补实现（不能靠"看起来对"）。
+
+#### E. 验证
+`go build`/`vet`、8 包测试全 PASS（**279 用例 / 59 文件**）、`arch`/`security`/`contract`/`doc` **四个门禁全绿**、前端 tsc + 54 vitest + build 绿。
+真机实测：两个探针 200、`-healthcheck` exit 0（无服务时 exit 1）、1.5MB → 413、chunked → 400、正常请求 200、`APP_ENV=production` 缺 `CORS_ORIGINS` **拒绝启动**。
+
+#### F. 最后一步验证抓到的第 7 个问题：测试自己把机器打爆了
+
+收尾跑全量时 `services` 包整个崩掉（`cygheap read copy failed`），第一反应是"Windows 的 fork 问题，重跑就好"。**重跑还是崩**，才去看代码 —— 是本轮之前几轮我自己写的上传测试：
+
+| 测试 | 占用的内存 | 为什么 |
+|---|---|---|
+| `TestUploadRejectsImplausiblyCompressibleImage` | 6000×4000 **RGBA** = **96 MB** | 只为造一张"24 MP 但只有几十 KB"的图 |
+| `TestUploadAcceptsNormalImagesRegardlessOfCompression` | 4000×3000 **NRGBA** = **48 MB** | 只为跑一次 `isImplausiblyCompressible` |
+
+单跑这两个测试时机器还有余量，全量跑（`services` 包有几十个并发测试）就 OOM。**这是我很典型的一类错误：把"能验证结论"当成"必须走完整路径"，于是在测试里复制生产环境的资源规模。** 而这两条断言的本质是"给定字节数和像素数，谓词返回什么" —— 纯函数，两个整数。
+
+修法：
+- 边界判定直接用纯函数（`isImplausiblyCompressible(23400, 6000*4000)`），不再为了测一个布尔值去编码 24 MP。
+- 真正要走上传路径的那条，改用 **`image.Gray`（1 字节/像素）** 造 4.2 MP 的图 —— 4 MB 而不是 96 MB，覆盖的仍是"解码后 → 压缩比守卫 → 拒绝"整条链。
+- 加注释写清为什么不用 RGBA，否则下一个人会觉得"用 RGBA 更真实"再改回去。
+
+修完 `services` 包 exit=0，全量 279 用例通过。
+
+**这类问题值得单独记一笔**：测试的资源占用也是上线级的。CI 机器比开发机小、容器内存有上限、`go test ./...` 会并行跑包 —— 一个 96 MB 的测试夹具在开发机上只是慢，在 1.5 GB 的 VPS 上就是构建失败。
+
+#### G. 备份恢复演练：抓到第 8 个问题，而且是数据丢失级的
+
+§6 里唯一我能在这台机器上真跑的阻塞项就是"备份能不能恢复"。跑了，而且**第一次跑就抓到东西**。
+
+**先说结论：本轮为堵内存耗尽而加的"全路由统一体上限"，把备份恢复功能弄坏了。**
+
+链路：
+1. R3-05 只修了 login、R3-07 只修了 posts，其余 18 个 `json.Decode` 全裸奔 → 本轮给每条路由声明 `route.maxBody`，默认 **1 MiB**。
+2. `/api/backup/import` 的 handler 自己写了 `MaxBytesReader(..., 20*1024*1024)`，所以看起来"有上限，没问题"。
+3. 但**路由层先跑**。两个上限谁小谁赢 → 实际生效 1 MiB，handler 的 20 MiB 变成死代码。
+4. 后果：**导出的备份无法恢复**。1.25 MiB 的备份（19 篇文章，完全正常的量级）导入时被 413。
+
+这是比"某个字段没上限"更糟的一类：它有备份、有 dry-run、有三道闸、有单测全过，**唯独没有一份能装回去**。而单测测不出它 —— `ImportBackup` 作为函数是对的，坏的是它前面那层。
+
+**修法**（不只是把数字改大）：
+- 三条大负载路由显式声明真实上限：`/api/backup/import` 20 MiB、`/api/admin/import/markdown` 24 MiB、`/api/upload` 24 MiB（后端 clamp 到 20 MB + multipart 余量）。
+- 加门禁 **S9**：解析路由表与 handler 的 `MaxBytesReader` 数值，**handler 上限 > 路由上限即失败**（反方向是合法的：路由挡缓冲、handler 施策略）。
+- 改 `TestEveryRouteHasABodyCeiling`：超过默认值的路由必须在**显式白名单**里并匹配精确值，白名单还要防腐烂（路径不存在也报错）。
+
+**验证 S9 真能抓**（不能只看它"现在绿"）：临时撤掉 `/api/backup/import` 的 `maxBody`，门禁立刻报
+`ImportBackup caps its body at 20971520 but route /api/backup/import caps at 1048576`；还原后回到 0。
+
+#### H. 备份恢复演练本身（21 项断言）
+
+脚本固化为 `scripts/backup_restore_drill.py`，三阶段：`populate` / `restore` / `ceiling`。
+
+| 阶段 | 关键断言 |
+|---|---|
+| `populate`（9 项） | 首登强制改密 → 上传（每次换灰度避免命中上传去重）→ 建文章 → 8 篇批量正文把备份推到 1.25 MiB → 图库 `ref_count=1` → **导出后必须下载**（运营动线是导出→下载→上传）→ 备份 > 1 MiB |
+| `restore`（12 项） | 坏 `schema_version` → 400 提前拒；缺 confirm 短语 → 拒；dry-run 200；正式导入 200；**源站口令可用 / 两个恢复前口令失效**；**恢复前的 token 全部 401**；文章标题+正文+图片引用完整；19 篇全列；**`ref_count` 按恢复后正文重建**；`/health/ready` 200 |
+| `ceiling`（2 项） | **对照实验**：同一份 1.25 MiB 请求体，默认 1 MiB 的路由拒（413）、备份导入路由接受（200） |
+
+对照实验是这次最有价值的部分。没有它，"修复后能恢复"只是个观察；有了它，才能说清"差异只来自路由声明"。
+
+**演练踩到的脚本坑**（都不是产品缺陷，但下次省时间）：
+- 导出接口返回的是**元数据**（文件名/大小），正文在 `GET /api/backup/download?file=` —— 不是导出即得 JSON。
+- 正文里的图片引用必须写完整 `/uploads/<name>.png`，只写文件名台账不认（正常编辑器的插入行为是对的）。
+- 新实例 `must_change_password=true` 时**所有端点都 403**，演练必须先过这道闸。
+- 1.25 MiB 上传时客户端会看到连接被重置而不是 413 —— 服务端按 `Content-Length` 提前拒绝并关连接。判"被拒"要同时接受 413 和连接中断。
+
+#### I. 上线前仍阻塞（写进 SECURITY_BASELINE §6）
+
+演练前是 4 项，演练后 **3 项**（备份恢复已从"没做过"变成"做过一次、有脚本可重跑"）：
+1. **依赖漏洞扫描未完成**：`govulncheck` 需 Go 1.26 且校验库联网，本机装不上。前端 `npm audit` = 0 vulnerabilities。
+2. **真实规格机器上的资源类复测**（并发上传、验证码预算、解码峰值内存）。本机 16 GB / 8 线程，不是 1.5 GB / 1 核。
+3. **日志告警**：有结构化日志和 `/health/ready`，没有"5xx 突增 / 爆破 / 磁盘将满"的告警。
+
+备份恢复演练仍需**定期重跑**（建议每季度 + 每次大版本前），脚本已固化，一条命令的事。
+
+---
+
+### 第 85 轮 — 拿到对方推理记录，抢在报告前修复 R7 的 P0/P1（2026-10-25）
+
+**起因**：用户贴来一份文件——是**对方安全 AI 的推理过程**，里面有完整的 R7 结论和 R8 探针计划。作为防守方这是最高价值情报：不等它提交报告，直接照它的结论先修。
+
+**R7 报的 P0（我逐条核实 → 修复）**
+
+| # | 对方结论 | 核实结果 | 修法 |
+|---|---|---|---|
+| R7-03 | 登录锁定按"键入字符串"记账，锁 `admin` 后换 `admin@example.com` 绕过；匿名者可锁死 admin | **属实**（`username=? OR email=?`，键=键入串） | 锁定/失败计数/账号桶全部改按**账号**记账：新增 `Service.ResolveLoginIdentity`，`LoginLimiter.SetIdentityResolver`，中间件用 `u:<id>` / `i:<typed>` 键。root 锁定**永不升级**（停 60s 挡脚本，但不让匿名者锁 15 分钟） |
+| R7-04 | `restore-snapshot` 无 confirm/dry-run/规模校验，184KB 空快照一次请求清空全站 | **属实** | 加三道闸：`RestoreConfirmPhrase`（与 Import 不同短语）+ `?dry_run=1` 预览 + 空用户表永远拒、空文章覆盖有内容站点需 `allow_data_loss=true`。dry-run 在数据丢失闸**之前**（预览的意义就是让人看到"会删光"） |
+| R7-07 | 上传是内存放大器：24MP 稀疏图 +179MB RSS，像素不进配额 | **属实** | 加硬像素上限 24MP（与缩略图 worker 对齐）+ 解码信号量（并发 2），decode 前用 DecodeConfig 读头短路 |
+| R4-05 | bcrypt 入口无并发闸，注册/登录可单核饱和 | **属实** | `models` 层加 bcrypt 信号量（并发 2），HashPassword/VerifyPassword 都走 |
+
+**R7 报的 P1（修掉的）**
+
+| # | 修法 |
+|---|---|
+| 分页溢出 | `/archive/paged` 和 `/api/uploads` 之前只有 `/api/posts` 钳了 page → 统一 `ClampPageNumber`，三处 Offset 全收敛 |
+| `/uploads` 空字节/超长文件名 500 | `ResolveUploadFile` 拒绝 NUL/分隔符/盘符/控制字节/超长名 → 404，不再落进 `http.ServeFile` 变成 500 |
+| admin 读他人 revisions | 这是**可见性漏洞**不是角色漏洞：admin 能读 private/draft 文章的修订史（等于读到正文）。`assertCanReadHistory` 先 `canSeePost`，不可见→404。顺带修好"不相干用户读 pending 历史"也从 403 变 404（不泄露存在性） |
+
+**没有修的（有理由）**
+- **CORS `*`**：`APP_ENV=production` 且 `CORS_ORIGINS` 未设/为 `*` 时**已经拒绝启动**（`ValidateSecurity`）。对方测的是 dev 实例。
+- **限流 LRU 淘汰挤掉未过期桶**：需要 512 个不同身份才能把受害者的桶挤出去，本部署（单实例、匿名按 IP、登录按账号）凑不齐；记为接受风险。
+- **admin 读他人 published 修订史**：保留——审核者看已发布文章的历史是正当的，且现在必须能 `canSeePost` 才看得到。
+
+**测试**：新增 10 个用例（279→289）。其中锁定键的 `TestLockoutFollowsTheAccountNotTheSpelling` 是端到端驱动中间件 + 假 resolver，直接证明"锁 username 后换 email 拿到 200"这条攻击链已断；快照闸门的 4 个用例覆盖 confirm/dry-run/空用户/删光需授权四路。
+**验证**：`go build`/`vet` 绿，7 包全 PASS（`models` 测试二进制被本机安全软件拦截删除，属环境问题——`services` 包几百次 `makeUser` 走 bcrypt 信号量全过，已间接证明改动正确）、四个门禁绿、前端 tsc + 54 + build 绿。
+
+---
+
+### 第 86 轮 — 备份完整性：导出→导入不再丢站点（2026-10-25）
+
+**起因**：R8 盲区里对方点名"备份 JSON 完整性：导出不含 `revisions/site_configs/upload_files`，导出→导入还原不出站点，本质是内容迁移不是备份"。
+
+**核实属实，且比它说的更糟**：导出只含 `users/categories/tags/posts/post_tags`，不含站点设置、修订史、图库元数据。导入时 `syncPostUploadRefsTx` 只查不建，恢复后图库是空的。修：
+
+| 缺口 | 修法 |
+|---|---|
+| `site_configs` 丢失（站名/SMTP/配额/`public_read` 全回默认） | 加进导出 + 导入。**关键坑**：`SiteConfig.PublicRead` 有 `gorm:"default:true"`，struct `Create` 会把零值 `false` 吞掉、注入 `true`——一个被站长锁成私密的站，恢复后变公开。用 `map[string]any` 显式列全部 31 列才原样写入 |
+| `revisions` 丢失（修订史） | 加进导出 + 导入 |
+| `upload_files` 丢失（图库）+ `LiveKey` 是 `json:"-"` 但受 UNIQUE 约束 | 加进导出 + 导入；`LiveKey` 单独导 `upload_livekeys` map（否则多行空值撞唯一索引） |
+
+**图片文件本体的诚实处理**：JSON 备份不含磁盘上的图片文件（二进制，装进 JSON 会爆炸）。导出响应的 `warning` 明确写"图片文件本体不在内，需单独 rsync/copy `data/uploads/`"，文档同步。
+
+**导入顺序**：清空（post_tags→posts→revisions→tags→categories→upload_files→site_configs→users）→ 插入（users→categories→tags→posts→post_tags→revisions→upload_files→site_configs）→ 提升 token 版本 → `rebuildUploadRefsTx` 从正文重建引用台账 + 重算 ref_count。
+
+**拆文件**：`backup.go` 超 350 行 → `ImportBackup`/`validateImportPayload`/确认短语拆到 `backup_import.go`（导入是破坏方向，值得独立成文）。
+
+**测试**：新增 `TestBackupRoundTripsConfigRevisionsAndLibrary`（完整导出→破坏三表→导入→验证三个表 + `public_read=false` 精确还原 + live_key 回填）。更新 `TestRestoreRebuildsTheImageLedger`（导入现在是整库替换，测试的 dump 需带上 upload_files）。
+**验证**：`go build`/`vet`、7 包全 PASS（290 用例 / 61 文件，models 仍被本机安全软件拦）、四门禁绿、前端 tsc + 54 + build 绿。
+
+---
+
 ## 五、已知风险 & 待解决问题
 | 等级 | 问题 | 影响 | 状态 |
 |------|------|------|------|
@@ -1343,20 +1751,22 @@
 
 ---
 
-## 七、编译验证基线（第 39 轮重测，2026-10-22）
+## 七、编译验证基线（第 79 轮重测，2026-10-24）
 
 | 检查项 | 结果（本机实测，命令与退出码可复现） |
 |--------|------|
 | `go build ./...` | ✅ exit 0 |
 | `go vet ./...` | ✅ exit 0 |
-| `go test -count=1 ./...` | ✅ 全绿（services 8.1s / handlers 7.3s / config 1.5s / middleware 1.8s / models 1.1s；`cmd/server`、`router`、`clientip` 见下注） |
-| `npx tsc --noEmit` | ✅ exit 0 |
-| `vite build` | ✅ 64 模块；JS 213.68 kB / gzip 65.72 kB，CSS 58.61 kB / gzip 10.97 kB（2.59s） |
-| 规模基线 | 后端 54 个 `.go`（含 4 个本轮新增）/ 12,446 行；前端 44 个 `.ts(x)` / 8,629 行 / 22 页面；测试 31 个文件 / **133** 个 `Test*` 函数 |
-| 依赖基线 | 后端 6 个直接依赖；前端 3 个（`preact` / `wouter` / `marked`） |
-| 契约基线 | 后端 **65** 条路由，前端调用 **58** 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
-| 文档一致性 | `scripts/doc_check.py` PASS：**57** 份文档、19 个顶层文档全部被母文档点名、5 个批量目录已索引、57/57 带 A/B 横幅 |
-| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；UI 实机交互未验证（后端进程会被会话回收）。`go test ./internal/clientip/` 本机报 `fork/exec: Access is denied`，需 `go test -c -o bin/clientip.test.exe` 后再跑 |
+| `go test -count=1 ./internal/...` | ✅ 全绿（services 21.1s / handlers 22.0s / models 5.6s / middleware 4.8s / config 3.3s / imghost 2.1s / clientip 1.4s；`router` 无测试文件） |
+| `tsc --noEmit` | ✅ exit 0 |
+| `vitest run` | ✅ 5 个文件 / **43** 用例 |
+| `vite build` | ✅ JS 261.38 kB / gzip 81.28 kB，CSS 66.75 kB / gzip 12.47 kB，`index.html` 1.03 kB（4.92s） |
+| 规模基线 | 后端 115 个 `.go` / 20,713 行；前端 72 个 `.ts(x)` / 12,225 行 / 26 页面；测试 48 个文件 / **212** 个 `Test*` |
+| 依赖基线 | 后端 7 个直接依赖（+11 indirect）；前端 3 个运行依赖 + 4 个 devDependency |
+| 契约基线 | 后端 **83** 条路由，前端调用 **76** 条，`scripts/contract_check.py` 报「方法不匹配：无」 |
+| 架构门禁 | `scripts/arch_check.py`：R1/R4/R5/R7/R8/R9/R10 全 0，R2.files=1、R2.funcs=15、R3=0，R1b=31（仅观察） |
+| 文档一致性 | `scripts/doc_check.py` PASS：**73** 份文档、23 个顶层文档全部被点名、5 个批量目录已索引、73/73 带 A/B 横幅 |
+| 已知局限 | 未 docker build（开发机无 Docker）；未在真实 VPS 端到端跑；邮箱验证只用本地假 SMTP 验过；`go test ./internal/<pkg>/` 偶报 `fork/exec: Access is denied`，可 `go test -c -o bin/x.test.exe` 绕过 |
 
 ---
 

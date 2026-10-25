@@ -24,6 +24,22 @@ export type AuthTexts = {
     registering: string
     loginBusy: string
     passwordTooShort: string
+    // Spec 37 (experimental email verification)
+    codeLabel: string
+    codePlaceholder: string
+    sendCode: string
+    resendIn: string
+    codeSent: string
+    codeRequired: string
+    testFeature: string
+    testFeatureHint: string
+    forgotPassword: string
+    resetTitle: string
+    resetSub: string
+    newPassword: string
+    resetBtn: string
+    resetDone: string
+    resetDisabled: string
   },
   password: {
     title: string
@@ -48,6 +64,12 @@ export type AuthTexts = {
     usernameHint: string
     email: string
     emailHint: string
+    // Spec 37 (experimental verified email change)
+    changeEmail: string
+    newEmail: string
+    confirmEmail: string
+    emailVerifyHint: string
+    emailChanged: string
     displayName: string
     bio: string
     avatar: string
@@ -88,6 +110,21 @@ export const authZh: AuthTexts = {
     registering: '注册',
     loginBusy: '登录中…',
     passwordTooShort: '密码至少 8 位',
+    codeLabel: '邮箱验证码',
+    codePlaceholder: '6 位数字',
+    sendCode: '发送验证码',
+    resendIn: '秒后重发',
+    codeSent: '验证码已发送，请查收邮箱',
+    codeRequired: '请先填写邮箱并获取验证码',
+    testFeature: '测试功能',
+    testFeatureHint: '管理员可随时关闭，关闭后注册不再需要验证码',
+    forgotPassword: '忘记密码？',
+    resetTitle: '找回密码',
+    resetSub: '输入注册邮箱，我们会发送一次性验证码',
+    newPassword: '新密码',
+    resetBtn: '重置密码',
+    resetDone: '密码已重置，请用新密码登录',
+    resetDisabled: '本站未开启邮箱验证，请联系管理员重置密码',
   },
   password: {
     title: '首次登录，请修改密码',
@@ -112,6 +149,11 @@ export const authZh: AuthTexts = {
     usernameHint: '登录时可用用户名登录，修改后需重新登录',
     email: '邮箱',
     emailHint: '作为登录账号，修改后需重新登录',
+    changeEmail: '更换邮箱',
+    newEmail: '新邮箱',
+    confirmEmail: '确认更换',
+    emailVerifyHint: '本站已开启邮箱验证：换绑需向新邮箱发送验证码',
+    emailChanged: '邮箱已更新',
     displayName: '显示名称',
     bio: '简介',
     avatar: '头像',
@@ -152,6 +194,21 @@ export const authEn: AuthTexts = {
     registering: 'Register',
     loginBusy: 'Signing in…',
     passwordTooShort: 'Password must be at least 8 characters',
+    codeLabel: 'Email code',
+    codePlaceholder: '6 digits',
+    sendCode: 'Send code',
+    resendIn: 's to resend',
+    codeSent: 'Code sent — check your inbox',
+    codeRequired: 'Enter your email and request a code first',
+    testFeature: 'Beta',
+    testFeatureHint: 'the site owner can switch this off at any time',
+    forgotPassword: 'Forgot password?',
+    resetTitle: 'Reset password',
+    resetSub: 'Enter your email and we will send a one-time code',
+    newPassword: 'New password',
+    resetBtn: 'Reset password',
+    resetDone: 'Password reset — sign in with the new one',
+    resetDisabled: 'Email verification is off; ask the site owner to reset it',
   },
   password: {
     title: 'First login — change your password',
@@ -176,6 +233,11 @@ export const authEn: AuthTexts = {
     usernameHint: 'Used to sign in; changing it requires re-login',
     email: 'Email',
     emailHint: 'Used as the sign-in account; changing it requires re-login',
+    changeEmail: 'Change email',
+    newEmail: 'New email',
+    confirmEmail: 'Confirm change',
+    emailVerifyHint: 'Email verification is on: the new address must receive a code first',
+    emailChanged: 'Email updated',
     displayName: 'Display name',
     bio: 'Bio',
     avatar: 'Avatar',

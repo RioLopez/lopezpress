@@ -12,6 +12,7 @@ import { AdminLayout } from './ui/AdminLayout'
 import { Toasts } from './ui/Toast'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { ListPage } from './pages/ListPage'
 import { ArchivePage } from './pages/ArchivePage'
@@ -27,6 +28,7 @@ import { AdminPostsPage } from './pages/AdminPostsPage'
 import { AdminTagsPage } from './pages/AdminTagsPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { AdminBackupPage } from './pages/AdminBackupPage'
+import { AdminMediaPage } from './pages/AdminMediaPage'
 import { AdminTrashPage } from './pages/AdminTrashPage'
 import { AdminAuditPage } from './pages/AdminAuditPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
@@ -168,6 +170,10 @@ function AppView() {
         component={() => <AdminGuarded><AdminSitePage /></AdminGuarded>}
       />
       <Route
+        path="/admin/media"
+        component={() => <AdminGuarded><AdminMediaPage /></AdminGuarded>}
+      />
+      <Route
         path="/admin/backup"
         component={() => <AdminGuarded><AdminBackupPage /></AdminGuarded>}
       />
@@ -197,6 +203,13 @@ function AppView() {
       <Route
         path="/register"
         component={() => <GuestOnly><RegisterPage /></GuestOnly>}
+      />
+      {/* Self-service password reset (spec 37, experimental). GuestOnly: a
+          signed-in user changes the password from the settings page instead,
+          where the current one is required. */}
+      <Route
+        path="/forgot-password"
+        component={() => <GuestOnly><ForgotPasswordPage /></GuestOnly>}
       />
       {/* Forced first-login password change (first-boot admin, spec #2).
           Guarded but NOT GuestOnly: the user must be signed in, and if the

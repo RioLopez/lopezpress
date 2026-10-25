@@ -62,6 +62,13 @@ func (s *Service) CreateCategory(ctx context.Context, in CreateCategoryInput) (m
 	if name == "" {
 		return models.Category{}, newErr(http.StatusBadRequest, "category name is required")
 	}
+	// A category name is served by the ANONYMOUS /api/categories endpoint, so
+	// its length is a length every visitor downloads. Only the importer and the
+	// tag path checked this; the CRUD endpoint — the one an admin actually uses
+	// — did not (R4-10's class, found again on the second sweep).
+	if err := ValidateTaxonomyName(name, MaxCategoryNameLen); err != nil {
+		return models.Category{}, err
+	}
 	var existing models.Category
 	if s.db.WithContext(ctx).Where("name = ?", name).First(&existing).RowsAffected == 1 {
 		return models.Category{}, newErr(http.StatusConflict, "category already exists")
@@ -85,6 +92,9 @@ func (s *Service) UpdateCategory(ctx context.Context, id int64, in UpdateCategor
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return models.Category{}, newErr(http.StatusBadRequest, "category name is required")
+	}
+	if err := ValidateTaxonomyName(name, MaxCategoryNameLen); err != nil {
+		return models.Category{}, err
 	}
 	var cat models.Category
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&cat).Error; err != nil {
@@ -312,10 +322,13 @@ func (s *Service) UpdateTag(ctx context.Context, id int64, in UpdateTagInput) (m
 	if name == "" {
 		return models.Tag{}, newErr(http.StatusBadRequest, "tag name is required")
 	}
-	if len(name) > 64 {
-		// Mirrors the column width (size:64); reject here so the client gets
-		// a 400 instead of a driver-level 500.
-		return models.Tag{}, newErr(http.StatusBadRequest, "tag name is too long (max 64)")
+	if err := ValidateTaxonomyName(name, MaxTagNameLen); err != nil {
+		// Rune-based, like every other name check. The previous byte-based test
+		// was accidentally stricter for non-ASCII names: a 30-character Chinese
+		// tag is 90 bytes and was refused here while being accepted by
+		// CreatePost, so the same name behaved differently depending on which
+		// endpoint touched it.
+		return models.Tag{}, err
 	}
 	var tag models.Tag
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&tag).Error; err != nil {

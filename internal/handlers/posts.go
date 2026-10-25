@@ -248,6 +248,12 @@ func BatchUpdatePosts(w http.ResponseWriter, r *http.Request) {
 // CreatePost creates a post owned by the authenticated user.
 // POST /api/posts (auth)
 func CreatePost(w http.ResponseWriter, r *http.Request) {
+	// Cap the body before it is decoded. The service layer enforces per-field
+	// ceilings, but those run AFTER json.Decode has already materialised the
+	// whole payload in memory — the same amplification the login endpoint had
+	// (R3-05: a multi-megabyte field cost hundreds of MB of RSS per request).
+	// 1 MiB covers a 256 KiB body plus JSON overhead with room to spare.
+	r.Body = http.MaxBytesReader(w, r.Body, services.MaxRequestBodyBytes)
 	var in services.CreatePostInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -269,6 +275,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 func UpdatePost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	r.Body = http.MaxBytesReader(w, r.Body, services.MaxRequestBodyBytes)
 	var in services.UpdatePostInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)

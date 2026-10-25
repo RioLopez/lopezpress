@@ -16,12 +16,12 @@
 
 > 每次代码改动后重新构建：
 > ```powershell
-> # 后端
-> & 'C:\Users\Lopez\go-install\go\bin\go.exe' build -trimpath -ldflags="-s -w" -o bin\lopezpress.exe ./cmd/server
+> # 后端（本机 Go 在 go-sdk 下，不在默认 PATH）
+> & 'C:\Users\LopezPC\go-sdk\go\bin\go.exe' build -trimpath -ldflags="-s -w" -o bin\lopezpress.exe ./cmd/server
 >
-> # 前端
+> # 前端（node 在 PATH 里，v22.x；等价于 npx vite build）
 > cd web
-> & 'C:\Users\Lopez\node-install\node-v20.19.0-win-x64\node.exe' node_modules\vite\bin\vite.js build
+> npm run build
 > ```
 
 ---

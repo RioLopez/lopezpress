@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"lopezpress/internal/services"
 )
@@ -39,6 +40,10 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 		// Spec 27: the SPA's route guard needs to know whether anonymous
 		// reading is allowed before it can decide to bounce to /login.
 		"public_read": cfg.PublicRead,
+		// Spec 37: the sign-up and "forgot password" forms need to know
+		// whether to show the code field at all. The switch is not a secret —
+		// it is visible in the UI the moment it is on.
+		"email_verify_enabled": cfg.EmailVerifyEnabled,
 	})
 }
 
@@ -56,10 +61,18 @@ func GetAdminSiteConfig(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	if !services.IsRoot(userFromContext(r)) {
-		cfg.SmtpPass = ""
-		cfg.ImgHostToken = ""
-	}
+	// R5-04: the SMTP password used to be returned verbatim to root. That is
+	// not a harmless convenience — it means the secret is in every response
+	// body, in the browser's memory, in any proxy log that captured the
+	// response, and one XSS or malicious extension away from being read out.
+	// It is also the same string the operator reuses as a login password, so
+	// the blast radius of a leak covers the admin account itself.
+	//
+	// The API now answers "is one set?" and nothing more, for every role
+	// including root. Writing an unchanged secret is expressed by OMITTING the
+	// field (see UpdateSiteConfig), so no client needs the value back.
+	cfg.SmtpPass = ""
+	cfg.ImgHostToken = ""
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -74,12 +87,75 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	// Map the JSON body onto the model. friend_links arrives as a raw JSON
 	// string (the client serialises the array itself).
 	cfg := services.SiteConfigFromMap(in)
+	// R6-09: a client that sends friend_links as an ARRAY (not the serialised
+	// string this endpoint expects) used to be read by cfgStr as "" and stored
+	// as such — the operator's links silently disappeared, with a 200 and no
+	// warning, and the only way to tell "cleared" from "never set" was to look
+	// at the database. A value of the wrong type is now an explicit 400.
+	if raw, present := in["friend_links"]; present {
+		if _, isString := raw.(string); !isString {
+			writeError(w, http.StatusBadRequest,
+				"friend_links must be a JSON string containing an array (the array serialised)")
+			return
+		}
+	}
+	// Switches are booleans, and "the client did not send this field" decodes
+	// to the same false as "the client switched it off". With a form that predates
+	// spec 36, saving the site settings would therefore silently disable image
+	// deletion for authors and the avatar picker. The raw map is the only place
+	// where the difference is still visible, so absent keys inherit.
+	if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
+		if _, ok := in["allow_user_delete_upload"]; !ok {
+			cfg.AllowUserDeleteUpload = cur.AllowUserDeleteUpload
+		}
+		if _, ok := in["allow_user_change_avatar"]; !ok {
+			cfg.AllowUserChangeAvatar = cur.AllowUserChangeAvatar
+		}
+		if _, ok := in["allow_external_avatar"]; !ok {
+			cfg.AllowExternalAvatar = cur.AllowExternalAvatar
+		}
+		// Spec 37: the verification switch defaults to "off", so an absent key
+		// would silently disable a feature the operator just turned on.
+		if _, ok := in["email_verify_enabled"]; !ok {
+			cfg.EmailVerifyEnabled = cur.EmailVerifyEnabled
+		}
+		if _, ok := in["email_code_ttl_min"]; !ok {
+			cfg.EmailCodeTTLMin = cur.EmailCodeTTLMin
+		}
+		if _, ok := in["email_code_cooldown"]; !ok {
+			cfg.EmailCodeCooldown = cur.EmailCodeCooldown
+		}
+		// R6-08: three more fields whose zero value is a SETTING rather than
+		// "nothing". A client that sends only {"site_name":...} — a script, a
+		// third-party integration, an older front end — used to get
+		// public_read flipped off (the site went dark for every anonymous
+		// reader), auto_backup switched off, and backup_keep reset to the
+		// default. No 400, no warning: a partial save silently changed the
+		// site's availability. Absent means "unchanged", exactly as it does for
+		// the allow_* switches above.
+		if _, ok := in["public_read"]; !ok {
+			cfg.PublicRead = cur.PublicRead
+		}
+		if _, ok := in["auto_backup"]; !ok {
+			cfg.AutoBackup = cur.AutoBackup
+		}
+		if _, ok := in["backup_keep"]; !ok {
+			cfg.BackupKeep = cur.BackupKeep
+		}
+	}
 	// Root-only settings: the daily-backup policy, the registration gate and
 	// the mail/image-host credentials. A non-root admin saving the settings
 	// form must not be able to switch any of them off (or blank a secret it
 	// cannot read) just because their payload omitted or masked it, so their
 	// submission inherits the stored values. Field-level authorisation, not a
 	// route guard: an admin keeps full control of the content fields.
+	//
+	// R5-04: the read endpoint no longer returns the secrets at all, so a form
+	// that round-trips "load → edit → save" sends them back EMPTY. An empty
+	// smtp_pass / img_host_token therefore means "leave the stored one alone",
+	// not "clear it" — otherwise every root save from the settings page would
+	// silently wipe the mail credentials. Clearing is expressed by an explicit
+	// non-empty sentinel the operator has to type.
 	if !services.IsRoot(userFromContext(r)) {
 		if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
 			cfg.AutoBackup = cur.AutoBackup
@@ -90,6 +166,23 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 			cfg.SmtpUser = cur.SmtpUser
 			cfg.SmtpPass = cur.SmtpPass
 			cfg.ImgHostToken = cur.ImgHostToken
+			// Spec 37: whether anonymous visitors can make this server send
+			// mail is an abuse surface, not a presentation choice — same tier
+			// as allow_register and the SMTP credentials it depends on.
+			cfg.EmailVerifyEnabled = cur.EmailVerifyEnabled
+			cfg.EmailCodeTTLMin = cur.EmailCodeTTLMin
+			cfg.EmailCodeCooldown = cur.EmailCodeCooldown
+		}
+	} else {
+		// Root may change the secrets, but an empty value means "unchanged"
+		// because the form never shows the current one.
+		if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
+			if strings.TrimSpace(cfg.SmtpPass) == "" {
+				cfg.SmtpPass = cur.SmtpPass
+			}
+			if strings.TrimSpace(cfg.ImgHostToken) == "" {
+				cfg.ImgHostToken = cur.ImgHostToken
+			}
 		}
 	}
 	out, err := svc.UpdateSiteConfig(r.Context(), cfg)

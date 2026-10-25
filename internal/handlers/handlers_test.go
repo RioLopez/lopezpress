@@ -38,7 +38,7 @@ func setup(t *testing.T) (*services.Service, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Category{}, &models.Tag{}, &models.PostTag{}, &models.SiteConfig{}, &models.LoginLog{}); err != nil {
+	if err := db.AutoMigrate(models.All()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

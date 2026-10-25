@@ -63,8 +63,19 @@ func TestUpdateMe_UsernameEmail(t *testing.T) {
 	}
 
 	// 6. Set avatar/bio then clear them with explicit empty strings.
+	//
+	// Since spec 36 an avatar must point at an image that is actually in the
+	// library — a free-form string let any member render a tracking pixel on
+	// every article they wrote. Seed the row the avatar will reference.
+	avatarRow := models.UploadFile{
+		Name: "test-avatar.png", LiveKey: "test-avatar-hash",
+		Size: 64, Width: 8, Height: 8, Mime: "image/png", Kind: UploadKindAvatar,
+	}
+	if err := db.Create(&avatarRow).Error; err != nil {
+		t.Fatalf("seed avatar upload: %v", err)
+	}
 	if _, err := svc.UpdateMe(ctx, caller.ID, UpdateMeInput{
-		Avatar: strPtr("/uploads/x.png"),
+		Avatar: strPtr("/uploads/test-avatar.png"),
 		Bio:    strPtr("hello"),
 	}); err != nil {
 		t.Fatalf("set avatar/bio: %v", err)
