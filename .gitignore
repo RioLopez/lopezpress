@@ -48,3 +48,6 @@ data/.dev-jwt-secret
 # Python 缓存
 __pycache__/
 scripts/__pycache__/
+
+# AI 协作文档（方向/规划/记忆/安全报告）——仅本地，不随仓库分发
+dev/
