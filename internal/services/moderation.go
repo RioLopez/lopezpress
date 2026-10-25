@@ -2,9 +2,12 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"lopezpress/internal/models"
 )
@@ -79,6 +82,12 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 		if strings.TrimSpace(in.Note) == "" {
 			return models.Post{}, newErr(http.StatusBadRequest, "a note is required when rejecting a post")
 		}
+		// The note is returned to the author inside the post payload, so an
+		// unbounded one is an unbounded response for a third party (R3-07's
+		// class, on a field the first sweep did not reach).
+		if err := ValidateReviewNote(in.Note); err != nil {
+			return models.Post{}, err
+		}
 		updates = map[string]any{
 			"status":      models.PostRejected,
 			"review_note": in.Note,
@@ -86,8 +95,18 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 			"reviewed_at": now,
 		}
 	}
-	if err := s.db.WithContext(ctx).Model(&models.Post{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	// R4-11: the state precondition used to be checked on the row we read and
+	// then not enforced on the write, so two reviewers could both approve the
+	// same post (two mails, two audit rows) and an approve racing a delete
+	// could re-publish content the author had just removed. The condition now
+	// lives in the UPDATE.
+	won, err := s.transitionPost(ctx, id,
+		[]string{models.PostPending, models.PostRejected}, updates)
+	if err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to review post")
+	}
+	if !won {
+		return models.Post{}, newErr(http.StatusConflict, "post is no longer awaiting review")
 	}
 
 	// Re-load with relations so the response is complete.
@@ -136,8 +155,18 @@ func (s *Service) BanPost(ctx context.Context, actor models.User, id string) (mo
 		"reviewed_by": actor.ID,
 		"reviewed_at": now,
 	}
-	if err := s.db.WithContext(ctx).Model(&models.Post{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	// Same TOCTOU fix as ReviewPost: "not already banned" goes into the UPDATE,
+	// so a double-ban cannot rewrite the reviewer timestamps of a row that is
+	// already in the vault.
+	won, err := s.transitionPost(ctx, id, []string{
+		models.PostPending, models.PostRejected, models.PostPublished,
+		models.PostPrivate, models.PostDraft,
+	}, updates)
+	if err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to ban post")
+	}
+	if !won {
+		return models.Post{}, newErr(http.StatusConflict, "post is already in the banned vault")
 	}
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").Where("id = ?", id).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
@@ -165,6 +194,9 @@ func (s *Service) SendBackPost(ctx context.Context, actor models.User, id, note 
 	if strings.TrimSpace(note) == "" {
 		return models.Post{}, newErr(http.StatusBadRequest, "a note is required when sending a post back")
 	}
+	if err := ValidateReviewNote(note); err != nil {
+		return models.Post{}, err
+	}
 	now := time.Now()
 	updates := map[string]any{
 		"status":      models.PostRejected,
@@ -172,8 +204,12 @@ func (s *Service) SendBackPost(ctx context.Context, actor models.User, id, note 
 		"reviewed_by": actor.ID,
 		"reviewed_at": now,
 	}
-	if err := s.db.WithContext(ctx).Model(&models.Post{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	won, err := s.transitionPost(ctx, id, []string{models.PostBanned}, updates)
+	if err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to send back post")
+	}
+	if !won {
+		return models.Post{}, newErr(http.StatusConflict, "post is no longer in the banned vault")
 	}
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").Where("id = ?", id).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
@@ -250,14 +286,31 @@ func (s *Service) DeleteBannedPermanently(ctx context.Context, actor models.User
 	if post.Status != models.PostBanned {
 		return newErr(http.StatusBadRequest, "post is not in the banned vault")
 	}
-	// Remove the tag join rows first so the hard delete leaves no orphan
-	// associations (which would otherwise keep inflating tag counts).
-	if err := s.db.WithContext(ctx).Where("post_id = ?", id).Delete(&models.PostTag{}).Error; err != nil {
-		return newErr(http.StatusInternalServerError, "failed to delete banned post tags")
+	// R4-11: the status check above is only a fast-fail; the authoritative
+	// gate is the conditional delete below. Without it, a purge racing a
+	// send-back deleted a post that had just been returned to its author for
+	// revision — the row was gone from both the vault and the trash.
+	//
+	// The post row is deleted FIRST so the delete itself is the claim: only one
+	// caller can match a row that is still banned, and the tag cleanup runs in
+	// the same transaction so a failure rolls the whole thing back.
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Unscoped().Where("id = ? AND status = ?", id, models.PostBanned).
+			Delete(&models.Post{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errStateChanged
+		}
+		// Remove the tag join rows so the hard delete leaves no orphan
+		// associations (which would otherwise keep inflating tag counts).
+		return tx.Where("post_id = ?", id).Delete(&models.PostTag{}).Error
+	})
+	if errors.Is(err, errStateChanged) {
+		return newErr(http.StatusConflict, "post is no longer in the banned vault")
 	}
-	// Hard delete so the post is gone from the vault and from the recovery
-	// trash alike (banned content is not recoverable).
-	if err := s.db.WithContext(ctx).Unscoped().Delete(&models.Post{}, "id = ?", id).Error; err != nil {
+	if err != nil {
 		return newErr(http.StatusInternalServerError, "failed to delete banned post")
 	}
 	s.audit(ctx, actor, "delete_banned", "post:"+post.ID, "title="+post.Title)

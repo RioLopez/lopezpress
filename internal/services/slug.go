@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -68,6 +69,17 @@ func Slugify(title string) string {
 
 // ensureUniqueSlug returns base, or base-2 / base-3 ... when another post
 // already claims it. excludeID lets a post keep its own slug on update.
+//
+// The COUNT-based probe is a best effort, not a guarantee: two concurrent
+// creates of the same title both see "free" and both insert, which is how
+// R6-02 ended up with four posts sharing one slug. The guarantee is the unique
+// index on posts.slug (migration 0014) — so the caller retries on a constraint
+// failure rather than trusting the probe, and this function is only the fast
+// path that avoids a doomed insert in the common case.
+//
+// It deliberately does NOT take a lock or open a transaction: the index makes
+// that unnecessary, and a lock here would serialise every post creation on the
+// whole site.
 func (s *Service) ensureUniqueSlug(ctx context.Context, base, excludeID string) (string, error) {
 	if base == "" {
 		return "", nil
@@ -88,6 +100,13 @@ func (s *Service) ensureUniqueSlug(ctx context.Context, base, excludeID string) 
 		candidate = base + "-" + itoa(i)
 	}
 	return "", newErr(http.StatusConflict, "could not allocate a unique slug")
+}
+
+// nextSlugCandidate returns the next suffixed form of base (base -> base-2 ->
+// base-3 ...). Shared by the retry path and by the migration that
+// disambiguates pre-existing duplicates, so both produce the same names.
+func nextSlugCandidate(base string, attempt int) string {
+	return base + "-" + strconv.Itoa(attempt)
 }
 
 // slugFor derives the slug for a new post: the requested value if the client
@@ -113,14 +132,20 @@ func (s *Service) GetPostBySlug(ctx context.Context, user models.User, slug stri
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 	var post models.Post
+	// Ordered even though the unique index makes duplicates impossible: an
+	// explicit ORDER BY is what makes the answer deterministic if that
+	// guarantee is ever lost (a restore of a pre-0014 snapshot, say), instead
+	// of First() returning whichever row the storage engine felt like.
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").
-		Where("slug = ?", slug).First(&post).Error; err != nil {
+		Where("slug = ?", slug).Order("created_at ASC, id ASC").
+		First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 	if !canSeePost(user, post) {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 	post.SanitizeAuthor()
+	post.SanitizeReview()
 	return post, nil
 }
 

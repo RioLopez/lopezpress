@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -55,8 +56,22 @@ type Config struct {
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	return &Config{
-		Port:           envOr("PORT", "8080"),
-		JWTSecret:      envOr("JWT_SECRET", "dev-secret-change-me-in-prod"),
+		Port: envOr("PORT", "8080"),
+		// JWT_SECRET has NO default. An empty value is replaced at startup with
+		// a freshly generated random secret (see ensureJWTSecret), because a
+		// hard-coded default is not a weak default — it is a published one.
+		//
+		// This used to be "dev-secret-change-me-in-prod". APP_ENV defaults to
+		// "dev", and ValidateSecurity only WARNS in dev, so a deployment that
+		// forgot one environment variable started happily with a signing key
+		// printed in the source tree. Anyone who can read the repository could
+		// mint a token for any account, root included. The failure was silent:
+		// one stderr line among the boot log.
+		//
+		// Generating a random secret makes "forgot to configure it" degrade to
+		// "tokens do not survive a restart" — annoying, visible, and safe —
+		// instead of "the site is open to anyone who read the source".
+		JWTSecret:      os.Getenv("JWT_SECRET"),
 		JWTExpiryHours: envIntOr("JWT_EXPIRY_HOURS", 1),
 		DBPath:         envOr("DB_PATH", "data/app.db"),
 		// Small pool on purpose (see budget notes above).
@@ -227,6 +242,40 @@ func dirOf(p string) string {
 	return "."
 }
 
+// sqliteDSN appends the connection-scoped pragmas to the database path.
+// busy_timeout and synchronous are per-connection settings, so they have to be
+// applied on every pooled connection — which is what the driver's _pragma
+// parameter does.
+//
+// _txlock=immediate makes every transaction take the write lock at BEGIN
+// instead of on its first write. That matters for one specific reason: the
+// upload quota was a read-then-write sequence ("SUM the bytes, compare, then
+// INSERT"), and two concurrent uploads could both pass the comparison before
+// either inserted — R4-08 / R6-03 measured 8 concurrent uploads landing 7
+// successes with the user 1.4 MB over quota. Serialising writers at BEGIN
+// closes that window without adding a bookkeeping table or a background
+// reconciler. Reads are unaffected: WAL still lets them run concurrently with
+// the single writer.
+func sqliteDSN(path string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=immediate"
+}
+
+// logPragmas prints the pragmas that actually took effect. SQLite settings are
+// silent and connection-scoped, so "configured" and "in force" can drift apart
+// without any symptom until an incident, when guessing is expensive.
+func logPragmas(db *gorm.DB) {
+	var mode string
+	var busy, sync int
+	db.Raw("PRAGMA journal_mode").Scan(&mode)
+	db.Raw("PRAGMA busy_timeout").Scan(&busy)
+	db.Raw("PRAGMA synchronous").Scan(&sync)
+	log.Printf("sqlite: journal_mode=%s busy_timeout=%dms synchronous=%d", mode, busy, sync)
+}
+
 // InitDB opens the SQLite database, runs schema migrations and seeds demo
 // data. It returns the database and the seeded admin password (empty if an
 // admin already existed or seeding failed).
@@ -235,11 +284,25 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 		return nil, "", fmt.Errorf("create db dir: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(cfg.DBPath), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(sqliteDSN(cfg.DBPath)), &gorm.Config{
 		Logger: quietLogger{logger.Default.LogMode(gormLogMode(cfg.LogLevel))},
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("open sqlite: %w", err)
+	}
+
+	// Rollback-journal mode (the default) makes every commit fsync twice and
+	// briefly take an exclusive lock, so a burst of writes (thumbnail worker,
+	// uploads, audit rows) can starve every reader and, if a writer dies
+	// mid-commit, leave a hot journal that wedges the whole file until the
+	// process restarts. WAL lets readers proceed during a write and turns
+	// recovery into an open-time replay, so a stuck writer costs latency
+	// instead of the entire site. It is a persistent property of the file, so
+	// it is set once here rather than per-connection: running
+	// PRAGMA journal_mode=WAL while another connection holds a read lock can
+	// itself return SQLITE_BUSY and break connection setup.
+	if err := db.Exec("PRAGMA journal_mode = WAL").Error; err != nil {
+		return nil, "", fmt.Errorf("enable wal: %w", err)
 	}
 
 	// Tight connection pool for a low-memory VPS (1.5 GB, ~1 GB usable).
@@ -250,6 +313,8 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 	}
 	sqlDB.SetMaxOpenConns(cfg.DBMaxOpen)
 	sqlDB.SetMaxIdleConns(cfg.DBMaxIdle)
+
+	logPragmas(db)
 
 	// One-shot manual migrations run BEFORE AutoMigrate. AutoMigrate only
 	// adds missing columns/tables and never drops; dropping the deprecated
@@ -288,12 +353,29 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 		}
 	}
 
+	// The partial UNIQUE index on posts.slug (R6-02). Migration 0014 creates it
+	// on an existing database, but on a FRESH install it runs before AutoMigrate
+	// has created the posts table and therefore skips — leaving a brand-new
+	// database with a plain index and no uniqueness at all. Re-asserting it here,
+	// after AutoMigrate, is what makes both paths converge. Idempotent
+	// (IF NOT EXISTS), so a restart costs nothing.
+	//
+	// It has to be partial (WHERE slug <> '') because "no slug yet" is stored as
+	// an empty string, and a plain UNIQUE index would reject the second such row.
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_unique ON posts(slug) WHERE slug <> ''`).Error; err != nil {
+		return nil, "", fmt.Errorf("create slug index: %w", err)
+	}
+
 	// Spec 31: presets MUST be seeded before the demo data — otherwise the
 	// demo's own 技术/随笔/教程 rows win the "categories are empty" check and
 	// the designed two-level tree never appears on a fresh install.
 	seedPresetCategories(db)
 	seededPwd := seedDemoData(db, cfg.AdminInitialPassword)
 	seedSiteConfig(db)
+	// Spec 36: adopt whatever is already on disk into the upload metadata
+	// table. Must run after AutoMigrate created upload_files on a fresh DB,
+	// and it is idempotent so a restart is a single SELECT.
+	backfillUploads(db, cfg.UploadDir)
 	checkSchemaDrift(db)
 	return db, seededPwd, nil
 }
@@ -554,4 +636,107 @@ func commonTableName(m interface{}) string {
 		return "post_revisions"
 	}
 	return ""
+}
+
+// ensureJWTSecret guarantees the process has a usable signing key, and makes the
+// absence of a configured one loud.
+//
+// An empty JWT_SECRET used to mean "use the value hard-coded in this file",
+// which is a published secret rather than a missing one. Now it means "generate
+// one": the site stays safe, and the only cost is that tokens do not survive a
+// restart.
+//
+// In dev (APP_ENV unset or "dev") the generated secret is CACHED in a file next
+// to the database, so a normal `go run` cycle does not log the developer out on
+// every reload. Caching a secret is only acceptable there: the file sits inside
+// the project directory with 0600, and a dev box is not the threat model. In
+// strict mode nothing is cached — a secret that persists across restarts must be
+// the operator's, so that a compromised host does not keep a working key.
+func (c *Config) EnsureJWTSecret() error {
+	if strings.TrimSpace(c.JWTSecret) != "" {
+		return nil
+	}
+	appEnv := envOr("APP_ENV", "dev")
+	strict := appEnv != "dev"
+
+	if !strict {
+		if cached := readCachedDevSecret(c.DBPath); cached != "" {
+			c.JWTSecret = cached
+			return nil
+		}
+	}
+
+	secret, err := randomSecret(48)
+	if err != nil {
+		// Refusing to start is the correct answer: a process with no usable
+		// signing key cannot authenticate anybody, and falling back to a
+		// constant would undo the whole point of this function.
+		return fmt.Errorf("cannot generate a JWT secret: %w", err)
+	}
+	c.JWTSecret = secret
+
+	if strict {
+		// In production an ephemeral key means every restart logs everyone out,
+		// which is an outage in all but name. Refuse instead of limping.
+		return fmt.Errorf("APP_ENV=%s: JWT_SECRET must be set; refusing to start with a "+
+			"generated key that would invalidate every session on restart", appEnv)
+	}
+
+	if err := writeCachedDevSecret(c.DBPath, secret); err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: JWT_SECRET not set and the dev cache could not be written (%v); "+
+			"tokens will be invalidated on every restart. Set JWT_SECRET in your .env.\n", err)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "WARN: JWT_SECRET not set; generated a random one and cached it for dev. "+
+		"Set JWT_SECRET in your .env before deploying.\n")
+	return nil
+}
+
+// randomSecret returns n bytes of crypto/rand, hex-encoded.
+func randomSecret(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := crand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// devSecretPath names the cache file. It lives beside the database so a project
+// with several DB files (dev + smoke) also gets separate secrets.
+func devSecretPath(dbPath string) string {
+	return filepath.Join(filepath.Dir(dbPath), ".dev-jwt-secret")
+}
+
+func readCachedDevSecret(dbPath string) string {
+	b, err := os.ReadFile(devSecretPath(dbPath))
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(b))
+	if len(s) < 32 {
+		return "" // ignore anything that could not be a real secret
+	}
+	return s
+}
+
+func writeCachedDevSecret(dbPath, secret string) error {
+	path := devSecretPath(dbPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	// 0600: the file is a signing key, even in dev. The mode passed to WriteFile
+	// only applies when the file is created; an existing file keeps its mode, so
+	// Chmod afterwards makes the intent explicit on every write.
+	//
+	// Known platform limitation: Windows ignores these bits (only the read-only
+	// flag maps), so on a Windows dev box the file is readable by other local
+	// accounts. That is a dev-machine concern, not a deployment one — production
+	// never writes this file at all, and refuses to start without an operator
+	// supplied JWT_SECRET. Documented rather than papered over: a "0600" that
+	// silently means "everyone" on one OS is exactly the kind of thing that gets
+	// trusted when it should not be.
+	if err := os.WriteFile(path, []byte(secret), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }

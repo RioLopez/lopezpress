@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   { to: '/admin/tags', label: 'admin.tagsTitle', group: 'nav.groupContent' },
   { to: '/admin/trash', label: 'admin.trashTitle', group: 'nav.groupContent' },
   { to: '/admin/banned', label: 'admin.banVaultTitle', group: 'nav.groupContent', rootOnly: true },
+  { to: '/admin/media', label: 'media.title', group: 'nav.groupContent' },
   { to: '/admin/users', label: 'admin.usersTitle', group: 'nav.groupUsers' },
   { to: '/admin/site', label: 'site.title', group: 'nav.groupSystem' },
   { to: '/admin/backup', label: 'admin.backupTitle', group: 'nav.groupSystem' },

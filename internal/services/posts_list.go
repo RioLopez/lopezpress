@@ -15,6 +15,34 @@ var allowedPageSizes = []int{5, 10, 20, 30}
 // DefaultPageSize is used when the site config is missing/illegal.
 const DefaultPageSize = 10
 
+// maxPageNumber caps the page parameter. Its only job is to keep
+// (page-1)*pageSize inside int64: past this point the multiply overflows, the
+// offset goes negative, and SQLite reads a negative OFFSET as 0 — which
+// silently serves page 1 for an absurd page number (R6-06).
+//
+// 100,000 pages at 10 posts each is a million articles, which is years past
+// anything this deployment will hold; a legitimate caller never reaches it.
+const maxPageNumber = 100000
+
+// ClampPageNumber keeps a page number inside [1, maxPageNumber].
+//
+// Every list endpoint needs this, and the reason is not cosmetic: the offset is
+// computed as (page-1)*size, so an unclamped page of MaxInt64 overflows int64,
+// goes negative, and SQLite reads a negative OFFSET as 0 -- the request silently
+// returns PAGE ONE with a 200. A caller that walks pages until it sees an empty
+// result therefore loops forever, and a caller checking "am I at the end" gets
+// the wrong answer. R6-06 fixed /api/posts; /archive/paged and /api/uploads kept
+// the bug because each had its own copy of the arithmetic.
+func ClampPageNumber(page int) int {
+	if page < 1 {
+		return 1
+	}
+	if page > maxPageNumber {
+		return maxPageNumber
+	}
+	return page
+}
+
 // ListPageSize returns the configured number of posts per public list page.
 //
 // The value is clamped to allowedPageSizes so a hand-edited database (or a
@@ -140,6 +168,21 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 		return PostPage{}, newErr(http.StatusInternalServerError, "failed to count posts")
 	}
 
+	// R6-06: (page-1)*pageSize overflows int64 for a large enough page, goes
+	// negative, and SQLite treats a negative OFFSET as 0 — so
+	// ?page=922337203685477580 answered with the FIRST page's data while
+	// echoing the impossible page number back. A caller cannot distinguish
+	// "page 1" from "page 9 × 10^17", and a cache keyed on the query string
+	// stores two different answers for what looks like one page.
+	//
+	// Clamping before the multiply is the fix: the ceiling is far above any
+	// real page count (a site would need 100,000 posts at 10 per page to reach
+	// it) and it keeps the arithmetic inside int64 by construction.
+	if q.Page > maxPageNumber {
+		return PostPage{}, newErr(http.StatusBadRequest,
+			"page number is too large (max "+itoa(maxPageNumber)+")")
+	}
+
 	offset := (q.Page - 1) * q.PageSize
 	// Whitelist the sort column + direction so the raw Order() string cannot
 	// be abused for SQL injection via query params.
@@ -171,5 +214,6 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 	// account flags) before the page leaves the service. This is the public
 	// list an anonymous visitor hits, so it must never carry them.
 	models.SanitizePostAuthors(posts)
+	models.SanitizePostReviews(posts)
 	return PostPage{Items: posts, Total: total, Page: q.Page, PageSize: q.PageSize}, nil
 }

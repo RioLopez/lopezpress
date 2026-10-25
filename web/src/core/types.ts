@@ -128,16 +128,74 @@ export interface PostPage {
 
 // --- image upload (POST /api/upload) ---
 
+// What POST /api/upload answers (spec 36). `deduped` means the library already
+// held these exact bytes and nothing new was written to disk.
 export interface UploadResult {
-  url: string
-}
-
-// A locally-stored image in the image library (upload / browse / delete).
-export interface LocalUpload {
+  id: string
   name: string
   url: string
   size: number
-  mod_time: string
+  width: number
+  height: number
+  mime: string
+  kind: string
+  deduped: boolean
+  remote?: boolean
+}
+
+// One row of the image library / "my uploads" list.
+export interface UploadFileInfo {
+  id: string
+  name: string
+  url: string
+  // Empty until the background worker has produced one (or when the source is
+  // already small enough). Cards fall back to `url` — never assume it exists.
+  thumb_url: string
+  size: number
+  width: number
+  height: number
+  mime: string
+  kind: string
+  owner_id: string
+  owner_name: string
+  original_name: string
+  ip: string
+  sha256: string
+  ref_count: number
+  legacy: boolean
+  deleted: boolean
+  deleted_at?: string
+  created_at: string
+}
+
+// Storage counters. deleted_bytes is separate from live_bytes on purpose:
+// withdrawn files still occupy the disk.
+export interface UploadStats {
+  live_count: number
+  live_bytes: number
+  deleted_count: number
+  deleted_bytes: number
+  orphan_count: number
+  total_count: number
+  total_bytes: number
+}
+
+export interface UploadPage {
+  items: UploadFileInfo[]
+  total: number
+  page: number
+  size: number
+  stats: UploadStats
+  user_used_bytes: number
+  user_quota_bytes: number
+  site_used_bytes: number
+  site_quota_bytes: number
+}
+
+export interface UploadDeleteResult {
+  name: string
+  hard: boolean
+  affected_refs: number
 }
 
 // --- editor form values ---
@@ -204,6 +262,10 @@ export interface SiteConfigPublic {
   page_size: number
   // Spec 27: whether anonymous visitors may read the site.
   public_read: boolean
+  // Spec 37 (experimental): when true, sign-up and password reset ask for a
+  // code mailed to the address. Public because the forms must know whether to
+  // render the field.
+  email_verify_enabled: boolean
 }
 
 // Full config (admin only) including image-host token + registration flag.
@@ -220,6 +282,22 @@ export interface SiteConfigFull extends SiteConfigPublic {
   // Spec 34: daily snapshot settings (root-only surface).
   auto_backup: boolean
   backup_keep: number
+  // Spec 36: image storage policy. The three ceilings are bytes; the two
+  // switches decide what an ordinary author may do with their own pictures.
+  // Sent in full on every save — the server treats a missing/zero ceiling as
+  // "keep the stored one", so a stale form cannot disable the limits.
+  upload_max_image: number
+  upload_max_avatar: number
+  user_quota_bytes: number
+  site_quota_bytes: number
+  allow_user_delete_upload: boolean
+  allow_user_change_avatar: boolean
+  allow_external_avatar: boolean
+  // Spec 37 (experimental): the switch, plus the two timings. Admin-only on
+  // the write side — a plain admin's save inherits all three.
+  email_verify_enabled: boolean
+  email_code_ttl_min: number
+  email_code_cooldown: number
   updated_at: string
 }
 
@@ -295,6 +373,8 @@ export interface BackupStats {
   posts: number
   categories: number
   tags: number
+  revisions: number
+  upload_files: number
 }
 
 export interface BackupResult {

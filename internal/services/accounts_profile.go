@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"lopezpress/internal/models"
 )
 
@@ -53,37 +55,8 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 		return models.User{}, newErr(http.StatusNotFound, "user not found")
 	}
 
-	if in.Username != nil {
-		name := strings.TrimSpace(*in.Username)
-		if name == "" {
-			return models.User{}, newErr(http.StatusBadRequest, "username is required")
-		}
-		if !isValidUsername(name) {
-			return models.User{}, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
-		}
-		if name != user.Username {
-			var dup models.User
-			if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?)", name).First(&dup).RowsAffected == 1 {
-				return models.User{}, newErr(http.StatusConflict, "username already in use")
-			}
-			user.Username = name
-		}
-	}
-	if in.Email != nil {
-		email := strings.TrimSpace(*in.Email)
-		if email == "" {
-			return models.User{}, newErr(http.StatusBadRequest, "email is required")
-		}
-		if !isValidEmail(email) {
-			return models.User{}, newErr(http.StatusBadRequest, "invalid email")
-		}
-		if email != user.Email {
-			var dup models.User
-			if s.db.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).First(&dup).RowsAffected == 1 {
-				return models.User{}, newErr(http.StatusConflict, "email already in use")
-			}
-			user.Email = email
-		}
+	if err := s.applyIdentityChange(ctx, &user, in); err != nil {
+		return models.User{}, err
 	}
 	if in.DisplayName != nil {
 		user.DisplayName = strings.TrimSpace(*in.DisplayName)
@@ -91,13 +64,74 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 	if in.Bio != nil {
 		user.Bio = *in.Bio
 	}
-	if in.Avatar != nil {
-		user.Avatar = strings.TrimSpace(*in.Avatar)
+	// Both fields ride along in every public list response that includes this
+	// user's posts (the author byline), so an unbounded one is multiplied
+	// across the whole site rather than paid once (R3-07's class).
+	if err := ValidateProfileText(user.DisplayName, user.Bio); err != nil {
+		return models.User{}, err
 	}
-	if err := s.db.WithContext(ctx).Save(&user).Error; err != nil {
+	if in.Avatar != nil {
+		avatar := strings.TrimSpace(*in.Avatar)
+		if avatar != user.Avatar {
+			cfg, _ := s.GetSiteConfig(ctx, false)
+			if !cfg.AllowUserChangeAvatar {
+				return models.User{}, newErr(http.StatusForbidden, "changing your avatar is disabled by the site owner")
+			}
+			if err := s.validateAvatarValue(ctx, avatar, cfg.AllowExternalAvatar); err != nil {
+				return models.User{}, err
+			}
+		}
+		user.Avatar = avatar
+	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		// Spec 36: keep the avatar edge in the image ledger in step, so the
+		// gallery can tell whose picture a file is (and refuse to hard-delete
+		// it silently).
+		return setAvatarUploadRefTx(tx, user.ID, user.Avatar)
+	})
+	if err != nil {
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update profile")
 	}
 	return user, nil
+}
+
+// validateAvatarValue accepts exactly two shapes: an image that already lives
+// in this site's library, or — only when the site owner allows it — an
+// absolute http(s) URL.
+//
+// Anything else is rejected rather than stored. Before spec 36 the avatar was
+// a free-form string: any member could point it at a tracking pixel, a
+// javascript: payload that some future renderer might honour, or a file that
+// does not exist. Since every avatar is rendered on every post the user
+// authored, that is a site-wide surface, not a personal one.
+func (s *Service) validateAvatarValue(ctx context.Context, value string, allowExternal bool) error {
+	if value == "" {
+		return nil // clearing the avatar is always allowed
+	}
+	if name := uploadNameFromURL(value); name != "" {
+		var n int64
+		if err := s.db.WithContext(ctx).Model(&models.UploadFile{}).
+			Where("name = ? AND deleted_at IS NULL", name).Count(&n).Error; err != nil {
+			return newErr(http.StatusInternalServerError, "failed to check the image")
+		}
+		if n == 0 {
+			return newErr(http.StatusBadRequest, "that image is not in the library")
+		}
+		return nil
+	}
+	if allowExternal {
+		low := strings.ToLower(value)
+		if strings.HasPrefix(low, "https://") || strings.HasPrefix(low, "http://") {
+			if len([]rune(value)) > 500 {
+				return newErr(http.StatusBadRequest, "avatar url too long")
+			}
+			return nil
+		}
+	}
+	return newErr(http.StatusBadRequest, "avatar must be an image uploaded to this site")
 }
 
 // isValidEmail is a lightweight structural check: exactly one "@", non-empty
@@ -171,6 +205,9 @@ func (s *Service) GetAuthor(ctx context.Context, username string) (AuthorView, e
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	// The author page is a public surface: the reviewer identity must not ride
+	// along with it (R1-04 / R2-07).
+	models.SanitizePostReviews(posts)
 	view.Posts = posts
 	return view, nil
 }
@@ -256,4 +293,51 @@ func (s *Service) GetDashboard(ctx context.Context) (DashboardData, error) {
 		RecentPosts:  recentPosts,
 		RecentLogins: recentLogins,
 	}, nil
+}
+
+// applyIdentityChange validates and applies the login-identifier fields
+// (username / email). Split out of UpdateMe so each function stays reviewable:
+// the profile update has five independent field groups, and one 70-line body
+// hid which validation belonged to which.
+func (s *Service) applyIdentityChange(ctx context.Context, user *models.User, in UpdateMeInput) error {
+	if in.Username != nil {
+		name := strings.TrimSpace(*in.Username)
+		if name == "" {
+			return newErr(http.StatusBadRequest, "username is required")
+		}
+		if !isValidUsername(name) {
+			return newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
+		}
+		if name != user.Username {
+			var dup models.User
+			if s.db.WithContext(ctx).Where("LOWER(username) = LOWER(?)", name).First(&dup).RowsAffected == 1 {
+				return newErr(http.StatusConflict, "username already in use")
+			}
+			user.Username = name
+		}
+	}
+	if in.Email != nil {
+		email := strings.TrimSpace(*in.Email)
+		if email == "" {
+			return newErr(http.StatusBadRequest, "email is required")
+		}
+		if !isValidEmail(email) {
+			return newErr(http.StatusBadRequest, "invalid email")
+		}
+		if email != user.Email {
+			// Spec 37: with email verification switched on, the address may only
+			// move through the code flow (ConfirmEmailChange). Without this
+			// guard the whole feature would be one PUT away from being bypassed
+			// — the form is a convenience, the server is the contract.
+			if s.emailCodePolicy(ctx).Enabled {
+				return newErr(http.StatusForbidden, "changing your email needs a verification code; use the verified email change flow")
+			}
+			var dup models.User
+			if s.db.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).First(&dup).RowsAffected == 1 {
+				return newErr(http.StatusConflict, "email already in use")
+			}
+			user.Email = email
+		}
+	}
+	return nil
 }

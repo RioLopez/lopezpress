@@ -39,3 +39,12 @@ web/uploads/
 
 # AI 工具临时态（交接文档已在根目录 .md 中版本化）
 .workbuddy/
+
+# 开发期自动生成的 JWT 签名密钥（config.EnsureJWTSecret 写入 data/.dev-jwt-secret）。
+# 它是密钥，任何情况下都不许进仓库；生产环境不生成此文件，必须显式配置 JWT_SECRET。
+.dev-jwt-secret
+data/.dev-jwt-secret
+
+# Python 缓存
+__pycache__/
+scripts/__pycache__/

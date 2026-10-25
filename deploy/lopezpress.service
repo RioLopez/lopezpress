@@ -21,5 +21,37 @@ LimitNOFILE=4096
 TimeoutStopSec=30
 KillSignal=SIGTERM
 
+# --- 沙箱（纵深防御：假设应用本身已经被攻破）---
+#
+# 前 8 轮的渗透报告里有三条都是"某处校验漏了"，修完还会有第四条。这些选项
+# 不阻止漏洞被利用，但限制利用之后能做什么：一个只能读自己数据目录、不能提权、
+# 不能产生新进程、看不到 /home 的进程，比一个跑在 root 权限下、能 exec /bin/sh
+# 的进程难用得多。
+NoNewPrivileges=true
+# 整个文件系统只读，只有数据目录可写。SQLite 的 WAL 也在这里。
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# 只保留绑定 1024 以下端口所需的能力，其余全部丢弃（本服务监听 8080，其实
+# 一个都不需要；保留 NET_BIND_SERVICE 是为了让人能直接改成 80/443 而不至于
+# 启动失败）。
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+# 只允许执行自己的二进制，不允许 fork 出 shell。
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# ProtectSystem=strict 让全盘只读，所以数据目录必须显式放行。
+ReadWritePaths=/opt/lopezpress/data /opt/lopezpress/logs
+
 [Install]
 WantedBy=multi-user.target

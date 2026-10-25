@@ -34,6 +34,10 @@ const (
 	// approved (published) or rejected (sent back for revision) by a
 	// reviewer. Sent on review outcomes; not throttled (one-shot events).
 	MailReviewResult MailKind = "review_result"
+	// MailEmailChanged goes to the *previous* address after a verified email
+	// change (spec 37). It is the only warning the old inbox will ever get,
+	// which is exactly why it is sent before anything else can go wrong.
+	MailEmailChanged MailKind = "email_changed"
 )
 
 // Throttle window: at most one login-failure notification per user per 15m.
@@ -245,6 +249,20 @@ func composeMail(kind MailKind, user models.User, extras map[string]string) (str
 			"",
 			"  Title: " + get("title"),
 			"  Time:  " + get("time"),
+		}
+		return subject, strings.Join(lines, "\n")
+	case MailEmailChanged:
+		subject := "[Security] 邮箱已更改 / Email address changed"
+		lines := []string{
+			"The email address on your account was changed.",
+			"",
+			"  Old:  " + get("old"),
+			"  New:  " + get("new"),
+			"  IP:   " + get("ip"),
+			"  Time: " + get("time"),
+			"",
+			"If you did not make this change, reply to this message immediately —",
+			"this old address is the only place that still has a record of it.",
 		}
 		return subject, strings.Join(lines, "\n")
 	}

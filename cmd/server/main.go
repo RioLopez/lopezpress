@@ -26,10 +26,28 @@ func main() {
 	// else so a reset run never starts the HTTP server.
 	resetRoot := flag.Bool("reset-root-password", false,
 		"rotate the unique root account's password, print it once to stderr, and exit (offline recovery)")
+	// Container health probe. The image is distroless (no shell, no curl), so the
+	// probe has to be the binary itself: run it with -healthcheck, it asks its own
+	// /health/ready and exits 0/1. Wiring HEALTHCHECK to a URL would need a
+	// toolchain in the image, which is exactly the attack surface a minimal image
+	// exists to avoid.
+	healthcheck := flag.Bool("healthcheck", false,
+		"probe this instance's readiness endpoint and exit 0 (ready) or 1 (not ready)")
 	flag.Parse()
 
 	loadDotEnv()
 	cfg := config.Load()
+
+	if *healthcheck {
+		os.Exit(runHealthcheck(cfg))
+	}
+
+	// Settle the signing key before the strength check: an unset JWT_SECRET is
+	// generated (dev) or refused (prod), so ValidateSecurity never sees the
+	// empty string that used to fall back to a hard-coded, published default.
+	if err := cfg.EnsureJWTSecret(); err != nil {
+		log.Fatalf("jwt secret: %v", err)
+	}
 
 	// Enforce security-sensitive config (JWT_SECRET strength in prod) before
 	// opening the database, so a bad production setup fails fast.
@@ -78,10 +96,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, banner, seededAdminPwd)
 	}
 
+	// Graceful shutdown on SIGINT / SIGTERM. Declared before the services are
+	// built because background workers (thumbnail queue) need the same
+	// cancellation: they must stop when the process does, not linger.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// Build the services layer (all business logic) and inject the shared
 	// dependencies into the thin handlers package.
 	svc := services.New(db, cfg)
 	handlers.Init(db, cfg, svc)
+
+	// Spec 36 §6: one goroutine produces thumbnails for the image library,
+	// one image at a time, out of the request path. It re-queues whatever a
+	// previous run left pending, so a crash mid-queue costs nothing.
+	svc.StartThumbWorker(ctx)
 
 	// Spec 29: posts created before the slug column existed get their
 	// permanent link here (idempotent, one indexed query per boot).
@@ -116,14 +145,15 @@ func main() {
 		Burst: cfg.RateLimitBurst,
 	})
 
-	// Graceful shutdown on SIGINT / SIGTERM.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	// Login-specific limiter (spec #3): IP + account dual bucket + 5-failure
 	// lockout, applied only to /api/auth/login. The janitor reaps stale
 	// lockout entries every minute and stops with the process.
 	loginLimiter := middleware.NewLoginLimiter()
+	// Key the account bucket and the lockout by ACCOUNT, not by the string the
+	// client typed: login accepts a username or an email, so a string-keyed
+	// lockout is walked around by using the other spelling. See
+	// middleware.IdentityResolver.
+	loginLimiter.SetIdentityResolver(svc.ResolveLoginIdentity)
 	loginLimiter.Start(ctx)
 
 	h := router.New(cfg, limiter, loginLimiter)
@@ -145,6 +175,10 @@ func main() {
 	// (spec 22), so there is no background scheduler to run; a post's
 	// visibility is set at publish time and can be toggled in content
 	// management.
+	//
+	// Graceful shutdown: the context that cancels the HTTP server is the same
+	// one that stops the thumbnail worker, so the process leaves no orphan
+	// goroutine mid-decode.
 	<-ctx.Done()
 	log.Println("shutting down...")
 
@@ -271,4 +305,31 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// runHealthcheck asks this instance's own readiness endpoint and returns the
+// process exit code. Used by the container HEALTHCHECK.
+//
+// It talks to loopback rather than opening the database directly, deliberately:
+// the question is "can this instance serve a request", and the answer depends on
+// the same listener a real client would use. A check that opened the DB itself
+// could pass while the HTTP server was wedged, which is the failure it is meant
+// to catch.
+//
+// The timeout is short — a probe that waits as long as a normal request would
+// stall the health loop behind the very condition it is detecting.
+func runHealthcheck(cfg *config.Config) int {
+	url := "http://127.0.0.1:" + cfg.Port + "/health/ready"
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck: status %d\n", resp.StatusCode)
+		return 1
+	}
+	return 0
 }

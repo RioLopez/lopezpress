@@ -2,12 +2,73 @@ import { marked } from 'marked'
 
 marked.setOptions({ gfm: true, breaks: true })
 
-const SAFE_SRC = (src: string): boolean =>
-  !!src && !src.startsWith('data:') && !src.startsWith('javascript:')
+// --- URL policy -----------------------------------------------------------
+//
+// Prefix matching is not a URL policy. It is case-sensitive ("DATA:" and
+// "JaVaScRiPt:" sail straight past `startsWith('data:')`), and it lets a
+// protocol-relative URL — "//evil.example/x" — through, because the leading
+// "/" looks like a same-origin path. Such a URL inherits the page scheme but
+// points at the attacker's host: the browser resolves it, not us.
+//
+// Both predicates therefore parse the value and inspect the *scheme* (plus
+// the leading characters), which is what the browser actually acts on.
 
-const SAFE_HREF = (href: string): boolean => {
-  const re = new RegExp('^(https?:|mailto:|/|#|\\./)', 'i')
-  return re.test(href)
+// urlScheme returns the lower-cased scheme of a URL, or "" when the value has
+// none (a relative path). Per RFC 3986 a scheme is `ALPHA *( ALPHA / DIGIT /
+// "+" / "-" / "." )`, so "a b:" is a relative path, not a scheme, and must
+// not be treated as one.
+function urlScheme(u: string): string {
+  const i = u.indexOf(':')
+  if (i <= 0) return ''
+  const s = u.slice(0, i)
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*$/.test(s)) return ''
+  return s.toLowerCase()
+}
+
+// Link targets we are willing to put in an href.
+const SAFE_HREF_SCHEMES = new Set(['http', 'https', 'mailto'])
+
+// isSafeHref reports whether a link target stays on this site or on a plain
+// http(s) endpoint. Relative paths ("/x", "./x", "#frag", "x") are allowed;
+// everything else is not.
+export function isSafeHref(href: string): boolean {
+  const v = (href || '').trim()
+  if (!v) return true
+  if (v.startsWith('//')) return false // protocol-relative: attacker's host
+  if (v.startsWith('\\')) return false // backslash form browsers also treat as "//"
+  const scheme = urlScheme(v)
+  if (scheme) return SAFE_HREF_SCHEMES.has(scheme)
+  return true
+}
+
+// isSafeSrc reports whether a resource URL may be fetched. Images and
+// posters are fetched even when nothing executes, and each fetch leaks the
+// reader's IP / UA / Referer to whoever hosts the URL, so this list is
+// narrower than isSafeHref's on purpose: no mailto, and no scheme-less
+// protocol-relative form.
+const SAFE_SRC_SCHEMES = new Set(['http', 'https'])
+
+export function isSafeSrc(src: string): boolean {
+  const v = (src || '').trim()
+  if (!v) return true
+  if (v.startsWith('//') || v.startsWith('\\')) return false
+  const scheme = urlScheme(v)
+  if (scheme) return SAFE_SRC_SCHEMES.has(scheme)
+  return true // same-origin relative path
+}
+
+// isSafeSrcset checks every candidate of a srcset value. A single unsafe
+// candidate is enough: the browser picks whichever it likes, so a whitelist
+// applied to the whole string proves nothing.
+export function isSafeSrcset(srcset: string): boolean {
+  const v = (srcset || '').trim()
+  if (!v) return true
+  for (const cand of v.split(',')) {
+    const url = cand.trim().split(/\s+/)[0]
+    if (!url) continue
+    if (!isSafeSrc(url)) return false
+  }
+  return true
 }
 
 // XSS defense-in-depth: elements removed outright from rendered Markdown.
@@ -16,7 +77,16 @@ const DROP_TAGS = new Set([
   'meta', 'base', 'frame', 'frameset', 'applet', 'form',
 ])
 // Attributes always stripped (event handlers handled separately via on*).
+// srcset and poster are NOT in this set: they are URL-valued, so they are
+// policy-checked below and blanked when unsafe rather than dropped, matching
+// how src and href are treated.
 const DROP_ATTRS = new Set(['srcdoc', 'formaction', 'xlink:href', 'http-equiv', 'style', 'background', 'dynsrc', 'lowsrc'])
+// Attributes that carry a resource URL and therefore need the src policy.
+const URL_ATTRS: Record<string, (v: string) => boolean> = {
+  src: isSafeSrc,
+  poster: isSafeSrc,
+  srcset: isSafeSrcset,
+}
 
 export function stripHTML(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -34,14 +104,16 @@ export function escapeHTML(s: string): string {
 }
 
 // Wrap every occurrence of `query` inside `text` in <mark class="hl">.
-// `query` is matched case-insensitively. If query is empty or absent,
-// returns `text` unchanged. The input is HTML-escaped first, so callers
-// may safely inject the result into an element with textContent-free
-// innerHTML (the surrounding content is caller-controlled & escaped).
+// `query` is matched case-insensitively. The input is HTML-escaped FIRST, on
+// every branch — including the "no query" one, which used to return `text`
+// verbatim and made this function an XSS gadget for any caller that feeds the
+// result to innerHTML (the list page did exactly that for titles and
+// excerpts). Callers may now inject the result into an innerHTML element
+// without pre-escaping.
 export function highlight(text: string, query: string): string {
-  const q = query.trim()
-  if (!q || !text) return text
-  const escapedText = escapeHTML(text)
+  const escapedText = escapeHTML(text || '')
+  const q = (query || '').trim()
+  if (!q) return escapedText
   const escapedQuery = escapeHTML(q)
   // Build a global, case-insensitive regex from the escaped query.
   // The query is already HTML-escaped, so any special chars are literal.
@@ -145,19 +217,35 @@ export function renderMD(src: string | null | undefined): string {
     }
     for (const attr of Array.from(el.attributes)) {
       const n = attr.name.toLowerCase()
-      if (n.startsWith('on') || DROP_ATTRS.has(n)) el.removeAttribute(attr.name)
+      if (n.startsWith('on') || DROP_ATTRS.has(n)) {
+        el.removeAttribute(attr.name)
+        continue
+      }
+      // URL-valued attributes (src / poster / srcset) get the scheme policy
+      // instead of a blanket drop, so a legitimate relative image survives
+      // while an absolute one to an attacker's host is blanked.
+      const check = URL_ATTRS[n]
+      if (check && !check(attr.value)) {
+        el.removeAttribute(attr.name)
+      }
     }
   }
   for (const i of Array.from(doc.body.querySelectorAll('img'))) {
     const v = i.getAttribute('src') || ''
-    if (!SAFE_SRC(v)) {
+    if (!isSafeSrc(v)) {
       i.setAttribute('src', '')
       i.classList.add('md-img-broken')
     }
   }
   for (const a of Array.from(doc.body.querySelectorAll('a'))) {
     const v = a.getAttribute('href') || ''
-    if (!SAFE_HREF(v)) a.setAttribute('href', '')
+    if (!isSafeHref(v)) a.setAttribute('href', '')
+    // target=_blank hands the opened page a window.opener back-reference
+    // (reverse tabnabbing: it can navigate this tab to a look-alike login).
+    // Removing the attribute is the only fix that does not depend on also
+    // remembering to set rel — so links open in this tab, which is the safe
+    // default for a reader-facing article anyway.
+    if (a.hasAttribute('target')) a.removeAttribute('target')
   }
   // Wrap tables in a scroll container so wide tables scroll horizontally
   // without breaking the layout; the table itself stays display:table.

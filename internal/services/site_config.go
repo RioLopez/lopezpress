@@ -39,46 +39,8 @@ func (s *Service) GetSiteConfig(ctx context.Context, admin bool) (models.SiteCon
 
 // UpdateSiteConfig validates and persists the full site config row.
 func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (models.SiteConfig, error) {
-	if strings.TrimSpace(in.SiteName) == "" {
-		return models.SiteConfig{}, newErr(http.StatusBadRequest, "site name is required")
-	}
-	if len([]rune(in.SiteName)) > 64 {
-		return models.SiteConfig{}, newErr(http.StatusBadRequest, "site name too long")
-	}
-	if len([]rune(in.SiteTitle)) > 128 {
-		return models.SiteConfig{}, newErr(http.StatusBadRequest, "site title too long")
-	}
-	if in.ImgHostMode != "local" && in.ImgHostMode != "smms" {
-		return models.SiteConfig{}, newErr(http.StatusBadRequest, "invalid image host mode")
-	}
-	// SiteURL, when set, must be an absolute http(s) URL so feed/sitemap
-	// can build correct absolute links.
-	if u := strings.TrimSpace(in.SiteURL); u != "" {
-		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return models.SiteConfig{}, newErr(http.StatusBadRequest, "site url must start with http:// or https://")
-		}
-	}
-	// Validate friend_links: well-formed JSON array, and every url must be an
-	// absolute http(s) link. The footer renders these into <a href> verbatim,
-	// so a "javascript:" entry is a stored-XSS primitive that fires on click.
-	if strings.TrimSpace(in.FriendLinks) != "" {
-		var links []map[string]string
-		if err := json.Unmarshal([]byte(in.FriendLinks), &links); err != nil {
-			return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend links must be a JSON array")
-		}
-		if len(links) > 50 {
-			return models.SiteConfig{}, newErr(http.StatusBadRequest, "too many friend links (max 50)")
-		}
-		for _, l := range links {
-			u := strings.TrimSpace(l["url"])
-			low := strings.ToLower(u)
-			if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") {
-				return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend link url must start with http:// or https://")
-			}
-			if len([]rune(u)) > 500 {
-				return models.SiteConfig{}, newErr(http.StatusBadRequest, "friend link url too long")
-			}
-		}
+	if err := validateSiteConfig(in); err != nil {
+		return models.SiteConfig{}, err
 	}
 
 	var existing models.SiteConfig
@@ -110,6 +72,8 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	existing.BackupKeep = ClampBackupKeep(in.BackupKeep)
 	// Spec 27: anonymous-read switch.
 	existing.PublicRead = in.PublicRead
+	applyStoragePolicy(&existing, in)
+	applyEmailVerifyPolicy(&existing, in)
 	existing.UpdatedAt = time.Now()
 	if err := s.db.WithContext(ctx).Save(&existing).Error; err != nil {
 		return models.SiteConfig{}, newErr(http.StatusInternalServerError, "failed to save site config")
@@ -119,6 +83,19 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	s.invalidatePublicRead()
 	s.audit(ctx, models.User{}, "update_site_config", "site_config", "")
 	return existing, nil
+}
+
+// clampInt64 keeps n inside [lo, hi]. Used for the storage-policy numbers,
+// where rejection would break an otherwise valid settings save but an
+// out-of-range value could disable the protection entirely.
+func clampInt64(n, lo, hi int64) int64 {
+	if n < lo {
+		return lo
+	}
+	if n > hi {
+		return hi
+	}
+	return n
 }
 
 // allowRegister reports whether public registration is enabled.
@@ -154,76 +131,113 @@ func (s *Service) notifyNewLocation(ctx context.Context, user models.User, meta 
 // friend_links is expected as a raw JSON string (the client serialises the
 // array itself), so it round-trips unchanged through the public/admin split.
 func SiteConfigFromMap(m map[string]any) models.SiteConfig {
-	getStr := func(k string) string {
-		if v, ok := m[k]; ok {
-			if s, ok := v.(string); ok {
-				return s
-			}
-		}
-		return ""
-	}
-	getBool := func(k string) bool {
-		if v, ok := m[k]; ok {
-			if b, ok := v.(bool); ok {
-				return b
-			}
-		}
-		return false
-	}
-	getInt := func(k string) int {
-		if v, ok := m[k]; ok {
-			switch n := v.(type) {
-			case int:
-				return n
-			case float64:
-				return int(n)
-			case json.Number:
-				if i, err := n.Int64(); err == nil {
-					return int(i)
-				}
-			}
-		}
-		return 0
-	}
-	mode := getStr("img_host_mode")
+	mode := cfgStr(m, "img_host_mode")
 	if mode != "smms" {
 		mode = "local"
 	}
 	return models.SiteConfig{
-		SiteName:      getStr("site_name"),
-		SiteTitle:     getStr("site_title"),
-		SiteLogo:      getStr("site_logo"),
-		SiteFavicon:   getStr("site_favicon"),
-		SiteURL:       getStr("site_url"),
-		FooterText:    getStr("footer_text"),
-		IcpNo:         getStr("icp_no"),
-		FriendLinks:   getStr("friend_links"),
+		SiteName:      cfgStr(m, "site_name"),
+		SiteTitle:     cfgStr(m, "site_title"),
+		SiteLogo:      cfgStr(m, "site_logo"),
+		SiteFavicon:   cfgStr(m, "site_favicon"),
+		SiteURL:       cfgStr(m, "site_url"),
+		FooterText:    cfgStr(m, "footer_text"),
+		IcpNo:         cfgStr(m, "icp_no"),
+		FriendLinks:   cfgStr(m, "friend_links"),
 		ImgHostMode:   mode,
-		ImgHostToken:  getStr("img_host_token"),
-		AllowRegister: getBool("allow_register"),
+		ImgHostToken:  cfgStr(m, "img_host_token"),
+		AllowRegister: cfgBool(m, "allow_register"),
 		// Spec 24: absent/invalid page_size -> 0, which UpdateSiteConfig
 		// clamps back to the default.
-		PageSize:   getInt("page_size"),
-		AutoBackup: getBool("auto_backup"),
-		BackupKeep: getInt("backup_keep"),
+		PageSize:   cfgInt(m, "page_size"),
+		AutoBackup: cfgBool(m, "auto_backup"),
+		BackupKeep: cfgInt(m, "backup_keep"),
 		// Spec 27: absent -> false. The admin form always sends the current
 		// value, so a missing field means a hand-built payload; false is the
 		// safe (locked-down) reading in that case.
-		PublicRead: getBool("public_read"),
-		SmtpHost:   getStr("smtp_host"),
-		SmtpPort:   getInt("smtp_port"),
-		SmtpUser:   getStr("smtp_user"),
-		SmtpPass:   getStr("smtp_pass"),
+		PublicRead: cfgBool(m, "public_read"),
+		SmtpHost:   cfgStr(m, "smtp_host"),
+		SmtpPort:   cfgInt(m, "smtp_port"),
+		SmtpUser:   cfgStr(m, "smtp_user"),
+		SmtpPass:   cfgStr(m, "smtp_pass"),
+		// Spec 36: byte quotas. They need their own getter because the fields
+		// are int64 — reusing getInt would truncate a 500 MB quota on a 32-bit
+		// build and, worse, made the whole policy unreachable (the field was
+		// simply never decoded).
+		UploadMaxImage:        cfgInt64(m, "upload_max_image"),
+		UploadMaxAvatar:       cfgInt64(m, "upload_max_avatar"),
+		UserQuotaBytes:        cfgInt64(m, "user_quota_bytes"),
+		SiteQuotaBytes:        cfgInt64(m, "site_quota_bytes"),
+		AllowUserDeleteUpload: cfgBool(m, "allow_user_delete_upload"),
+		AllowUserChangeAvatar: cfgBool(m, "allow_user_change_avatar"),
+		AllowExternalAvatar:   cfgBool(m, "allow_external_avatar"),
+		// Spec 37: email verification. The flag itself is a bool that defaults
+		// to false (= the feature is off), which is also what "the client did
+		// not send it" decodes to — deliberately the safe direction here.
+		EmailVerifyEnabled: cfgBool(m, "email_verify_enabled"),
+		EmailCodeTTLMin:    cfgInt(m, "email_code_ttl_min"),
+		EmailCodeCooldown:  cfgInt(m, "email_code_cooldown"),
 	}
 }
 
-// --- login log (spec 14) ---
+// cfgStr/cfgBool/cfgInt/cfgInt64 read one optional key of a decoded JSON body.
+// Split out of SiteConfigFromMap so that function stays a single readable
+// literal list — it drifted twice before (smtp_pass, then the spec-36 quotas)
+// precisely because adding a field meant editing three places in one long body.
+func cfgStr(m map[string]any, k string) string {
+	if s, ok := m[k].(string); ok {
+		return s
+	}
+	return ""
+}
 
-// RecordLogin appends a row to login_log. Failures are swallowed so the audit
-// trail can never break the login flow.
+func cfgBool(m map[string]any, k string) bool {
+	if b, ok := m[k].(bool); ok {
+		return b
+	}
+	return false
+}
+
+func cfgInt(m map[string]any, k string) int {
+	return int(cfgInt64(m, k))
+}
+
+func cfgInt64(m map[string]any, k string) int64 {
+	switch n := m[k].(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i
+		}
+	}
+	return 0
+}
+
+// maxLoginIdentifierLen bounds the identifier written to login_logs. The
+// column declares size:128 but SQLite does not enforce it, so without this
+// clamp a login attempt carrying a multi-megabyte "email" field stores the
+// whole string: R3-05 measured two such requests growing the database by
+// 53 MB and leaving a 26,214,407-byte row that made every login-history
+// query pull it back.
+const maxLoginIdentifierLen = 254
+
+// clampIdentifier trims an identifier to the log limit. Kept as a helper so
+// the login path and any future caller share one bound.
+func clampIdentifier(s string) string {
+	if len(s) <= maxLoginIdentifierLen {
+		return s
+	}
+	return s[:maxLoginIdentifierLen]
+}
+
 func (s *Service) RecordLogin(ctx context.Context, userID, identifier, ip, ua string, success bool) {
 	log := models.LoginLog{
-		UserID: userID, Identifier: identifier, IP: ip, UA: ua, Success: success,
+		UserID: userID, Identifier: clampIdentifier(identifier), IP: clampIdentifier(ip), UA: clampIdentifier(ua), Success: success,
 	}
 	if err := s.db.WithContext(ctx).Create(&log).Error; err != nil {
 		_ = err // non-fatal
@@ -256,3 +270,46 @@ func (s *Service) ListActions(ctx context.Context, actorID string, limit int) ([
 // --- user management (admin, spec 09) ---
 
 // CreateUserInput is the decoded payload for POST /api/users.
+
+// validateSiteConfig runs every field check that does not need the stored row.
+// Split out so UpdateSiteConfig reads as "validate, merge, save" instead of a
+// hundred lines of guards with the actual work buried at the end.
+func validateSiteConfig(in models.SiteConfig) error {
+	if strings.TrimSpace(in.SiteName) == "" {
+		return newErr(http.StatusBadRequest, "site name is required")
+	}
+	if len([]rune(in.SiteName)) > 64 {
+		return newErr(http.StatusBadRequest, "site name too long")
+	}
+	if len([]rune(in.SiteTitle)) > 128 {
+		return newErr(http.StatusBadRequest, "site title too long")
+	}
+	if in.ImgHostMode != "local" && in.ImgHostMode != "smms" {
+		return newErr(http.StatusBadRequest, "invalid image host mode")
+	}
+	// R1-05: turning email verification on with no mail server configured was
+	// accepted with a 200 and then broke the feature at runtime — every
+	// /api/auth/email-code call answered 503 "SMTP is not configured", and with
+	// registration open the whole sign-up flow was unusable. The two settings
+	// are only meaningful together, so say so at save time rather than letting
+	// the operator discover it from a user's failed sign-up.
+	if in.EmailVerifyEnabled && strings.TrimSpace(in.SmtpHost) == "" {
+		return newErr(http.StatusBadRequest,
+			"email verification needs an SMTP host; configure the mail server first")
+	}
+	// SiteURL, when set, must be an absolute http(s) URL so feed/sitemap
+	// can build correct absolute links.
+	if u := strings.TrimSpace(in.SiteURL); u != "" {
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return newErr(http.StatusBadRequest, "site url must start with http:// or https://")
+		}
+	}
+	// Validate friend_links: well-formed JSON array, and every url must be an
+	// absolute http(s) link. The footer renders these into <a href> verbatim,
+	// so a "javascript:" entry is a stored-XSS primitive that fires on click.
+	if err := validateFriendLinks(in.FriendLinks); err != nil {
+		return err
+	}
+	return nil
+}
+

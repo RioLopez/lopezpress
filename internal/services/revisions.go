@@ -56,7 +56,7 @@ func (s *Service) ListRevisions(ctx context.Context, user models.User, postID st
 	if err := s.db.WithContext(ctx).Where("id = ?", postID).First(&post).Error; err != nil {
 		return nil, newErr(http.StatusNotFound, "post not found")
 	}
-	if err := s.assertCanEdit(ctx, user, post); err != nil {
+	if err := s.assertCanReadHistory(ctx, user, post); err != nil {
 		return nil, err
 	}
 	var revs []models.PostRevision
@@ -81,7 +81,7 @@ func (s *Service) RestoreRevision(ctx context.Context, user models.User, postID 
 	if err := s.db.WithContext(ctx).Where("id = ?", postID).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
-	if err := s.assertCanEdit(ctx, user, post); err != nil {
+	if err := s.assertCanWriteContent(user, post); err != nil {
 		return models.Post{}, err
 	}
 	var rev models.PostRevision
@@ -100,23 +100,59 @@ func (s *Service) RestoreRevision(ctx context.Context, user models.User, postID 
 	return restored, nil
 }
 
-// assertCanEdit is the shared "may this caller edit this post" gate used by the
-// revision endpoints. It intentionally duplicates the rule already inside
-// UpdatePost rather than re-ordering that function: the two must agree, and a
-// single predicate is easier to spot-check than two interleaved blocks.
-func (s *Service) assertCanEdit(ctx context.Context, user models.User, post models.Post) error {
+// assertCanWriteContent is the "may this caller change the TEXT of this post"
+// gate used by the revision endpoints that write (restore, delete).
+//
+// R5-05 split this out of the old assertCanEdit: reading history and writing
+// content are different powers. A reviewer needs to see what an author changed
+// (that is the point of a review queue), but restoring an old version would put
+// text back into a published article — the same content-impersonation path as
+// editing the body directly. So writes are author-or-root only, matching
+// UpdatePost, while reads stay open to an admin.
+func (s *Service) assertCanWriteContent(user models.User, post models.Post) error {
 	if post.AuthorID == user.ID || user.Role == models.RoleRoot {
 		return nil
 	}
+	return newErr(http.StatusForbidden,
+		"only the author or the root can change this post's content")
+}
+
+// assertCanReadHistory is the "may this caller see the revision history" gate.
+//
+// The author owns it; root sees everything; a plain admin sees a plain user's
+// history because reviewing a submission means seeing how it got here. Anyone
+// else is refused — old drafts of a private post are as sensitive as the post.
+func (s *Service) assertCanReadHistory(ctx context.Context, user models.User, post models.Post) error {
+	// An author always reads their own history.
+	if post.AuthorID == user.ID {
+		return nil
+	}
+	// Everyone else must at least be able to SEE the post before they may read
+	// its history. This is the R7 catch: an admin could open the revision list
+	// of a post whose visibility model said "author only" (private / draft),
+	// and the history is the post's contents, one version per row — the very
+	// thing the model was hiding. canSeePost also keeps banned content to root
+	// alone. On failure we answer 404, not 403, so the endpoint does not reveal
+	// that the hidden post exists.
+	if !canSeePost(user, post) {
+		return newErr(http.StatusNotFound, "post not found")
+	}
+	// Root is the recovery path and stays bounded only by visibility above.
+	if user.Role == models.RoleRoot {
+		return nil
+	}
+	// A reviewer reads the history of a plain user's post — that is what
+	// "review" needs — but not of another staff member's: reviewers moderate
+	// users, not each other.
 	if user.Role != models.RoleAdmin {
-		return newErr(http.StatusForbidden, "you can only edit your own posts")
+		return newErr(http.StatusForbidden, "you can only read your own post's history")
 	}
 	var author models.User
 	if err := s.db.WithContext(ctx).Where("id = ?", post.AuthorID).First(&author).Error; err != nil {
-		return newErr(http.StatusForbidden, "you can only edit your own posts")
+		return newErr(http.StatusForbidden, "you can only read your own post's history")
 	}
 	if author.Role != models.RoleUser {
-		return newErr(http.StatusForbidden, "you can only edit your own posts")
+		return newErr(http.StatusForbidden, "you can only read your own post's history")
 	}
 	return nil
 }

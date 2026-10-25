@@ -21,7 +21,9 @@ interface AuthContextValue {
   user: UserPublic | null
   loading: boolean
   login: (email: string, password: string) => Promise<UserPublic>
-  register: (u: string, e: string, p: string) => Promise<void>
+  // code is only used while the site has email verification switched on
+  // (spec 37, experimental); pass undefined otherwise.
+  register: (u: string, e: string, p: string, code?: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
   // adoptToken swaps in a server-issued token (e.g. the fresh one returned by
@@ -69,10 +71,10 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
     return res.user
   }
 
-  const doRegister = async (u: string, e: string, p: string): Promise<void> => {
+  const doRegister = async (u: string, e: string, p: string, code?: string): Promise<void> => {
     // The register endpoint issues a JWT itself (spec 04 AC-2.2), so the new
     // account is signed in immediately without a second login round trip.
-    const res: AuthResult = await apiRegister({ username: u, email: e, password: p })
+    const res: AuthResult = await apiRegister({ username: u, email: e, password: p, code })
     localStorage.setItem(TOKEN_KEY, res.token)
     setUser(res.user)
   }

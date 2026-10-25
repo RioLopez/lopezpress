@@ -34,6 +34,23 @@ export type SiteTexts = {
     registerOpen: string
     registerOpenHint: string
     rootOnlyHint: string
+    // Spec 36: image storage policy (three ceilings + two author switches).
+    storage: string
+    storageHint: string
+    uploadMaxImage: string
+    uploadMaxAvatar: string
+    userQuota: string
+    siteQuota: string
+    allowUserDeleteUpload: string
+    allowUserChangeAvatar: string
+    allowExternalAvatar: string
+    externalAvatarHint: string
+    // Spec 37 (experimental email verification)
+    emailVerify: string
+    emailVerifyHint: string
+    emailVerifyEnable: string
+    codeTtl: string
+    codeCooldown: string
     // Three-tier role / permission matrix (read-only reference)
     permissions: string
     permissionsHint: string
@@ -97,18 +114,20 @@ export type SiteTexts = {
       import_backup: string
     }
   },
-  imageLib: {
+  // "My uploads" — the author-side view. It is deliberately NOT called a
+  // library: a plain user only ever sees their own files (spec 36 §1).
+  myUploads: {
     title: string
     sub: string
-    upload: string
     empty: string
     delete: string
     confirm: string
     deleted: string
     deleteFailed: string
     loading: string
-    size: string
-    modified: string
+    used: string
+    noQuota: string
+    refNote: string
   }
 }
 
@@ -145,6 +164,21 @@ export const siteZh: SiteTexts = {
     registerOpen: '允许访客自行注册账号',
     registerOpenHint: '关闭后访客无法注册，只能由管理员在后台创建账号',
     rootOnlyHint: '仅 root 可修改（当前值仍然生效）',
+    storage: '图片与存储',
+    storageHint: '三层上限，从窄到宽：单文件、单个账号、整个站点。单位 MB。',
+    uploadMaxImage: '正文图片单文件上限',
+    uploadMaxAvatar: '头像单文件上限',
+    userQuota: '每个账号的总配额',
+    siteQuota: '站点磁盘总配额',
+    allowUserDeleteUpload: '允许作者撤下自己上传的图片',
+    allowUserChangeAvatar: '允许用户自行更换头像',
+    allowExternalAvatar: '允许使用站外图片作为头像',
+    externalAvatarHint: '关闭时头像只能从本站图库选择，避免被人塞入追踪像素。',
+    emailVerify: '邮箱验证',
+    emailVerifyHint: '开启后，注册、找回密码、换绑邮箱都需要邮箱验证码。需先配置好 SMTP，否则验证码发不出去。',
+    emailVerifyEnable: '注册与找回密码需要邮箱验证码',
+    codeTtl: '验证码有效期（分钟，2–60）',
+    codeCooldown: '同一邮箱重发间隔（秒，30–600）',
     permissions: '角色权限说明',
     permissionsHint: '三级角色（超级管理员 / 管理员 / 普通用户）的权限对照，仅供查看，规则由系统固化。',
     permColRole: '权限',
@@ -206,18 +240,18 @@ export const siteZh: SiteTexts = {
       import_backup: '导入备份',
     },
   },
-  imageLib: {
-    title: '图片库',
-    sub: '浏览并删除已上传到本站的图片',
-    upload: '上传图片',
-    empty: '暂无已上传的图片',
-    delete: '删除',
-    confirm: '确定删除这张图片吗？正在引用它的文章将显示破图。',
-    deleted: '图片已删除',
-    deleteFailed: '图片删除失败',
+  myUploads: {
+    title: '我的图片',
+    sub: '只有你能看到这个列表。删除只是撤下：文件仍会保留给已经引用它的文章，但其他人再也拿不到它。',
+    empty: '你还没有上传过图片',
+    delete: '撤下',
+    confirm: '撤下这张图片？图库中不会再出现它，别人也无法再使用它。',
+    deleted: '图片已撤下',
+    deleteFailed: '操作失败',
     loading: '加载中…',
-    size: '大小',
-    modified: '修改时间',
+    used: '已用 {used} / {quota}',
+    noQuota: '站点未设置个人配额',
+    refNote: '被 {n} 篇文章引用',
   }
 }
 
@@ -254,6 +288,21 @@ export const siteEn: SiteTexts = {
     registerOpen: 'Allow visitors to self-register',
     registerOpenHint: 'When off, visitors cannot register; accounts must be created by an admin',
     rootOnlyHint: 'Root only (the current value stays in effect)',
+    storage: 'Images & storage',
+    storageHint: 'Three ceilings, narrow to wide: one file, one account, the whole site. In MB.',
+    uploadMaxImage: 'Max size per article image',
+    uploadMaxAvatar: 'Max size per avatar',
+    userQuota: 'Quota per account',
+    siteQuota: 'Total disk quota for the site',
+    allowUserDeleteUpload: 'Authors may withdraw their own images',
+    allowUserChangeAvatar: 'Users may change their own avatar',
+    allowExternalAvatar: 'Allow avatars hosted elsewhere',
+    externalAvatarHint: 'When off, avatars must come from this site’s library — an external URL is a tracking pixel with a friendly name.',
+    emailVerify: 'Email verification',
+    emailVerifyHint: 'When on, sign-up, password reset and email changes require a code. SMTP must be configured first, otherwise no code can be delivered.',
+    emailVerifyEnable: 'Require an email code to register and to reset a password',
+    codeTtl: 'Code lifetime (minutes, 2–60)',
+    codeCooldown: 'Resend interval per address (seconds, 30–600)',
     permissions: 'Role permissions',
     permissionsHint: 'Reference matrix for the three tiers (super admin / admin / user). Read-only; the rules are fixed in code.',
     permColRole: 'Permission',
@@ -315,17 +364,17 @@ export const siteEn: SiteTexts = {
       import_backup: 'Import backup',
     },
   },
-  imageLib: {
-    title: 'Image library',
-    sub: 'Browse and delete images uploaded to this site',
-    upload: 'Upload image',
-    empty: 'No uploaded images yet',
-    delete: 'Delete',
-    confirm: 'Delete this image? Posts using it will show a broken image.',
-    deleted: 'Image deleted',
-    deleteFailed: 'Failed to delete image',
+  myUploads: {
+    title: 'My images',
+    sub: 'Only you can see this list. Deleting withdraws an image: the file stays for articles that already use it, but nobody else can obtain it.',
+    empty: "You haven't uploaded any images yet",
+    delete: 'Withdraw',
+    confirm: 'Withdraw this image? It disappears from the library and nobody else can use it.',
+    deleted: 'Image withdrawn',
+    deleteFailed: 'Action failed',
     loading: 'Loading…',
-    size: 'Size',
-    modified: 'Modified',
+    used: '{used} of {quota} used',
+    noQuota: 'No per-user quota is configured',
+    refNote: 'Used by {n} article(s)',
   }
 }

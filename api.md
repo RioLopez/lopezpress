@@ -39,14 +39,18 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| POST | `/api/auth/register` | 公开 | 注册（受 `allow_register` 开关限制） |
+| POST | `/api/auth/register` | 公开 | 注册（受 `allow_register` 开关限制）。开启邮箱验证时须带 `code` |
 | POST | `/api/auth/login` | 公开 | 登录，返回 `{token, user}`。`email` 与 `username` 等价，任一填了即可（字段名仍叫 `email`） |
 | GET | `/api/auth/register/open` | 公开 | 注册是否开放 |
+| POST | `/api/auth/email-code` | 公开 | 索取一次性验证码 `{email, purpose}`，purpose 只接受 `register` / `reset_password`。**同邮箱 60s 冷却（429）+ 同 IP 每小时 10 封**；SMTP 未配置返回 503；无论邮箱是否已注册回答一致 |
+| POST | `/api/auth/password/reset` | 公开 | 自助重置密码 `{email, code, password}`。成功 bump `token_version`（所有会话失效），旧密码立即作废 |
 | GET | `/api/auth/me` | 登录 | 当前用户 |
 | PUT | `/api/auth/me` | 登录 | 改资料 |
 | POST | `/api/auth/logout` | 登录 | 登出 |
 | POST | `/api/auth/change-password` | 登录 | 改密码（`current_password` + `new_password`）。**返回 `{message, token, expires}`**：bump `token_version` 后旧 token 全部失效，新 token 供当前会话无缝续用 |
 | POST | `/api/auth/logout-all` | 登录 | 全设备登出（bump token version） |
+| POST | `/api/me/email-change/request` | 登录 | 换绑邮箱第一步：验证码发到**新**地址 `{email}` |
+| POST | `/api/me/email-change/confirm` | 登录 | 换绑邮箱第二步 `{email, code}`，成功返回更新后的用户；旧地址会收到一封变更通知 |
 | GET | `/api/me/stats` | 登录 | 我的统计 |
 | GET | `/api/me/login-history` | 登录 | 我的登录记录 |
 
@@ -90,9 +94,12 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/tags/with-count` | 登录 | 带文章数 |
 | PUT | `/api/tags/{id}` | admin | 改名（保留文章关联） |
 | DELETE | `/api/tags/{id}` | admin | 删除（解除关联） |
-| POST | `/api/upload` | 登录 | 上传图片 → `{url}`。扩展名白名单 **+ magic bytes 内容校验**（`http.DetectContentType` 只认 png/jpeg/gif/webp），HTML 伪装成 `.png` 返回 400 |
-| GET | `/api/uploads` | 登录 | 图片库 |
-| DELETE | `/api/uploads/{name}` | admin | 删除图片 |
+| POST | `/api/upload` | 登录 | 上传图片 → `{id, name, url, size, width, height, mime, kind, deduped, remote}`。`kind` 为 `post`（默认，≤5 MB）/ `avatar`（≤512 KB）。扩展名白名单 **+ magic bytes 内容校验**，HTML 伪装成 `.png` 返回 400。**相同字节只存一份**，第二次上传返回 `deduped:true` 并指向已有行（不计配额、不写盘） |
+| GET | `/api/me/uploads` | 登录 | **本人**的上传（分页 24，`?kind=&status=&page=&size=`），附 `stats` 与配额用量。普通用户唯一的图库入口 |
+| DELETE | `/api/me/uploads/{name}` | 登录 | 撤下本人的图（**软删**：文件仍服务已发布文章，但脱离图库、不可再被去重复用）。站长关掉「用户可删自己的图」时返回 403 |
+| GET | `/api/uploads` | **admin** | 全站图库（`?owner=&kind=&status=live\|deleted\|all&page=&size=`）。每行带 `thumb_url`（后台队列生成的 480px 缩略图，未生成时为空串，客户端回落 `url`） |
+| DELETE | `/api/uploads/{name}` | **admin** | 软删（默认）或**硬删**（`?hard=1`，连文件与缩略图一起删，即使文章仍在引用；响应 `affected_refs` 告知破坏了几个引用） |
+| POST | `/api/uploads/{name}/restore` | **admin** | 恢复已撤下的图。若期间有人上传了相同字节，返回 409（唯一索引不允许两条活跃记录） |
 
 ### 1.6 后台 — 内容
 
@@ -282,6 +289,9 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 | 变更 |
 |---|---|
+| 79 | 邮箱验证全套（实验性，默认关闭）：① 新表 `email_codes`（码只存 HMAC，5 次错误作废，一次性、绑用途）② `POST /api/auth/email-code`、`POST /api/auth/password/reset`、`POST /api/me/email-change/{request,confirm}` 四个端点 ③ 注册在开关打开时要求 `code` ④ **开着验证时 `PUT /api/auth/me` 改邮箱直接 403**（否则一次 PUT 就绕过整套验证）⑤ 开关与两个时限 root 专属，普通 admin 保存时继承 ⑥ `GET /api/site-config` 新增 `email_verify_enabled` 供表单判断 |
+| 78 | 图库列表新增 `thumb_url`（后台队列生成的 480px 缩略图；未生成为空串，客户端回落 `url`）。无新增端点；顺带修掉 WebP 一直报 `width/height = 0` 的问题（引入 `golang.org/x/image` 解码器） |
+| 77 | 图库与头像（spec 36）：① `GET /api/uploads` 收归 **admin**（此前任何登录用户可列全站图片）② 新增 `GET/DELETE /api/me/uploads[/{name}]`，本人视角 ③ `DELETE /api/uploads/{name}` 支持 `?hard=1` 硬删 ④ 新增 `POST /api/uploads/{name}/restore` ⑤ `POST /api/upload` 加 `kind`、sha256 去重（`deduped`）、三层配额 ⑥ 文件名改为 22 字符不可枚举 ID（不再泄露上传时间）⑦ `site-config` 新增 7 个存储/头像策略字段，且**缺省即继承**（旧表单不会静默关掉保护）⑧ `PUT /api/me` 的 `avatar` 只接受本站活跃图库文件或站长开启的外链 |
 | 73 | 权限面收紧：① `backup` 导出/下载收归 root（此前 admin 可下载含密码哈希的 JSON 与 `.db`）② 导入加结构闸 + `confirm` 确认词 + 全站 token 失效 ③ `site-config` 对非 root 脱敏 `smtp_pass`/`img_host_token`，`allow_register`/`smtp_*` 改 root 专属 ④ `friend_links` 仅允许 http(s) ⑤ `pinned` 仅 admin/root 可设，审批时清掉普通用户自设的置顶 ⑥ 用户名限定 ASCII `[A-Za-z0-9_-]`（3–32）且大小写不敏感唯一 ⑦ 上传用 `image.DecodeConfig` 真实解码 + 像素上限 ⑧ 非 root 不可读 root 的登录记录与邮箱/IP |
 | 72 | 安全加固：① 文章载荷裁剪 author 敏感字段（见 §3.1）② `change-password` 响应新增 `token`/`expires`，旧 token 立刻失效 ③ `login` 支持 `username` 当标识 ④ `upload` 加 magic-bytes 内容校验 ⑤ 全站响应加安全头（`X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`/CSP/HSTS） |
 | 52 | 新增 `GET /api/posts/{id}/related`、`GET/POST /api/admin/backup/auto`；dashboard 增加 `pending_total`/`view_trend`/`top_posts` |

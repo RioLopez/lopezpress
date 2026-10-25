@@ -54,4 +54,14 @@ EXPOSE 8080
 VOLUME ["/data"]
 
 USER 65532
+
+# Readiness, not liveness: docker restarts a container marked unhealthy, and a
+# container whose SQLite file has gone read-only is NOT fixed by a restart — it
+# would just restart-loop. /health/ready answers 503 in that state, which is
+# what an orchestrator should see before it routes traffic here, and
+# `docker compose` surfaces it in `ps`. Use /health for liveness if you wire a
+# supervisor that must not restart on a disk problem.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/app/lopezpress", "-healthcheck"]
+
 ENTRYPOINT ["/app/lopezpress"]

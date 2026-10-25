@@ -151,12 +151,24 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		File string `json:"file"`
+		// Confirm must be services.RestoreConfirmPhrase. It travels in the body
+		// rather than the query so a "restore this" link cannot be clicked
+		// through to a destructive action.
+		Confirm string `json:"confirm"`
+		// AllowDataLoss is the operator saying "yes, delete every article".
+		AllowDataLoss bool `json:"allow_data_loss"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
 		return
 	}
-	stats, err := svc.RestoreSnapshot(r.Context(), userFromContext(r), in.File)
+	dryRun := r.URL.Query().Get("dry_run") == "1" || r.URL.Query().Get("dry_run") == "true"
+	stats, err := svc.RestoreSnapshot(r.Context(), userFromContext(r), in.File,
+		services.RestoreSnapshotOptions{
+			Confirm:       in.Confirm,
+			DryRun:        dryRun,
+			AllowDataLoss: in.AllowDataLoss,
+		})
 	if err != nil {
 		writeServiceError(w, err)
 		return

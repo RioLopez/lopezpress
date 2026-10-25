@@ -33,6 +33,16 @@ type route struct {
 	path    string
 	auth    authMode
 	roles   []string // nil = any caller; else the exact allowed role list
+	// maxBody overrides the default request-body ceiling for this route. Zero
+	// means "use defaultBodyLimit". Only the multipart upload needs more.
+	//
+	// It lives in the table, not in the handler, because the alternative has
+	// already failed once: R3-05 capped the login body and R3-07 capped the
+	// post body, and every other write handler kept decoding an unbounded
+	// `r.Body` — 18 of 21 decode sites had no ceiling at all. Putting the
+	// number next to the route makes "a new endpoint forgot its cap" a
+	// declaration error rather than an omission nobody notices.
+	maxBody int64
 	handler http.HandlerFunc
 }
 
@@ -48,17 +58,30 @@ var routes = []route{
 	// ---- Public: auth & read-only surface ----
 	{method: "POST", path: "/api/auth/register", auth: authPublic, handler: handlers.Register},
 	{method: "GET", path: "/api/auth/register/open", auth: authPublic, handler: handlers.RegistrationOpen},
-	{method: "GET", path: "/api/authors/{username}", auth: authPublic, handler: handlers.GetAuthor},
+	// Email verification (spec 37, experimental, off by default). Both answer
+	// identically whether or not the address has an account.
+	{method: "POST", path: "/api/auth/email-code", auth: authPublic, handler: handlers.RequestEmailCode},
+	{method: "POST", path: "/api/auth/password/reset", auth: authPublic, handler: handlers.ResetPasswordWithCode},
+	// Author profiles and single-post reads are OPTIONAL-auth, not public: the
+	// anonymous-read switch has to reach them. As authPublic they sat outside
+	// WithOptionalAuth — the only place AllowAnonymous is consulted — so a site
+	// set to public_read=false still answered these four endpoints with full
+	// bodies, RSS items and author post lists to anonymous callers (R1-01).
+	{method: "GET", path: "/api/authors/{username}", auth: authOptional, handler: handlers.GetAuthor},
 	{method: "GET", path: "/api/site-config", auth: authPublic, handler: handlers.GetSiteConfig},
 	// Read a published article without authentication. Only returns posts with
 	// status "published"; no longer increments view_count (spec 23 — counting
 	// moved to POST /api/posts/{id}/view).
-	{method: "GET", path: "/api/posts/{id}/public", auth: authPublic, handler: handlers.GetPostPublic},
+	{method: "GET", path: "/api/posts/{id}/public", auth: authOptional, handler: handlers.GetPostPublic},
 
 	// ---- Public: static assets & SEO ----
+	// /uploads and /robots.txt stay authPublic on purpose: images are embedded
+	// by URL (a browser sends no Authorization header, so gating them would
+	// break covers for every signed-in reader too), and robots.txt must be
+	// readable by a crawler to be told to stay away.
 	{method: "GET", path: "/uploads/", auth: authPublic, handler: handlers.ServeUploads},
-	{method: "GET", path: "/feed", auth: authPublic, handler: handlers.FeedRSS},
-	{method: "GET", path: "/sitemap.xml", auth: authPublic, handler: handlers.Sitemap},
+	{method: "GET", path: "/feed", auth: authOptional, handler: handlers.FeedRSS},
+	{method: "GET", path: "/sitemap.xml", auth: authOptional, handler: handlers.Sitemap},
 	{method: "GET", path: "/robots.txt", auth: authPublic, handler: handlers.Robots},
 
 	// ---- Authenticated: current-user session (JWT) ----
@@ -71,6 +94,10 @@ var routes = []route{
 	{method: "GET", path: "/api/me/stats", auth: authRequired, handler: handlers.MeStats},
 	{method: "GET", path: "/api/me/login-history", auth: authRequired, handler: handlers.MeLoginHistory},
 	{method: "POST", path: "/api/auth/logout-all", auth: authRequired, handler: handlers.LogoutAll},
+	// Verified email change (spec 37): the code goes to the *new* address, and
+	// only an authenticated session may request one.
+	{method: "POST", path: "/api/me/email-change/request", auth: authRequired, handler: handlers.RequestEmailChange},
+	{method: "POST", path: "/api/me/email-change/confirm", auth: authRequired, handler: handlers.ConfirmEmailChange},
 
 	// ---- Read-only surface: optional auth (spec 22) ----
 	{method: "GET", path: "/api/posts", auth: authOptional, handler: handlers.ListPosts},
@@ -95,9 +122,15 @@ var routes = []route{
 	{method: "GET", path: "/api/posts/{id}/revisions", auth: authRequired, handler: handlers.ListRevisions},
 	{method: "POST", path: "/api/posts/{id}/revisions/{revID}/restore", auth: authRequired, handler: handlers.RestoreRevision},
 
-	// ---- Authenticated: image upload / library (any user) ----
-	{method: "POST", path: "/api/upload", auth: authRequired, handler: handlers.UploadImage},
-	{method: "GET", path: "/api/uploads", auth: authRequired, handler: handlers.ListUploads},
+	// ---- Authenticated: image upload ----
+	// Any signed-in author may upload (an article needs pictures). The
+	// LIBRARY, however, is not theirs: see the admin block below.
+	{method: "POST", path: "/api/upload", auth: authRequired, maxBody: maxUploadBodyLimit, handler: handlers.UploadImage},
+	// Personal view: only the caller's own uploads. This exists so "withdraw
+	// an image I uploaded" has somewhere to live without handing out a
+	// site-wide directory (spec 36 §1).
+	{method: "GET", path: "/api/me/uploads", auth: authRequired, handler: handlers.ListMyUploads},
+	{method: "DELETE", path: "/api/me/uploads/{name}", auth: authRequired, handler: handlers.DeleteMyUpload},
 
 	// ---- Admin (admin|root): categories & tags ----
 	{method: "GET", path: "/api/categories/with-count", auth: authRequired, roles: adminRoles, handler: handlers.ListCategoriesWithCount},
@@ -137,7 +170,7 @@ var routes = []route{
 	{method: "DELETE", path: "/api/admin/banned/{id}", auth: authRequired, roles: rootRoles, handler: handlers.DeleteBannedPermanently},
 
 	// ---- Admin (admin|root): Markdown import + trash ----
-	{method: "POST", path: "/api/admin/import/markdown", auth: authRequired, roles: adminRoles, handler: handlers.ImportMarkdown},
+	{method: "POST", path: "/api/admin/import/markdown", auth: authRequired, roles: adminRoles, maxBody: maxMarkdownImportLimit, handler: handlers.ImportMarkdown},
 	{method: "GET", path: "/api/trash", auth: authRequired, roles: adminRoles, handler: handlers.ListTrash},
 	{method: "POST", path: "/api/trash/empty", auth: authRequired, roles: adminRoles, handler: handlers.EmptyTrash},
 	{method: "POST", path: "/api/trash/{id}/restore", auth: authRequired, roles: adminRoles, handler: handlers.RestoreTrash},
@@ -150,14 +183,19 @@ var routes = []route{
 	// and download paths an unguarded hash-disclosure channel.
 	{method: "POST", path: "/api/backup", auth: authRequired, roles: rootRoles, handler: handlers.ExportBackup},
 	{method: "GET", path: "/api/backup/download", auth: authRequired, roles: rootRoles, handler: handlers.DownloadBackup},
-	{method: "POST", path: "/api/backup/import", auth: authRequired, roles: rootRoles, handler: handlers.ImportBackup},
+	{method: "POST", path: "/api/backup/import", auth: authRequired, roles: rootRoles, maxBody: maxBackupImportLimit, handler: handlers.ImportBackup},
 	{method: "POST", path: "/api/backup/restore-snapshot", auth: authRequired, roles: rootRoles, handler: handlers.RestoreSnapshot},
 	{method: "GET", path: "/api/backup/snapshots", auth: authRequired, roles: rootRoles, handler: handlers.ListSnapshots},
 	{method: "GET", path: "/api/admin/backup/auto", auth: authRequired, roles: rootRoles, handler: handlers.GetAutoBackupStatus},
 	{method: "POST", path: "/api/admin/backup/auto", auth: authRequired, roles: rootRoles, handler: handlers.RunAutoBackupNow},
 
-	// ---- Admin (admin|root): image deletion ----
+	// ---- Admin (admin|root): image library ----
+	// Site-wide asset view: who uploaded what, when, from where, and what still
+	// references it. Plain admins get it too — they moderate content, and the
+	// gallery is where a bad image is actually dealt with.
+	{method: "GET", path: "/api/uploads", auth: authRequired, roles: adminRoles, handler: handlers.ListUploads},
 	{method: "DELETE", path: "/api/uploads/{name}", auth: authRequired, roles: adminRoles, handler: handlers.DeleteUpload},
+	{method: "POST", path: "/api/uploads/{name}/restore", auth: authRequired, roles: adminRoles, handler: handlers.RestoreUpload},
 }
 
 // New builds the composed http.Handler:
@@ -185,7 +223,11 @@ func New(cfg *config.Config, limiter *middleware.Limiter, loginLimiter *middlewa
 	// Special cases that don't fit the table: the exact-root index, the health
 	// probe, and the login endpoint (which carries its own dedicated limiter).
 	mux.HandleFunc("GET /", rootIndex)
-	mux.HandleFunc("GET /health", health)
+	// Two probes, two questions. /health is liveness (process up, no DB touch —
+	// a supervisor must not restart-loop over a disk problem); /health/ready is
+	// readiness (can this instance serve, which requires the database to answer).
+	mux.HandleFunc("GET /health", handlers.Healthz)
+	mux.HandleFunc("GET /health/ready", handlers.Ready)
 	mux.Handle("POST /api/auth/login", loginLimiter.Middleware(http.HandlerFunc(handlers.Login)))
 
 	register(mux, routes)
@@ -213,10 +255,22 @@ func register(mux *http.ServeMux, routes []route) {
 		if len(rt.roles) > 0 {
 			h = handlers.RequireRole(rt.roles...)(h)
 		}
+		// Body cap first (outermost of the handler composition): it must apply
+		// before anything reads the body, including the auth middleware's own
+		// parsing on optional-auth routes.
+		limit := rt.maxBody
+		if limit <= 0 {
+			limit = defaultBodyLimit
+		}
+		h = limitBody(limit, h)
 		pattern := rt.method + " " + rt.path
 		switch rt.auth {
 		case authPublic:
-			mux.HandleFunc(pattern, h)
+			// Every route carries the client IP, even the anonymous ones: the
+			// service layer's abuse budgets (email-code per-IP, audit rows)
+			// read it off the context, and an unannotated public route used to
+			// look like "no origin" to them (R3-03 / R4-06).
+			mux.HandleFunc(pattern, handlers.WithClientIP(h))
 		case authRequired:
 			mux.Handle(pattern, withAuth(h))
 		case authOptional:
@@ -238,10 +292,6 @@ func rootIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 // health is the liveness probe.
-func health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
-}
 
 // withAuth wraps an http.HandlerFunc with JWT authentication. It relies on
 // the package-level services.Service installed via handlers.Init, so the

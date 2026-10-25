@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -76,6 +77,102 @@ var migrations = []migration{
 	{version: "0011_add_token_version", up: ensureColumns(&models.User{}, []columnSpec{
 		{name: "token_version", ddl: "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"},
 	})},
+	// 0012: image storage policy (spec 36). Three quotas plus two profile
+	// switches. Defaults match the model tags so a pre-existing row and a
+	// freshly created one behave identically.
+	{version: "0012_add_upload_quota", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
+		{name: "upload_max_image", ddl: "ALTER TABLE site_configs ADD COLUMN upload_max_image INTEGER DEFAULT 5242880"},
+		{name: "upload_max_avatar", ddl: "ALTER TABLE site_configs ADD COLUMN upload_max_avatar INTEGER DEFAULT 524288"},
+		{name: "user_quota_bytes", ddl: "ALTER TABLE site_configs ADD COLUMN user_quota_bytes INTEGER DEFAULT 20971520"},
+		{name: "site_quota_bytes", ddl: "ALTER TABLE site_configs ADD COLUMN site_quota_bytes INTEGER DEFAULT 524288000"},
+		{name: "allow_user_delete_upload", ddl: "ALTER TABLE site_configs ADD COLUMN allow_user_delete_upload INTEGER DEFAULT 1"},
+		{name: "allow_user_change_avatar", ddl: "ALTER TABLE site_configs ADD COLUMN allow_user_change_avatar INTEGER DEFAULT 1"},
+		{name: "allow_external_avatar", ddl: "ALTER TABLE site_configs ADD COLUMN allow_external_avatar INTEGER DEFAULT 0"},
+	}, `UPDATE site_configs SET upload_max_image = 5242880 WHERE upload_max_image IS NULL OR upload_max_image <= 0`,
+		`UPDATE site_configs SET upload_max_avatar = 524288 WHERE upload_max_avatar IS NULL OR upload_max_avatar <= 0`,
+		`UPDATE site_configs SET user_quota_bytes = 20971520 WHERE user_quota_bytes IS NULL OR user_quota_bytes <= 0`,
+		`UPDATE site_configs SET site_quota_bytes = 524288000 WHERE site_quota_bytes IS NULL OR site_quota_bytes <= 0`)},
+	// 0013: email verification settings (spec 37). Experimental feature, off by
+	// default — the DEFAULT 0 is the feature flag itself, not an oversight.
+	{version: "0013_add_email_verify", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
+		{name: "email_verify_enabled", ddl: "ALTER TABLE site_configs ADD COLUMN email_verify_enabled INTEGER DEFAULT 0"},
+		{name: "email_code_ttl_min", ddl: "ALTER TABLE site_configs ADD COLUMN email_code_ttl_min INTEGER DEFAULT 10"},
+		{name: "email_code_cooldown", ddl: "ALTER TABLE site_configs ADD COLUMN email_code_cooldown INTEGER DEFAULT 60"},
+	}, `UPDATE site_configs SET email_code_ttl_min = 10 WHERE email_code_ttl_min IS NULL OR email_code_ttl_min <= 0`,
+		`UPDATE site_configs SET email_code_cooldown = 60 WHERE email_code_cooldown IS NULL OR email_code_cooldown <= 0`)},
+	// 0014: make posts.slug UNIQUE. 0009 created a plain index, so the
+	// read-check-then-insert in ensureUniqueSlug was the only thing standing
+	// between two posts and the same permanent link — and it is a race: R6-02
+	// ran 20 concurrent creates of one title and produced duplicate slugs
+	// (four posts sharing "r6slug-col-2026-7"). A duplicate slug makes
+	// GET /api/permalinks/{slug} resolve to an arbitrary one of them, which is
+	// content impersonation a plain author can trigger without an admin.
+	//
+	// The index cannot be created over existing duplicates, so the migration
+	// first disambiguates them: every row after the first in a slug group gets
+	// a -2/-3/... suffix, oldest first, which is exactly the scheme
+	// ensureUniqueSlug would have picked had it been atomic. Rows with an empty
+	// slug are left alone — an empty string is "no slug yet", not a collision,
+	// and a partial index treats them as outside its scope.
+	//
+	// On a fresh database this migration runs before AutoMigrate has created the
+	// posts table, so it has nothing to do; InitDB re-asserts the index after
+	// AutoMigrate so a new install ends up with the same constraint.
+	{version: "0014_unique_post_slug", up: func(db *gorm.DB) error {
+		if !db.Migrator().HasTable(&models.Post{}) {
+			return nil
+		}
+		if err := disambiguateDuplicateSlugs(db); err != nil {
+			return err
+		}
+		return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_unique ON posts(slug) WHERE slug <> ''`).Error
+	}},
+}
+
+// disambiguateDuplicateSlugs rewrites colliding slugs so a unique index can be
+// built over them. The oldest row in each group keeps the slug; the rest get a
+// numeric suffix, which is what a sequential allocate would have produced.
+func disambiguateDuplicateSlugs(db *gorm.DB) error {
+	// A brand-new database has no posts table yet — AutoMigrate creates it after
+	// this pass, so there is nothing to disambiguate. Checking first keeps the
+	// migration idempotent on both a fresh install and an upgrade.
+	if !db.Migrator().HasTable(&models.Post{}) {
+		return nil
+	}
+	var groups []string
+	if err := db.Model(&models.Post{}).
+		Where("slug <> ''").
+		Group("slug").
+		Having("COUNT(*) > 1").
+		Pluck("slug", &groups).Error; err != nil {
+		return err
+	}
+	for _, slug := range groups {
+		var rows []models.Post
+		if err := db.Where("slug = ?", slug).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := 1; i < len(rows); i++ {
+			// Try successive suffixes; a collision with an existing slug moves
+			// to the next number rather than creating a new duplicate.
+			for n := 2; n < 1000; n++ {
+				candidate := slug + "-" + strconv.Itoa(n)
+				var clash int64
+				if err := db.Model(&models.Post{}).Where("slug = ?", candidate).Count(&clash).Error; err != nil {
+					return err
+				}
+				if clash > 0 {
+					continue
+				}
+				if err := db.Model(&models.Post{}).Where("id = ?", rows[i].ID).
+					Update("slug", candidate).Error; err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // runManualMigrations applies every registered migration in order. Each is

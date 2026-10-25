@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { exportBackup, downloadBackup, saveBlob, importBackup, listSnapshots, restoreSnapshot, getAutoBackupStatus, runAutoBackup, errMessage } from '../core/api'
+import { exportBackup, downloadBackup, saveBlob, importBackup, listSnapshots, restoreSnapshot, previewSnapshotRestore, getAutoBackupStatus, runAutoBackup, errMessage, errStatus } from '../core/api'
 import type { BackupResult, BackupStats, SnapshotInfo } from '../core/types'
 import { fmtDate } from '../core/format'
 import { isRoot } from '../core/roles'
@@ -124,7 +124,23 @@ export function AdminBackupPage() {
     if (!(await confirmDialog(t('admin.snapshotRestoreConfirm', { file })))) return
     setRestoreBusy(file)
     try {
-      await restoreSnapshot(file)
+      // Preview first. A snapshot restore replaces the content AND the account
+      // table, and the one case that hurts is a snapshot that holds almost
+      // nothing: the operator should see "0 articles" before it happens, not
+      // after. The server refuses that case with 409 unless it is acknowledged.
+      const preview = await previewSnapshotRestore(file)
+      pushToast('info', t('admin.snapshotPreview', { posts: String(preview.posts), users: String(preview.users) }))
+
+      try {
+        await restoreSnapshot(file)
+      } catch (e) {
+        if (errStatus(e) !== 409) throw e
+        // The server is asking: "this deletes every article, really?" Ask the
+        // operator the same question in their own words.
+        if (!(await confirmDialog(t('admin.snapshotDataLossConfirm', { file })))) return
+        await restoreSnapshot(file, true)
+      }
+
       pushToast('success', t('admin.restoreSuccess'))
       // The restore auto-snapshotted the pre-restore state, so the list
       // gains an entry; refresh to show it.

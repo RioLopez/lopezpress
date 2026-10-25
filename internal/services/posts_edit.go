@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -22,6 +24,10 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	// The state we read here is the optimistic-lock token for the write below:
+	// if anything else moves the post while this request is in flight, the save
+	// fails instead of silently rolling that move back.
+	originalStatus := post.Status
 	// Banned posts are frozen for everyone but the root: once content is
 	// pulled into the vault the author must not be able to keep editing it
 	// (nor mutate it field-by-field through this endpoint). Root keeps full
@@ -50,9 +56,53 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 		}
 	}
 
+	// R5-05: a reviewer is not an author.
+	//
+	// An admin could rewrite any plain user's title and body, and for an
+	// already-published post the change went live immediately — no review, no
+	// trace, and the article still carried the original author's name. That is
+	// content impersonation reachable by anyone who obtains an admin session
+	// (a weak password, an XSS on the console), and it is strictly more than
+	// the review flow needs: a reviewer who wants changes uses `reject` with a
+	// note, and the author makes them.
+	//
+	// A plain admin keeps every editorial action — unpublish to private,
+	// recategorise, retag, and approve/reject through ReviewPost — but cannot
+	// alter the words. Root keeps full access, because root is the recovery
+	// path for every other permission on the site.
+	//
+	// `slug` is in the protected set: it is the permanent link, so changing it
+	// silently breaks every existing reference and lets a reviewer re-point an
+	// author's URL to different content. Leaving it out of the first version of
+	// this check was an omission, not a decision — a URL is as much the
+	// author's as the text is.
+	if post.AuthorID != me.ID && me.Role == models.RoleAdmin {
+		if in.Title != "" || in.Body != "" || in.Cover != "" || in.Slug != "" {
+			return models.Post{}, newErr(http.StatusForbidden,
+				"only the author or the root can change a post's title, body, cover or slug; "+
+					"send it back to the author with a review note instead")
+		}
+	}
+
 	// Spec 31: keep the pre-edit state so the user can roll back. Snapshotting
 	// before the assignment (not after) is what makes "restore" mean
 	// "the state before this save".
+	//
+	// The content ceilings are checked before the snapshot, so an over-long
+	// write is refused without leaving a revision behind: otherwise every
+	// rejected attempt would still consume one of the 20 revision slots.
+	if in.Title != "" || in.Body != "" {
+		nextTitle, nextBody := post.Title, post.Body
+		if in.Title != "" {
+			nextTitle = in.Title
+		}
+		if in.Body != "" {
+			nextBody = in.Body
+		}
+		if err := ValidatePostContent(nextTitle, nextBody); err != nil {
+			return models.Post{}, err
+		}
+	}
 	s.snapshotRevision(ctx, post, me.ID)
 
 	if in.Title != "" {
@@ -125,6 +175,9 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// cover; an empty string is ignored so partial edits (title-only) don't
 	// wipe an existing cover.
 	if in.Cover != "" {
+		if err := ValidateCoverURL(in.Cover); err != nil {
+			return models.Post{}, err
+		}
 		post.Cover = in.Cover
 	}
 
@@ -133,8 +186,40 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// failure there left a "saved but tagless" (or partially-tagged) post with
 	// a 200 response. Now any association error aborts and rolls back the whole
 	// update so the post and its tags stay consistent.
+	//
+	// R4-11: the save no longer writes `status`. A whole-row Save echoed back
+	// the status we read at the top of this function, so an author saving a
+	// typo at the same moment a reviewer approved the post silently undid the
+	// approval (pending written over published) — and neither party saw an
+	// error. The state change is now a separate, conditional transition from
+	// the state we actually read; if someone moved it first, this save is
+	// refused with 409 instead of rolling their decision back.
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&post).Error; err != nil {
+		if post.Status != originalStatus {
+			won, terr := transitionPostTx(tx, post.ID, []string{originalStatus},
+				map[string]any{"status": post.Status, "review_note": post.ReviewNote})
+			if terr != nil {
+				return terr
+			}
+			if !won {
+				return errStateChanged
+			}
+		}
+		// Content only. Everything here is owned by the author; nothing an
+		// admin or the review flow sets is included.
+		//
+		// `slug` is in this list because the permanent link is part of the
+		// author's content: UpdatePost already resolved it above (with its own
+		// uniqueness probe), and leaving it out of the column list silently
+		// made `in.Slug` a no-op.
+		if err := tx.Model(&models.Post{}).Where("id = ?", post.ID).Updates(map[string]any{
+			"title":       post.Title,
+			"body":        post.Body,
+			"slug":        post.Slug,
+			"category_id": post.CategoryID,
+			"cover":       post.Cover,
+			"pinned":      post.Pinned,
+		}).Error; err != nil {
 			return err
 		}
 		if in.Tags != nil {
@@ -152,8 +237,23 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 				return err
 			}
 		}
+		// Spec 36: re-sync the image ledger against the body that was just
+		// saved. It is a diff, so a title-only edit writes nothing.
+		if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body); err != nil {
+			return err
+		}
 		return nil
 	})
+	if errors.Is(err, errStateChanged) {
+		return models.Post{}, newErr(http.StatusConflict,
+			"this post was reviewed or moderated while you were editing; reload and try again")
+	}
+	// A refusal raised inside the transaction (too many tags, a rejected cover)
+	// carries its own status; mapping it to 500 would tell the client the
+	// server broke when in fact the request was wrong.
+	if se := AsServiceError(err); se != nil {
+		return models.Post{}, se
+	}
 	if err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to update post")
 	}
@@ -162,7 +262,16 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").Where("id = ?", post.ID).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
-	s.audit(ctx, me, "update_post", "post:"+post.ID, "title="+post.Title+"; status="+post.Status)
+	// An edit performed by someone other than the author is the interesting
+	// case for an audit trail: "root changed the category of alice's post" is
+	// what an operator searches for after a dispute, and it is invisible if the
+	// row only records the action. Author edits stay in the compact form.
+	detail := auditDetail("title="+post.Title, "status="+post.Status)
+	if post.AuthorID != me.ID {
+		detail = auditDetail("title="+post.Title, "status="+post.Status,
+			"by="+me.Username, "author_id="+post.AuthorID)
+	}
+	s.audit(ctx, me, "update_post", "post:"+post.ID, detail)
 	post.SanitizeAuthor()
 	return post, nil
 }
@@ -203,9 +312,31 @@ func (s *Service) DeletePost(ctx context.Context, me models.User, id string) err
 			return newErr(http.StatusForbidden, "you can only delete your own posts")
 		}
 	}
-	if err := s.db.WithContext(ctx).Delete(&post).Error; err != nil {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// R4-11: the soft delete is the claim, so it carries the state
+		// preconditions. Reading "not banned" above is only a fast fail — a
+		// concurrent ban between the read and the write would otherwise move a
+		// just-vaulted post into the trash, where it vanishes from every list
+		// while its row stays banned forever.
+		res := tx.Model(&models.Post{}).
+			Where("id = ? AND deleted_at IS NULL AND status <> ?", id, models.PostBanned).
+			Update("deleted_at", time.Now())
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errStateChanged
+		}
+		// The article is gone from every list; its edges in the image ledger
+		// must not keep claiming the files are still in use.
+		return releasePostUploadRefsTx(tx, post.ID)
+	})
+	if errors.Is(err, errStateChanged) {
+		return newErr(http.StatusConflict, "post changed state; reload and try again")
+	}
+	if err != nil {
 		return newErr(http.StatusInternalServerError, "failed to delete post")
 	}
-	s.audit(ctx, me, "delete_post", "post:"+post.ID, "title="+post.Title)
+	s.audit(ctx, me, "delete_post", "post:"+post.ID, auditDetail("title="+post.Title))
 	return nil
 }

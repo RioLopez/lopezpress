@@ -35,10 +35,28 @@ func (s *Service) findOrCreateTags(ctx context.Context, names []string) []models
 // the range where case exists). Interior whitespace is collapsed so "web  dev"
 // and "web dev" are the same tag too.
 func (s *Service) findOrCreateTagsTx(ctx context.Context, db *gorm.DB, names []string) ([]models.Tag, error) {
+	// Every write path funnels through here — CreatePost, UpdatePost, the
+	// Markdown importer and the tag CRUD endpoints — so this is the one place a
+	// ceiling actually holds for all of them.
+	//
+	// R4-10 was reported as "the importer has no name limit"; fixing only the
+	// importer left the far more exposed path open. Any plain author could
+	// POST /api/posts with tags: ["<1 MB of text>"], the tag was created, and
+	// from then on the ANONYMOUS /api/tags endpoint served a megabyte to every
+	// visitor — a one-request bandwidth amplifier that needed no privileges.
+	if len(names) > MaxTagsPerPost {
+		return nil, newErr(http.StatusBadRequest,
+			"too many tags (max "+itoa(MaxTagsPerPost)+")")
+	}
 	var out []models.Tag
 	for _, raw := range names {
 		name := normalizeTagName(raw)
 		if name == "" {
+			continue
+		}
+		// Skip rather than fail: one over-long tag in a post should not cost
+		// the author the whole save, and the UI cannot produce one anyway.
+		if err := ValidateTaxonomyName(name, MaxTagNameLen); err != nil {
 			continue
 		}
 		lookup := func() (models.Tag, bool) {

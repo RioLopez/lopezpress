@@ -99,6 +99,8 @@ export type AdminTexts = {
     snapshotsTime: string
     restoreBtn: string
     snapshotRestoreConfirm: string
+    snapshotPreview: string
+    snapshotDataLossConfirm: string
     restoreSuccess: string
     restoreFailed: string
     importBtn: string
@@ -198,6 +200,47 @@ export type AdminTexts = {
     banPostConfirm: string
     deleteBanned: string
     deleteBannedConfirm: string
+  },
+  // Image library (spec 36): the site-wide asset view. Admins see every
+  // upload, who owns it, and what still references it.
+  media: {
+    title: string
+    sub: string
+    upload: string
+    statusLive: string
+    statusDeleted: string
+    statusAll: string
+    kindAll: string
+    kindPost: string
+    kindAvatar: string
+    kindSite: string
+    siteUsed: string
+    deletedUsed: string
+    orphans: string
+    empty: string
+    loading: string
+    owner: string
+    ownerLegacy: string
+    dimensions: string
+    refs: string
+    refsNone: string
+    uploaded: string
+    originalName: string
+    sourceIp: string
+    sha256: string
+    detail: string
+    withdraw: string
+    withdrawConfirm: string
+    restore: string
+    restored: string
+    purge: string
+    purgeConfirm: string
+    purgeWithRefs: string
+    deleted: string
+    deleteFailed: string
+    close: string
+    prev: string
+    next: string
   }
 }
 
@@ -292,6 +335,8 @@ export const adminZh: AdminTexts = {
     snapshotsTime: '创建时间',
     restoreBtn: '恢复',
     snapshotRestoreConfirm: '确定用快照 {file} 覆盖当前数据库？当前状态会先自动备份为一份新快照。',
+    snapshotPreview: '该快照包含 {posts} 篇文章、{users} 个账号。这是覆盖前的预览，尚未执行。',
+    snapshotDataLossConfirm: '这份快照里没有文章，恢复会让全站文章清零（账号也会被替换）。确认继续？',
     restoreSuccess: '已从快照恢复',
     restoreFailed: '快照恢复失败',
     importBtn: '选择备份文件',
@@ -387,6 +432,45 @@ export const adminZh: AdminTexts = {
     banPostConfirm: '封禁后这篇文章只有你能看到，确定吗？',
     deleteBanned: '永久删除',
     deleteBannedConfirm: '确定永久删除「{t}」吗？该操作不可撤销。',
+  },
+  media: {
+    title: '图片库',
+    sub: '全站图片资产：谁传的、什么时候、多大、被哪些文章引用。只有管理员能看到。',
+    upload: '上传图片',
+    statusLive: '在用',
+    statusDeleted: '已撤下',
+    statusAll: '全部',
+    kindAll: '全部类型',
+    kindPost: '正文图',
+    kindAvatar: '头像',
+    kindSite: '站点图标',
+    siteUsed: '磁盘占用 {used} / {quota}',
+    deletedUsed: '已撤下仍占用 {size}（{n} 张）',
+    orphans: '无人引用 {n} 张',
+    empty: '没有符合条件的图片',
+    loading: '加载中…',
+    owner: '上传者',
+    ownerLegacy: '历史文件（无归属）',
+    dimensions: '尺寸',
+    refs: '引用',
+    refsNone: '未被引用',
+    uploaded: '上传时间',
+    originalName: '原始文件名',
+    sourceIp: '来源 IP',
+    sha256: '内容指纹',
+    detail: '详情',
+    withdraw: '撤下',
+    withdrawConfirm: '撤下这张图片？它会从图库消失，其他人无法再使用；已经引用它的文章仍会正常显示。',
+    restore: '恢复',
+    restored: '已恢复',
+    purge: '彻底删除',
+    purgeConfirm: '彻底删除这张图片？文件将从磁盘移除，无法恢复。',
+    purgeWithRefs: '这张图片正被 {n} 篇文章引用，彻底删除后那些文章会出现破图。确定继续？',
+    deleted: '操作完成',
+    deleteFailed: '操作失败',
+    close: '关闭',
+    prev: '上一页',
+    next: '下一页',
   }
 }
 
@@ -481,6 +565,8 @@ export const adminEn: AdminTexts = {
     snapshotsTime: 'Created',
     restoreBtn: 'Restore',
     snapshotRestoreConfirm: 'Overwrite the current database with snapshot {file}? The current state is auto-backed-up as a new snapshot first.',
+    snapshotPreview: 'This snapshot holds {posts} articles and {users} accounts. Preview only — nothing has been changed.',
+    snapshotDataLossConfirm: 'This snapshot contains no articles, so restoring it deletes every article on the site (and replaces the accounts). Continue?',
     restoreSuccess: 'Restored from snapshot',
     restoreFailed: 'Snapshot restore failed',
     importBtn: 'Choose backup file',
@@ -576,5 +662,44 @@ export const adminEn: AdminTexts = {
     banPostConfirm: 'A banned post is visible to you only. Continue?',
     deleteBanned: 'Delete permanently',
     deleteBannedConfirm: 'Permanently delete "{t}"? This cannot be undone.',
+  },
+  media: {
+    title: 'Media library',
+    sub: 'Every image on this site: who uploaded it, when, how large, and which articles use it. Admins only.',
+    upload: 'Upload image',
+    statusLive: 'In use',
+    statusDeleted: 'Withdrawn',
+    statusAll: 'All',
+    kindAll: 'All kinds',
+    kindPost: 'Article',
+    kindAvatar: 'Avatar',
+    kindSite: 'Site icon',
+    siteUsed: '{used} of {quota} on disk',
+    deletedUsed: 'Withdrawn but still on disk: {size} ({n})',
+    orphans: '{n} unreferenced',
+    empty: 'No images match this filter',
+    loading: 'Loading…',
+    owner: 'Uploaded by',
+    ownerLegacy: 'Legacy file (no owner)',
+    dimensions: 'Size',
+    refs: 'References',
+    refsNone: 'Not referenced',
+    uploaded: 'Uploaded',
+    originalName: 'Original name',
+    sourceIp: 'Source IP',
+    sha256: 'Content hash',
+    detail: 'Details',
+    withdraw: 'Withdraw',
+    withdrawConfirm: 'Withdraw this image? It disappears from the library and nobody else can use it; articles already using it keep rendering.',
+    restore: 'Restore',
+    restored: 'Restored',
+    purge: 'Delete permanently',
+    purgeConfirm: 'Permanently delete this image? The file is removed from disk and cannot be recovered.',
+    purgeWithRefs: 'This image is used by {n} article(s). Deleting it will break them. Continue?',
+    deleted: 'Done',
+    deleteFailed: 'Action failed',
+    close: 'Close',
+    prev: 'Previous',
+    next: 'Next',
   }
 }

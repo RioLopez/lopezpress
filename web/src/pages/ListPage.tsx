@@ -139,13 +139,23 @@ export function ListPage() {
   // freeze (only root edits; deletes go through the root-only vault).
   // Without this the links rendered for everyone — anonymous visitors
   // included — and every click died on a 403.
-  const canEditPost = (p: Post): boolean => {
+  //
+  // R5-05: editing and moderating are now separate powers. An admin may delete
+  // a plain user's post (a moderation action) but may not rewrite its title or
+  // body — the backend refuses that, because changing a published article's
+  // text changes what the public reads while it still carries the original
+  // author's name. Root keeps both, being the recovery path.
+  const canModeratePost = (p: Post): boolean => {
     if (!user) return false
     if (p.author?.id === user.id || isRoot(user.role)) return true
     return isAdminOnly(user.role) && p.author?.role === 'user'
   }
+  const canEditPost = (p: Post): boolean => {
+    if (!user) return false
+    return p.author?.id === user.id || isRoot(user.role)
+  }
   const canDeletePost = (p: Post): boolean =>
-    p.status !== 'banned' && canEditPost(p)
+    p.status !== 'banned' && canModeratePost(p)
   // A deep link may point past the end (post deleted, filters changed). That
   // is not an error state — show the message plus the pager so the reader can
   // get back (spec 24 AC-1.4).

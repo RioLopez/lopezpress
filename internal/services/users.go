@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"gorm.io/gorm"
+
 	"lopezpress/internal/models"
 )
 
@@ -91,10 +93,25 @@ func (s *Service) SetUserDisabled(ctx context.Context, actor models.User, id str
 	if user.Disabled == disabled {
 		return user, nil // no-op
 	}
-	if err := s.db.WithContext(ctx).Model(&user).Update("disabled", disabled).Error; err != nil {
+	// R6-01: disabling an account has to end its sessions, not just make the
+	// next login fail. Authentication re-reads `disabled` on every request, so
+	// a disable takes effect at once — but re-enabling the account (an appeal
+	// won, a mistaken ban lifted, a temporary suspension over) used to hand the
+	// very same pre-disable JWT its access back, because nothing had bumped
+	// token_version. Every other revocation primitive in this codebase — change
+	// password, admin reset, logout-all, password reset — bumps it; disable was
+	// the one that did not, so "temporarily suspend" was not actually temporary.
+	upd := map[string]any{"disabled": disabled}
+	if disabled {
+		upd["token_version"] = gorm.Expr("token_version + 1")
+	}
+	if err := s.db.WithContext(ctx).Model(&user).Updates(upd).Error; err != nil {
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update user")
 	}
 	user.Disabled = disabled
+	if disabled {
+		user.TokenVersion++
+	}
 	s.audit(ctx, actor, "set_user_disabled", "user:"+id, "disabled="+strconv.FormatBool(disabled))
 	return user, nil
 }
