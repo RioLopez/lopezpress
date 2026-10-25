@@ -1725,6 +1725,24 @@
 
 ---
 
+### 第 87 轮 — 提交推送 + 上线前自审（2026-10-25）
+
+**做了什么**：
+1. **git 提交 + 推送**：11 轮改动（76–86）一次性提交为两个 commit，走 `github-auto-upload`（本机 `git push` 直连被代理挡，`api.github.com` 可达，自动回退 Git Data API）。远程 `RioLopez/lopezpress` 已同步。
+2. **休整**：删掉两个 0 字节垃圾文件（`类别`、一个文件名是段落乱码的残留）、`.gitignore` 加 `__pycache__/`。
+3. **真机冒烟**：隔离实例重跑 `defence_smoke.py` **39 项全过**；真机导出确认备份 JSON 含全部 9 个键（含新增的 `site_configs`/`revisions`/`upload_files`/`upload_livekeys`）。
+
+**自审抓到 2 个真问题（都修了）**：
+
+| # | 问题 | 修法 |
+|---|---|---|
+| 1 | **`signingSecret()` 还留着弱默认**（第 84 轮遗漏）：cfg 为空/secret 空时回退到 `dev-secret-change-me-in-prod` —— 一个公开的签名密钥，等于"忘了配 = 每个 token 都能伪造"。第 84 轮只在 config 层做了 `EnsureJWTSecret`，service 层的 fallback 没删干净 | 去掉 fallback，返回空串；`SignToken` 空 secret 直接 500、`parseToken` 空 secret 直接 401（fail-closed）。`.env.example` 的误导性示例值 `JWT_SECRET=dev-secret...` 也改成留空 + 说明 |
+| 2 | **快照恢复 dry-run 排在 confirm 之后**：预览居然也要确认短语，且空用户快照无法预览（被 Gate 2 提前拦）。预览的意义就是"如实报告危险情况" | dry-run 移到所有 gate 之前，永不设防、如实报告（含 users=0） |
+
+**验证**：`go build`/`vet`、7 包全 PASS（**291 用例 / 61 文件**）、四门禁绿、前端 tsc + 54 + build 绿。
+
+---
+
 ## 五、已知风险 & 待解决问题
 | 等级 | 问题 | 影响 | 状态 |
 |------|------|------|------|

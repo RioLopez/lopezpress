@@ -277,9 +277,9 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 指标 | 值 |
 |---|---|
-| 后端规模 | 144 个 `.go`，26,898 行；7 个直接依赖（+11 indirect；第 78 轮新增 `golang.org/x/image`，此后无新依赖） |
+| 后端规模 | 144 个 `.go`，26,958 行；7 个直接依赖（+11 indirect；第 78 轮新增 `golang.org/x/image`，此后无新依赖） |
 | 前端规模 | 72 个 `.ts(x)`，12,225 行；26 页面 + 4 个人中心子组件；3 个依赖（`preact` / `wouter` / `marked`） |
-| 测试 | 61 个文件 / **290** 个 `Test*` + 前端 vitest **5 文件 54 用例**（第 81 轮新增 34 个 Go 用例、11 个前端用例；第 82 轮新增 16 个；第 83 轮新增 8 个；第 84 轮新增 9 个） |
+| 测试 | 61 个文件 / **291** 个 `Test*` + 前端 vitest **5 文件 54 用例**（第 81 轮新增 34 个 Go 用例、11 个前端用例；第 82 轮新增 16 个；第 83 轮新增 8 个；第 84 轮新增 9 个） |
 | 路由 | 后端 **84** 条（新增 /health/ready），前端接入 **76** 条，方法不匹配 **0**（`scripts/contract_check.py`） |
 | 架构门禁 | `scripts/arch_check.py` 基线：R1=0（传输符号）/ R1b=31（仅状态码常量，**仅观察不设门禁**，随文件数自然增长）/ R2.files=1 / R2.funcs=15 / **R3=0**（散落在 `dto.go` 外的 struct）/ R4=0 / R5=0 / R7=0 / R8=0 / R9=0 / R10=0 |
 | 构建产物 | JS 261.38 kB / gzip 81.28 kB；CSS 66.75 kB / gzip 12.47 kB |
@@ -335,12 +335,12 @@ python scripts/arch_check.py # 改过代码时必跑：架构债只许降不许�
 
 | 项 | 值 |
 |---|---|
-| 最后更新 | 2026-10-25（**第 86 轮：备份完整性** —— 导出→导入不再丢站点：补上 `site_configs`/`revisions`/`upload_files` 三个表，其中 `SiteConfig.PublicRead` 的 `default:true` 会让 struct 导入把 `false` 吞成 `true`（私密站恢复成公开），改用 map 显式列 31 列；`upload_files.LiveKey` 受 UNIQUE 约束但 `json:"-"`，单独导 `upload_livekeys` map；图片文件本体诚实声明"不在 JSON 内、需单独备份 uploads 目录"） |
-| 对应提交 | 主题 `feat(media): upload library with dedupe, quotas and soft delete`（第 77 轮）/ `feat(media): serial thumbnail queue backed by the database`（第 78 轮）/ `feat(auth): experimental email verification`（第 79 轮）——**三轮均尚未 commit**；已提交未推送的是 `fix(security): close backup wipe, restore routes, site-config secrets, pinning`（第 75 轮），用 `git log --oneline -4` 核对，**不写 sha** |
-| 正在做 | 无进行中任务。代码 + 文档已落盘；`go build`/`go vet`/`go test`（**270 用例 / 56 文件**）、`tsc`、`vite build`、`arch_check`、`contract_check`、`doc_check`、前端 vitest（**54 用例 / 5 文件**）全绿。第 83 轮做过一次**隔离实例真机 HTTP 验证**（35 项，独立 DB/uploads/backups，验完已停），但**没有覆盖并发/资源类的长时间压测**——那些仍需在真机按 R1–R6 原用例复测 |
-| 下一步第一件事 | ① **commit + 推送第 76–83 轮**（70+ 文件未提交；推送走 `github-auto-upload`，`git push` 直连不通）② **用新二进制重启本地服务**（双击 `LopezPress.bat`）③ 邮箱验证与 nginx 改动仍需真实环境验证 ④ 按 `pentest/` 的 R1–R6 原用例在真机复测（并发/资源类问题只能靠实测确认） |
+| 最后更新 | 2026-10-25（**第 87 轮：提交推送 + 上线前自审** —— 11 轮改动已 push 到 `RioLopez/lopezpress`；自审又抓 2 个真问题：① `signingSecret()` 还留着弱默认密钥（忘了配 = token 可伪造），改 fail-closed；② 快照恢复 dry-run 排在 confirm 之后（预览竟要确认、空快照无法预览），移到所有 gate 之前） |
+| 对应提交 | 第 72–87 轮已全部 commit + push（`RioLopez/lopezpress`，走 `github-auto-upload` Git Data API）。最近两个：`security: harden for launch — rounds 76-86`（2f94902）、`fix(security): fail-closed JWT signing; snapshot dry-run needs no confirm`（b13f822）。tag 仍是 `v0.1.0`，上线前应打新 tag |
+| 正在做 | 无进行中任务。`go build`/`vet`/`go test`（**291 用例 / 61 文件**）、`tsc`、`vite build`、四个门禁、前端 vitest（**54 用例 / 5 文件**）全绿。第 83/87 轮各做过一次隔离实例真机 HTTP 验证（`defence_smoke.py` 39 项全过）。**尚未**在真实 VPS 规格（1C/1.5G）上做资源类长时间压测 |
+| 下一步第一件事 | ① **上线准备**：真实 VPS 端到端部署（docker build / 或裸二进制 + nginx + systemd）② 清理测试残迹数据（见未决问题 ⑤⑥）③ 邮箱验证等"未验收功能"默认关闭并写进部署文档 ④ 上线后打 `v0.2.0` tag |
 | 未决问题 | ① 未 docker build、未在真实 VPS 端到端跑 ② 站点名仍是 `Echo`（DB 数据，需在站点设置里改）③ 回收站"单条永久删除"未做（只有清空）④ 缩略图 `skip` 判定按"长边≤480 且 ≤96KB"，小于该尺寸但体积大的图仍会生成缩略图，属可接受偏差 ⑤ `data/uploads/` 两个 418KB PNG 已被 77 轮回填为 `legacy` 行（无归属），未被任何文章引用，可后台硬删 ⑥ 库里 6 篇 pending 测试残迹（`deep-xss` / `x` / `pin-test` / `slug-clash` / `fk-test` / `deep-test-pub`）与 1 条 `category_id=999999` 的脏外键，未清 ⑦ WXR（WordPress XML）导入未做 ⑧ `ListCategoriesWithCount`/`ListTagsWithCount` 的计数仍含 private/pending/draft（只泄露"存在多少"，不泄露内容），未收口 ⑨ 邮箱验证码的"同 IP 每小时 10 封"是内存固定窗口，重启清零（仅防连续滥用，不追求精确） |
-| 当前分支状态 | 第 72–74 轮已推送；第 75 轮已 commit **未推送**；第 76–83 轮**未 commit**；tag 仍是 `v0.1.0`，之后未打新 tag。**注意**：`git status` 里 70+ 个未提交文件是第 75–79 轮的功能开发 + 第 81 轮的安全修复，两者混在同一工作区 |
+| 当前分支状态 | 第 72–87 轮**全部已 commit + push**，`git status` 干净，`main` 与 `origin/main` 一致。tag 仍 `v0.1.0`（上线后应打 `v0.2.0`） |
 
 ### 9.5 新会话开场自检（30 秒）
 
