@@ -306,16 +306,25 @@ func TestEscapeLike(t *testing.T) {
 	}
 }
 
-// TestSignTokenFallsBackToDevSecret verifies signing works even when cfg is
-// nil (uses the documented dev fallback secret) and returns a future expiry.
-func TestSignTokenFallsBackToDevSecret(t *testing.T) {
-	svc := New(nil, nil) // nil cfg -> dev fallback secret
-	tok, exp, err := svc.SignToken("user-1", "user", 0)
+// SignToken must fail closed when no secret is configured. It used to fall back
+// to a hard-coded "dev-secret-change-me-in-prod" — a published signing key, so
+// "forgot to configure" was "every token is forgeable". Now a nil config means
+// an empty secret, and an empty secret means no token, not a weak one.
+func TestSignTokenFailsClosedWithoutSecret(t *testing.T) {
+	svc := New(nil, nil) // nil cfg -> no secret
+	if _, _, err := svc.SignToken("user-1", "user", 0); err == nil {
+		t.Fatal("SignToken with nil cfg must fail closed, not sign with a default key")
+	}
+
+	// With a configured secret it signs and returns a future expiry.
+	svc2, db := newTestService(t)
+	defer closeDB(db)
+	tok, exp, err := svc2.SignToken("user-1", "user", 0)
 	if err != nil {
-		t.Fatalf("SignToken with nil cfg: %v", err)
+		t.Fatalf("SignToken with a configured secret: %v", err)
 	}
 	if tok == "" {
-		t.Fatalf("expected non-empty token")
+		t.Fatalf("expected a non-empty token")
 	}
 	if exp.IsZero() {
 		t.Fatalf("expected a non-zero expiry, got zero time")

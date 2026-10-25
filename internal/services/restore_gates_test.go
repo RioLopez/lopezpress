@@ -202,3 +202,37 @@ func TestSnapshotRestoreOfAnOlderButRealSnapshotNeedsNoOverride(t *testing.T) {
 		t.Fatalf("expected the 2 posts from the snapshot, found %d", posts)
 	}
 }
+
+// A dry run is a preview. It must work WITHOUT the confirmation phrase (the
+// phrase protects the destructive apply, not the look), and it must report even
+// the dangerous snapshots — an operator cannot say "no" to a snapshot they were
+// never allowed to see.
+func TestSnapshotRestoreDryRunNeedsNoConfirmation(t *testing.T) {
+	svc, db := newFileTestService(t)
+	svc.cfg.BackupDir = t.TempDir()
+	ctx := context.Background()
+	root := makeUser(t, db, "root", "root@example.com", models.RoleRoot)
+
+	// A snapshot with users but no posts, previewed with no confirm phrase.
+	writeFakeSnapshot(t, svc.cfg.BackupDir, "snapshot-20260101-000010.db", 1, 0)
+	stats, err := svc.RestoreSnapshot(ctx, root, "snapshot-20260101-000010.db",
+		RestoreSnapshotOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run must not require the confirm phrase: %v", err)
+	}
+	if stats.Users != 1 || stats.Posts != 0 {
+		t.Fatalf("dry run reported wrong stats: %+v", stats)
+	}
+
+	// An empty-users snapshot must still be previewable — the apply refuses it
+	// (nothing could log in afterwards), but the preview reports it honestly.
+	writeFakeSnapshot(t, svc.cfg.BackupDir, "snapshot-20260101-000011.db", 0, 0)
+	stats, err = svc.RestoreSnapshot(ctx, root, "snapshot-20260101-000011.db",
+		RestoreSnapshotOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run must preview even an empty snapshot: %v", err)
+	}
+	if stats.Users != 0 {
+		t.Fatalf("dry run should honestly report 0 users, got %d", stats.Users)
+	}
+}

@@ -82,6 +82,15 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 		return BackupStats{}, newErr(http.StatusInternalServerError, "cannot read snapshot tags: "+err.Error())
 	}
 
+	// A dry run stops here, BEFORE every gate. The preview's whole job is to
+	// report what a snapshot holds — including the dangerous cases — so the
+	// operator can see "0 users" or "0 articles" and decide. It needs no
+	// confirmation phrase and passes no gate: it changes nothing, so there is
+	// nothing to protect.
+	if opt.DryRun {
+		return snapStats, nil
+	}
+
 	// Gate 1 — the confirmation phrase. Import has had this since spec #6; the
 	// snapshot restore, which is strictly more destructive (it also replaces
 	// the account table), did not. A single POST against a stale or empty
@@ -97,15 +106,6 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 	if snapStats.Users == 0 {
 		return BackupStats{}, newErr(http.StatusBadRequest,
 			"this snapshot contains no users, so restoring it would leave the site with no way to log in; refusing")
-	}
-
-	// A dry run stops here. It is deliberately checked BEFORE the data-loss gate
-	// below: the preview's whole job is to let an operator see that a snapshot
-	// would delete everything, and refusing to preview the dangerous case hides
-	// exactly the information they came for. It changes nothing, so there is
-	// nothing to protect.
-	if opt.DryRun {
-		return snapStats, nil
 	}
 
 	// Gate 3 — the case that actually happened: an empty (or nearly empty)
