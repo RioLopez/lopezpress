@@ -144,6 +144,12 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 // user's TokenVersion (e.g. on "log out all devices") invalidates the token.
 func (s *Service) SignToken(userID, role string, tokenVersion int64) (string, time.Time, error) {
 	secret := s.signingSecret()
+	if secret == "" {
+		// Fail closed: signing with an empty or published key would mint a token
+		// any attacker can reproduce. Startup guarantees a secret exists, so this
+		// is a programming error, not a user-recoverable one.
+		return "", time.Time{}, newErr(http.StatusInternalServerError, "jwt signing secret is not configured")
+	}
 	expiryHours := 24
 	if s.cfg != nil && s.cfg.JWTExpiryHours > 0 {
 		expiryHours = s.cfg.JWTExpiryHours
@@ -161,13 +167,19 @@ func (s *Service) SignToken(userID, role string, tokenVersion int64) (string, ti
 	return token, expires, err
 }
 
-// signingSecret returns the JWT signing secret, falling back to the
-// documented dev default when cfg is unset.
+// signingSecret returns the JWT signing secret, or "" when none is configured.
+//
+// It must NOT fall back to a constant: a published default is a signing key
+// anyone can read from the source, which turns "forgot to configure" into
+// "every token is forgeable". config.EnsureJWTSecret guarantees a non-empty
+// value at startup (dev generates and caches one, prod refuses to boot), so an
+// empty result here means a service built by hand with a nil config, or a test
+// that forgot to set it — and both callers fail closed on the empty string.
 func (s *Service) signingSecret() string {
-	if s.cfg != nil && s.cfg.JWTSecret != "" {
+	if s.cfg != nil {
 		return s.cfg.JWTSecret
 	}
-	return "dev-secret-change-me-in-prod"
+	return ""
 }
 
 // Authenticate parses and validates a raw JWT (from an Authorization header
@@ -217,6 +229,11 @@ func (s *Service) Authenticate(ctx context.Context, rawToken string) (models.Use
 // parseToken parses and validates a JWT. Accepts both "Bearer <token>" and
 // bare token forms.
 func (s *Service) parseToken(header, secret string) (jwt.MapClaims, error) {
+	if secret == "" {
+		// No configured secret means no token is valid — the opposite of
+		// accepting one signed with a published default.
+		return nil, fmt.Errorf("jwt secret not configured")
+	}
 	raw := header
 	if len(header) > 7 && header[:7] == "Bearer " {
 		raw = header[7:]
