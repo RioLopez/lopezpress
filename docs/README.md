@@ -1,10 +1,10 @@
 > 类别 B · 项目/内容/参考 — 产品与工程文档，AI 按需查阅，不约束流程。
 >
-> **总入口在仓库根 `../MASTER.md`**（文档总索引 + 自驱协议）。本文件只是 `docs/` 目录的内部索引。
+> 本文件是 `docs/` 目录（产品 / 工程文档）的内部索引。AI 协作文档在本地 `dev/`（不进 git），见根目录 `AGENTS.md` 指针。
 
 # lopezpress 文档体系
 
-> **文档两类制(2026-10-22)**:全仓库文档分 A(指挥约束 AI,母文档 `../AGENTS.md`) / B(项目参考,本目录为 B 总入口)两类。AI 流程约束以 Class A 为准;本目录是产品/工程文档索引。每个文件顶部有 `> 类别 A/B` 横幅。
+> 每个文件顶部有 `> 类别 A/B` 横幅。A = 指挥/约束 AI（在本地 `dev/`），B = 项目参考（本目录）。
 
 本目录是项目的**规范与决策体系**，用于避免"想一出是一出、做一半忘了目标"。
 它分两层：
@@ -134,16 +134,6 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 | 待办清单（**唯一权威**） | P1/P2/P3 + 功能缺口 + 设计取舍 + 实测无问题项 | `TODO.md` |
 | 安全审计报告 | 10 项安全加固的落地记录（2026-09-24 轮） | `AUDIT_REPORT.md` |
 | 代码地图 / 接手速查 | 路由 / API 端点 / 页面 / 改码红线 | `PROJECT_OVERVIEW.md` |
-| 首轮功能审计快照 | **已归档**，结论已全部落入 TODO.md；勿再当待办 | `archive/2026-10-14-FUNCTIONAL_AUDIT.md` |
-
-### 2.5 AI 协作体系（2026-10-19 建立）
-
-| 文档 | 作用 | 文件 |
-|---|---|---|
-| AGENTS 入口（**所有 AI 工具第一份必读**） | 速查 + 红线 + 验证命令 | 根目录 `../AGENTS.md` |
-| AI 协作标准（**流程唯一标准**） | 五阶段工作流 / 任务分级 / 验证门禁 / 十条红线 / 上下文纪律 | `AI_STANDARD.md` |
-| 提示词模板库 | 继续 / 新功能 / 修 bug / 自查 / 验证记录 五个场景 | `prompts/` |
-| 外部参考提炼 | GitHub 参考项目（spec-kit、BMAD 等）借鉴了什么、没抄什么 | `reference/AI_CODING_REFERENCES.md` |
 
 ---
 
@@ -195,10 +185,10 @@ spec 的验收标准用 EARS（Easy Approach to Requirements Syntax）写，保�
 
 | 文件 | 维度 | 内容 | 更新时机 |
 |------|------|------|----------|
-| `PROGRESS.md` | 时间线 | 第 N 轮做了什么 | 每轮收尾 |
+| `dev/ai-dev/PROGRESS.md`（本地） | 时间线 | 第 N 轮做了什么 | 每轮收尾 |
 | `docs/specs/` | 空间 | 每个页面应该长什么样 | 改动该页面时 |
 | `docs/decisions/` | 决策 | 跨页重大决策 + 理由 | 做决策时 |
-| `AGENTS.md` + `docs/AI_STANDARD.md` | 协作 | AI 怎么干活、怎么算完 | 流程缺口出现时（append 条款） |
+| `dev/ai-dev/AGENTS.md` + `dev/ai-dev/AI_STANDARD.md`（本地） | 协作 | AI 怎么干活、怎么算完 | 流程缺口出现时（append 条款） |
 
 三者互相引用：spec 的"相关决策"指向 decision；decision 的"影响 spec"指向 spec；
 PROGRESS 轮次可注明"见 spec 02 / decision 0001"。
