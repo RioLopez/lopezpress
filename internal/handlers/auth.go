@@ -83,25 +83,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, res)
 }
 
-// Login verifies credentials and returns a JWT.
-// POST /api/auth/login
-func Login(w http.ResponseWriter, r *http.Request) {
-	var in services.LoginInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeInvalidBody(w)
-		return
-	}
-
-	meta := services.LoginMeta{IP: clientIP(r), UA: r.UserAgent()}
-	res, err := svc.Login(r.Context(), in, meta)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, res)
-}
-
 // Me returns the public view of the currently authenticated user.
 // GET /api/auth/me  (requires JWT)
 func Me(w http.ResponseWriter, r *http.Request) {

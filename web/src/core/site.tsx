@@ -14,6 +14,7 @@ const DEFAULT: SiteConfigPublic = {
   site_logo: '',
   site_favicon: '',
   site_url: '',
+  site_description: '',
   footer_text: '',
   icp_no: '',
   friend_links: '',

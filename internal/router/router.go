@@ -58,6 +58,10 @@ var routes = []route{
 	// ---- Public: auth & read-only surface ----
 	{method: "POST", path: "/api/auth/register", auth: authPublic, handler: handlers.Register},
 	{method: "GET", path: "/api/auth/register/open", auth: authPublic, handler: handlers.RegistrationOpen},
+	// Login challenge. Public like register/login: it is part of the
+	// pre-authentication flow, and the kind it returns is decided by the
+	// caller's failure history, not by anything in the request.
+	{method: "GET", path: "/api/auth/captcha", auth: authPublic, handler: handlers.IssueCaptcha},
 	// Email verification (spec 37, experimental, off by default). Both answer
 	// identically whether or not the address has an account.
 	{method: "POST", path: "/api/auth/email-code", auth: authPublic, handler: handlers.RequestEmailCode},

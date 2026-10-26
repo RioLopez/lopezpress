@@ -20,7 +20,14 @@ setTokenGetter(() => localStorage.getItem(TOKEN_KEY) || '')
 interface AuthContextValue {
   user: UserPublic | null
   loading: boolean
-  login: (email: string, password: string) => Promise<UserPublic>
+  // The solved captcha travels with the credentials because the server will
+  // not compare the password without it. Optional so callers that predate the
+  // challenge (and the captcha-off configuration) keep working.
+  login: (
+    email: string,
+    password: string,
+    captcha?: { id?: string; code?: string; x?: number },
+  ) => Promise<UserPublic>
   // code is only used while the site has email verification switched on
   // (spec 37, experimental); pass undefined otherwise.
   register: (u: string, e: string, p: string, code?: string) => Promise<void>
@@ -64,8 +71,18 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const doLogin = async (email: string, password: string): Promise<UserPublic> => {
-    const res: AuthResult = await apiLogin({ email, password })
+  const doLogin = async (
+    email: string,
+    password: string,
+    captcha?: { id?: string; code?: string; x?: number },
+  ): Promise<UserPublic> => {
+    const res: AuthResult = await apiLogin({
+      email,
+      password,
+      captcha_id: captcha?.id,
+      captcha_code: captcha?.code,
+      captcha_x: captcha?.x,
+    })
     localStorage.setItem(TOKEN_KEY, res.token)
     setUser(res.user)
     return res.user

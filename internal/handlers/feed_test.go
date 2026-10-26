@@ -143,3 +143,57 @@ func TestSitemapFallsBackToIDWithoutSlug(t *testing.T) {
 		t.Fatalf("sitemap should fall back to /read/{id} without a slug: %s", body)
 	}
 }
+
+// A blog that allows Chinese titles has Chinese slugs. The feed and sitemap
+// must percent-encode them so the advertised URL is legal under RFC 3986 —
+// a raw Chinese byte in <loc>/<link>/<guid> is rejected by Google and drops
+// the item in several RSS readers.
+func TestSitemapEncodesChineseSlug(t *testing.T) {
+	svc, db := setup(t)
+	ctx := context.Background()
+	if _, err := svc.Register(ctx, services.RegisterInput{
+		Username: "zha", Email: "zha@example.com", Password: "secret123",
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := db.Model(&models.User{}).Where("email = ?", "zha@example.com").
+		Update("role", models.RoleRoot).Error; err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	login, err := svc.Login(ctx, services.LoginInput{Email: "zha@example.com", Password: "secret123"}, services.LoginMeta{})
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if _, err := svc.CreatePost(ctx, models.User{ID: login.User.ID, Role: models.RoleRoot}, services.CreatePostInput{
+		Title: "前后端分离架构", Body: "x", Status: "published", Slug: "前后端分离架构",
+	}); err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+	Sitemap(rec, req)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "/p/前后端分离架构") {
+		t.Fatalf("sitemap advertised a raw Chinese slug (illegal URL): %s", body)
+	}
+	// The percent-encoded form must appear inside a <loc>.
+	if !strings.Contains(body, "/p/%E5%89%8D%E5%90%8E%E7%AB%AF%E5%88%86%E7%A6%BB%E6%9E%B6%E6%9E%84") {
+		t.Fatalf("sitemap slug not percent-encoded as expected: %s", body)
+	}
+
+	// The RSS feed must encode identically.
+	feedReq := httptest.NewRequest(http.MethodGet, "/feed", nil)
+	feedReq.Host = "example.com"
+	feedRec := httptest.NewRecorder()
+	FeedRSS(feedRec, feedReq)
+	fb := feedRec.Body.String()
+	if strings.Contains(fb, "/p/前后端分离架构") {
+		t.Fatalf("feed advertised a raw Chinese slug: %s", fb)
+	}
+	if !strings.Contains(fb, "/p/%E5%89%8D%E5%90%8E%E7%AB%AF%E5%88%86%E7%A6%BB%E6%9E%B6%E6%9E%84") {
+		t.Fatalf("feed slug not percent-encoded as expected: %s", fb)
+	}
+}

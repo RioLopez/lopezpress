@@ -1,0 +1,11 @@
+# github-auto-upload 秘密扫描白名单（仅假阳性）
+#
+# 下面三个文件被"Generic hardcoded credential"规则命中，但命中的是
+# 测试夹具密码与 i18n 界面文案（登录表单的 Password 标签），
+# 不含任何真实凭据。真实凭据一律只存在于仓库外的 CREDENTIALS.md。
+#
+# 注意：这里是整文件放行，意味着这三个文件将来若混入真密钥不会被拦。
+# 新增白名单前请确认文件性质（测试 / 纯文案），不要为此放行业务代码。
+internal/handlers/feed_test.go
+internal/handlers/captcha_flow_test.go
+web/src/core/locales/auth.ts

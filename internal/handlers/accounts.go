@@ -31,6 +31,7 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 		"site_logo":    cfg.SiteLogo,
 		"site_favicon": cfg.SiteFavicon,
 		"site_url":     cfg.SiteURL,
+		"site_description": cfg.SiteDescription,
 		"footer_text":  cfg.FooterText,
 		"icp_no":       cfg.IcpNo,
 		"friend_links": cfg.FriendLinks,

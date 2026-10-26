@@ -11,6 +11,7 @@ import type {
   AuthorView,
   BackupResult,
   BackupStats,
+  CaptchaIssued,
   Category,
   CategoryWithCount,
   CreatePostInput,
@@ -75,8 +76,19 @@ export const confirmEmailChange = (b: { email: string; code: string }) =>
     body: JSON.stringify(b),
   })
 
-export const login = (b: { email: string; password: string }) =>
-  request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify(b) })
+export const login = (b: {
+  email: string
+  password: string
+  captcha_id?: string
+  captcha_code?: string
+  captcha_x?: number
+}) => request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify(b) })
+
+// Fetch a fresh login challenge. Always answers — even with the feature
+// switched off — so the form can tell "not required" from "failed to load".
+// The server decides the kind from this client's failure history; nothing in
+// the request can ask for the easier one.
+export const getCaptcha = () => request<CaptchaIssued>('/api/auth/captcha')
 
 export const me = () => request<UserPublic>('/api/auth/me')
 

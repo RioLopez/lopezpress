@@ -23,6 +23,16 @@ export type AuthTexts = {
     loginBtn: string
     registering: string
     loginBusy: string
+    // Login captcha. The picture challenge is the default; the slide replaces
+    // it after repeated failures, so both need a label and a hint.
+    captchaLabel: string
+    captchaPlaceholder: string
+    captchaRefresh: string
+    captchaRequired: string
+    captchaWrong: string
+    captchaUnavailable: string
+    captchaSlideLabel: string
+    captchaSlideHint: string
     passwordTooShort: string
     // Spec 37 (experimental email verification)
     codeLabel: string
@@ -109,6 +119,14 @@ export const authZh: AuthTexts = {
     loginBtn: '登录',
     registering: '注册',
     loginBusy: '登录中…',
+    captchaLabel: '验证码',
+    captchaPlaceholder: '图中的 4 个字符',
+    captchaRefresh: '换一张',
+    captchaRequired: '请先完成验证码',
+    captchaWrong: '验证码不正确，已换新的',
+    captchaUnavailable: '验证码加载失败，请点下面重试',
+    captchaSlideLabel: '安全验证',
+    captchaSlideHint: '拖动拼图块到缺口位置',
     passwordTooShort: '密码至少 8 位',
     codeLabel: '邮箱验证码',
     codePlaceholder: '6 位数字',
@@ -193,6 +211,14 @@ export const authEn: AuthTexts = {
     loginBtn: 'Sign in',
     registering: 'Register',
     loginBusy: 'Signing in…',
+    captchaLabel: 'Verification code',
+    captchaPlaceholder: '4 characters',
+    captchaRefresh: 'New code',
+    captchaRequired: 'Please solve the challenge first',
+    captchaWrong: 'That was not it — here is a new one',
+    captchaUnavailable: 'Could not load the challenge, tap below to retry',
+    captchaSlideLabel: 'Security check',
+    captchaSlideHint: 'Drag the piece into the gap',
     passwordTooShort: 'Password must be at least 8 characters',
     codeLabel: 'Email code',
     codePlaceholder: '6 digits',

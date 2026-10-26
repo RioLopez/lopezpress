@@ -52,6 +52,7 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	existing.SiteLogo = in.SiteLogo
 	existing.SiteFavicon = in.SiteFavicon
 	existing.SiteURL = in.SiteURL
+	existing.SiteDescription = in.SiteDescription
 	existing.FooterText = in.FooterText
 	existing.IcpNo = in.IcpNo
 	existing.FriendLinks = in.FriendLinks
@@ -141,6 +142,7 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		SiteLogo:      cfgStr(m, "site_logo"),
 		SiteFavicon:   cfgStr(m, "site_favicon"),
 		SiteURL:       cfgStr(m, "site_url"),
+		SiteDescription: cfgStr(m, "site_description"),
 		FooterText:    cfgStr(m, "footer_text"),
 		IcpNo:         cfgStr(m, "icp_no"),
 		FriendLinks:   cfgStr(m, "friend_links"),
@@ -283,6 +285,9 @@ func validateSiteConfig(in models.SiteConfig) error {
 	}
 	if len([]rune(in.SiteTitle)) > 128 {
 		return newErr(http.StatusBadRequest, "site title too long")
+	}
+	if len([]rune(in.SiteDescription)) > 512 {
+		return newErr(http.StatusBadRequest, "site description too long")
 	}
 	if in.ImgHostMode != "local" && in.ImgHostMode != "smms" {
 		return newErr(http.StatusBadRequest, "invalid image host mode")
