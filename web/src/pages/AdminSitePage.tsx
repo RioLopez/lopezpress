@@ -157,6 +157,14 @@ export function AdminSitePage() {
           />
         </div>
         <div class="settings-field">
+          <label>{t('site.siteDescription')}</label>
+          <input
+            value={cfg.site_description}
+            maxLength={512}
+            onInput={(e) => set('site_description', (e.target as HTMLInputElement).value)}
+          />
+        </div>
+        <div class="settings-field">
           <label>{t('site.footer')}</label>
           <textarea value={cfg.footer_text} onInput={(e) => set('footer_text', (e.target as HTMLInputElement).value)} />
         </div>

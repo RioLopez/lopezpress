@@ -69,6 +69,39 @@ export interface AuthResult {
   user: UserPublic
 }
 
+// One login challenge. The kind decides which interaction to render, and the
+// server picks it from this client's failure history — the browser cannot ask
+// for the easier one.
+//
+// The answer is never in here. For 'image' the picture is `image`; for 'slide'
+// it is the pair `bg`/`tile` plus the piece's vertical offset. The horizontal
+// target is exactly what the user has to work out.
+export interface CaptchaChallenge {
+  id: string
+  kind: 'image' | 'slide'
+  image?: string
+  bg?: string
+  tile?: string
+  tile_y?: number
+  tile_size?: number
+  expires_in: number
+}
+
+// Response of GET /api/auth/captcha. `enabled: false` means the server has the
+// feature switched off, so the form must render no widget at all.
+export interface CaptchaIssued {
+  enabled: boolean
+  captcha?: CaptchaChallenge
+}
+
+// What the login form hands to the transport layer once the user has solved the
+// challenge. Exactly one of code/x is meaningful, depending on kind.
+export interface CaptchaAnswer {
+  id: string
+  code: string
+  x: number
+}
+
 export interface CreatePostInput {
   title: string
   body: string
@@ -255,6 +288,7 @@ export interface SiteConfigPublic {
   site_logo: string
   site_favicon: string
   site_url: string
+  site_description: string
   footer_text: string
   icp_no: string
   friend_links: string // raw JSON array string

@@ -326,7 +326,7 @@ export function ReadPage({ id }: { id: string }) {
               class="btn btn-ghost btn-sm"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(`${window.location.origin}/p/${post.slug}`)
+                  await navigator.clipboard.writeText(`${window.location.origin}/p/${encodeURIComponent(post.slug)}`)
                   setLinkCopied(true)
                   setTimeout(() => setLinkCopied(false), 1500)
                 } catch {
@@ -396,10 +396,13 @@ export function ReadPage({ id }: { id: string }) {
               <a
                 key={r.id}
                 class="related-item"
-                href={r.slug ? `/p/${r.slug}` : `/read/${r.id}`}
+                href={r.slug ? `/p/${encodeURIComponent(r.slug)}` : `/read/${r.id}`}
                 onClick={(e) => {
                   // Same SPA contract as the rest of the reader: never do a
-                  // full page load just to move between posts.
+                  // full page load just to move between posts. wouter matches
+                  // on the *decoded* path, so navigate stays unescaped; only
+                  // the href (a real link a user can middle-click / copy) is
+                  // percent-encoded so it is a legal URL on its own.
                   e.preventDefault()
                   navigate(r.slug ? `/p/${r.slug}` : `/read/${r.id}`)
                 }}

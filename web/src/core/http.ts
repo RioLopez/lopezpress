@@ -13,9 +13,15 @@
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  // Parsed body of the failed response, when it had one. Most callers only
+  // need the message; the login form is the exception — a rejected captcha
+  // comes back as a 400 whose body carries the replacement challenge, so the
+  // user can retry without retyping their password.
+  payload?: any
+  constructor(status: number, message: string, payload?: any) {
     super(message)
     this.status = status
+    this.payload = payload
   }
 }
 
@@ -80,7 +86,7 @@ function raise(res: Response, data: any, path: string): never {
     onUnauthorized()
   }
   const msg = (data && data.error) || `HTTP ${res.status}`
-  throw new ApiError(res.status, msg)
+  throw new ApiError(res.status, msg, data)
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {

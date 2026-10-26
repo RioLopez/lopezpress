@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/xml"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -47,9 +48,10 @@ type sitemap struct {
 }
 
 type sitemapURL struct {
-	Loc       string `xml:"loc"`
-	LastMod   string `xml:"lastmod,omitempty"`
+	Loc        string `xml:"loc"`
+	LastMod    string `xml:"lastmod,omitempty"`
 	ChangeFreq string `xml:"changefreq,omitempty"`
+	Priority   string `xml:"priority,omitempty"`
 }
 
 // FeedRSS serves an RSS 2.0 feed of the most recent published posts.
@@ -74,7 +76,12 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = "Echo"
 	}
-	desc := cfg.FooterText
+	// A feed <description> is the channel's tagline, not the page footer.
+	// Footer text is copyright/site-notice copy and reads out of place in an
+	// RSS reader ("Copyright 0001 test" is the kind of thing nobody wants in
+	// their reader's channel header). Prefer an explicit description, then the
+	// site title; only fall back to the footer if both are empty.
+	desc := cfg.SiteDescription
 	if desc == "" {
 		desc = title
 	}
@@ -91,12 +98,18 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, p := range posts {
 		link := permalink(base, p.Slug, p.ID)
+		// pubDate is the last edit, not the create date: an edited article
+		// should re-sync in a reader, mirroring the sitemap's lastmod.
+		pub := p.UpdatedAt
+		if pub.IsZero() {
+			pub = p.CreatedAt
+		}
 		feed.Channel.Items = append(feed.Channel.Items, rssItem{
 			Title:       p.Title,
 			Link:        link,
 			Description: feedExcerpt(p.Body, 320),
 			GUID:        rssGUID{Value: link, PermaLink: "true"},
-			PubDate:     p.CreatedAt.UTC().Format(time.RFC1123Z),
+			PubDate:     pub.UTC().Format(time.RFC1123Z),
 		})
 	}
 	writeXML(w, "application/rss+xml", feed)
@@ -118,8 +131,8 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 
 	base := feedBaseURL(r, cfg.SiteURL)
 	urls := []sitemapURL{
-		{Loc: base + "/", ChangeFreq: "daily"},
-		{Loc: base + "/archive", ChangeFreq: "weekly"},
+		{Loc: base + "/", ChangeFreq: "daily", Priority: "1.0"},
+		{Loc: base + "/archive", ChangeFreq: "weekly", Priority: "0.5"},
 	}
 	for _, p := range posts {
 		loc := permalink(base, p.Slug, p.ID)
@@ -131,6 +144,7 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 			Loc:        loc,
 			LastMod:    last.UTC().Format("2006-01-02"),
 			ChangeFreq: "weekly",
+			Priority:   "0.8",
 		})
 	}
 	writeXML(w, "application/xml", sitemap{
@@ -199,9 +213,17 @@ func writeXML(w http.ResponseWriter, contentType string, v any) {
 // permalink prefers the slug form (spec 29) and falls back to the UUID route
 // for rows created before slugs existed. One helper so RSS and sitemap can
 // never advertise two different shapes of the same URL.
+//
+// The slug is percent-encoded: a blog that allows Chinese (or emoji, or any
+// non-ASCII) titles will have Chinese slugs, and a raw Chinese byte in a
+// <link> / <loc> / <guid> is an illegal URL under RFC 3986 — Google will
+// refuse to index it, and several RSS readers will drop the item outright.
+// The in-app browser already does this on its own (wouter + encodeURIComponent
+// in api.ts), so the only place that still emitted a bare Chinese URL was
+// this feed, which made the RSS/sitemap the SEO dead end of the site.
 func permalink(base, slug, id string) string {
 	if slug != "" {
-		return base + "/p/" + slug
+		return base + "/p/" + url.PathEscape(slug)
 	}
 	return base + "/read/" + id
 }

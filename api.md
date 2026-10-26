@@ -40,7 +40,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
 | POST | `/api/auth/register` | 公开 | 注册（受 `allow_register` 开关限制）。开启邮箱验证时须带 `code` |
-| POST | `/api/auth/login` | 公开 | 登录，返回 `{token, user}`。`email` 与 `username` 等价，任一填了即可（字段名仍叫 `email`） |
+| POST | `/api/auth/login` | 公开 | 登录，返回 `{token, user}`。`email` 与 `username` 等价，任一填了即可（字段名仍叫 `email`）。**必须带验证码**：图文码传 `captcha_id` + `captcha_code`，滑块传 `captcha_id` + `captcha_x`（0..1000 的千分比位置）。缺或错 → **400** `{error, captcha_required: true, captcha: {...}}`，响应体已带一张新验证码，前端无需再请求 |
+| GET | `/api/auth/captcha` | 公开 | 取登录验证码，返回 `{enabled, captcha}`。`captcha.kind` 为 `image`（4 位字符图，`image` 字段是 data URI）或 `slide`（拼图滑块，`bg` / `tile` 两张图 + `tile_y` / `tile_size`）。**类型由该客户端近期登录失败次数决定，请求无法指定**（轮换账号绕不过去）。有效期 120s、一次性；答案永不出现在响应里。`enabled:false` 表示服务端已关闭该功能 |
 | GET | `/api/auth/register/open` | 公开 | 注册是否开放 |
 | POST | `/api/auth/email-code` | 公开 | 索取一次性验证码 `{email, purpose}`，purpose 只接受 `register` / `reset_password`。**同邮箱 60s 冷却（429）+ 同 IP 每小时 10 封**；SMTP 未配置返回 503；无论邮箱是否已注册回答一致 |
 | POST | `/api/auth/password/reset` | 公开 | 自助重置密码 `{email, code, password}`。成功 bump `token_version`（所有会话失效），旧密码立即作废 |

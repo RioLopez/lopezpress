@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"lopezpress/internal/captcha"
 	"lopezpress/internal/clientip"
 	"lopezpress/internal/config"
 	"lopezpress/internal/handlers"
@@ -62,6 +63,11 @@ func main() {
 	if err := clientip.Init(cfg.TrustedProxies); err != nil {
 		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
 	}
+
+	// Login challenge store. Deliberately in-process: a captcha lives for two
+	// minutes, so a restart costs a user one extra picture and nothing else —
+	// not worth a table, and there is no Redis on this box.
+	captcha.Init(captcha.New(2*time.Minute, cfg.CaptchaSlideAfter))
 
 	if *resetRoot {
 		os.Exit(runResetRootPassword(cfg))

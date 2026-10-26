@@ -102,22 +102,13 @@ var migrations = []migration{
 		`UPDATE site_configs SET email_code_cooldown = 60 WHERE email_code_cooldown IS NULL OR email_code_cooldown <= 0`)},
 	// 0014: make posts.slug UNIQUE. 0009 created a plain index, so the
 	// read-check-then-insert in ensureUniqueSlug was the only thing standing
-	// between two posts and the same permanent link — and it is a race: R6-02
-	// ran 20 concurrent creates of one title and produced duplicate slugs
-	// (four posts sharing "r6slug-col-2026-7"). A duplicate slug makes
-	// GET /api/permalinks/{slug} resolve to an arbitrary one of them, which is
-	// content impersonation a plain author can trigger without an admin.
-	//
-	// The index cannot be created over existing duplicates, so the migration
-	// first disambiguates them: every row after the first in a slug group gets
-	// a -2/-3/... suffix, oldest first, which is exactly the scheme
-	// ensureUniqueSlug would have picked had it been atomic. Rows with an empty
-	// slug are left alone — an empty string is "no slug yet", not a collision,
-	// and a partial index treats them as outside its scope.
-	//
-	// On a fresh database this migration runs before AutoMigrate has created the
-	// posts table, so it has nothing to do; InitDB re-asserts the index after
-	// AutoMigrate so a new install ends up with the same constraint.
+	// between two posts and the same permanent link — and it is a race (R6-02
+	// produced duplicate slugs, letting an ordinary author impersonate a
+	// post). The index cannot be created over existing duplicates, so this
+	// migration first disambiguates them with a -2/-3/... suffix (oldest row
+	// keeps the slug); empty slugs are out of scope for the partial index.
+	// On a fresh database the posts table does not exist yet, so this is a
+	// no-op; InitDB re-asserts the index after AutoMigrate.
 	{version: "0014_unique_post_slug", up: func(db *gorm.DB) error {
 		if !db.Migrator().HasTable(&models.Post{}) {
 			return nil
@@ -127,6 +118,12 @@ var migrations = []migration{
 		}
 		return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_unique ON posts(slug) WHERE slug <> ''`).Error
 	}},
+	// 0015: site_configs.site_description — the RSS channel tagline. Empty by
+	// default: the feed falls back to the site title, so an upgrade does not
+	// silently change an existing site's description.
+	{version: "0015_add_site_description", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
+		{name: "site_description", ddl: "ALTER TABLE site_configs ADD COLUMN site_description VARCHAR(512)"},
+	})},
 }
 
 // disambiguateDuplicateSlugs rewrites colliding slugs so a unique index can be

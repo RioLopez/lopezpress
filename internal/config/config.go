@@ -51,6 +51,14 @@ type Config struct {
 	// X-Forwarded-For headers are believed (spec 23 / TODO P2-6). Empty
 	// falls back to loopback only — see internal/clientip.
 	TrustedProxies string
+	// CaptchaEnabled turns the login challenge on. Default true: the whole
+	// point is that it is not something an operator has to remember to switch
+	// on before an incident.
+	CaptchaEnabled bool
+	// CaptchaSlideAfter is how many failed logins a client may accumulate
+	// before the sliding puzzle replaces the four-character image. Counted per
+	// client IP, and cleared on a successful login.
+	CaptchaSlideAfter int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -106,6 +114,11 @@ func Load() *Config {
 		// Empty -> internal/clientip trusts loopback only (nginx on the same
 		// host). Set it in prod when the proxy lives on another host.
 		TrustedProxies: envOr("TRUSTED_PROXIES", clientip.DefaultTrustedProxySpec),
+		// Login captcha. On by default and it stays on: an operator who had to
+		// remember to enable it before an incident is an operator who did not.
+		CaptchaEnabled: envBoolOr("CAPTCHA_ENABLED", true),
+		// Failures before the image captcha becomes a sliding puzzle.
+		CaptchaSlideAfter: envIntOr("CAPTCHA_SLIDE_AFTER", 3),
 	}
 }
 
@@ -192,6 +205,21 @@ func envIntOr(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// envBoolOr reads a boolean env var. An unparsable value falls back to def
+// instead of erroring: a typo in CAPTCHA_ENABLED must not keep the process
+// from starting, and both defaults here are the safe ones.
+func envBoolOr(key string, def bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 // envFloatOr reads a float env var, falling back to def.

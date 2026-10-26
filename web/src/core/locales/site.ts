@@ -85,6 +85,7 @@ export type SiteTexts = {
     saveFailed: string
     nameTooLong: string
     siteUrl: string
+    siteDescription: string
     footerRss: string
     footerSitemap: string
   },
@@ -211,6 +212,7 @@ export const siteZh: SiteTexts = {
     saveFailed: '设置保存失败',
     nameTooLong: '名称过长',
     siteUrl: '站点地址（用于 RSS / 站点地图的绝对链接，留空则自动推断）',
+    siteDescription: '站点描述（显示在 RSS 频道头部，留空则用浏览器标题）',
     footerRss: 'RSS 订阅',
     footerSitemap: '站点地图',
   },
@@ -335,6 +337,7 @@ export const siteEn: SiteTexts = {
     saveFailed: 'Failed to save settings',
     nameTooLong: 'Name too long',
     siteUrl: 'Site URL (absolute links for RSS / sitemap; auto-detected if blank)',
+    siteDescription: 'Site description (shown in the RSS channel header; falls back to the browser title when blank)',
     footerRss: 'RSS feed',
     footerSitemap: 'Sitemap',
   },

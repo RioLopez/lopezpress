@@ -19,6 +19,11 @@ type SiteConfig struct {
 	SiteLogo      string `gorm:"size:512" json:"site_logo"`
 	SiteFavicon   string `gorm:"size:512" json:"site_favicon"`
 	SiteURL       string `gorm:"size:512" json:"site_url"`
+	// SiteDescription is the channel tagline shown in the RSS feed header and
+	// the meta description. Empty -> the feed falls back to the site title.
+	// Kept separate from FooterText: footer is page-bottom copyright/notice
+	// copy, description is the one-line "what is this site" line.
+	SiteDescription string `gorm:"size:512" json:"site_description"`
 	FooterText    string `gorm:"type:text" json:"footer_text"`
 	IcpNo         string `gorm:"size:128" json:"icp_no"`
 	FriendLinks   string `gorm:"type:text" json:"friend_links"`
