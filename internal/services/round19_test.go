@@ -17,7 +17,7 @@ func TestRegisterGateClosedByDefault(t *testing.T) {
 	db.Where("id = ?", 1).Delete(&models.SiteConfig{})
 
 	_, err := svc.Register(context.Background(), RegisterInput{
-		Username: "bob", Email: "bob@example.com", Password: "secret123",
+		Username: "bob", Email: "bob@example.com", Password: "Zp9!qLm2xR",
 	})
 	if StatusOf(err) != http.StatusForbidden {
 		t.Fatalf("expected 403 when registration closed, got %v", StatusOf(err))
@@ -25,12 +25,12 @@ func TestRegisterGateClosedByDefault(t *testing.T) {
 }
 
 // TestLoginRecordsLog verifies each successful login writes a login_log row
-// and updates the user's last_login_ip / last_login_at (spec 14).
+// and updates the user's last_login_ip / last_login_at.
 func TestLoginRecordsLog(t *testing.T) {
 	svc, db := newTestService(t)
 	makeUser(t, db, "alice", "alice@example.com", "user")
 
-	if _, err := svc.Login(context.Background(), LoginInput{Email: "alice", Password: "secret123"}, LoginMeta{IP: "1.2.3.4", UA: "test"}); err != nil {
+	if _, err := svc.Login(context.Background(), LoginInput{Email: "alice", Password: "Zp9!qLm2xR"}, LoginMeta{IP: "1.2.3.4", UA: "test"}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestLoginRecordsLog(t *testing.T) {
 }
 
 // TestDeleteUserGuards verifies self-delete and last-admin deletion are
-// rejected (spec 09).
+// rejected.
 func TestDeleteUserGuards(t *testing.T) {
 	svc, db := newTestService(t)
 	admin := makeUser(t, db, "admin", "admin@example.com", "admin")

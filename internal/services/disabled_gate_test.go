@@ -8,8 +8,8 @@ import (
 	"lopezpress/internal/models"
 )
 
-// TestAuthenticateRejectsDisabledUser is the regression test for the as-built
-// audit finding Q6: a disabled account must lose API access immediately, not
+// TestAuthenticateRejectsDisabledUser guards the disabled-account gate: a
+// disabled account must lose API access immediately, not
 // only at the next login attempt. Without the gate in Authenticate, a
 // stateless JWT (valid up to 24h) kept every existing session of a disabled
 // account fully usable — including write endpoints.

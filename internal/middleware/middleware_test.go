@@ -47,6 +47,12 @@ func TestRecoverPassesThroughHealthyHandlers(t *testing.T) {
 
 // TestCORSPreflightShortCircuits verifies OPTIONS requests return 204 with
 // the CORS allow headers and do not reach the inner handler.
+//
+// The Origin header is not decoration: a browser preflight ALWAYS carries one,
+// and this test used to omit it — which meant it was asserting behaviour for a
+// request no browser sends. A bare OPTIONS with no Origin is not a preflight,
+// it is just an OPTIONS, and answering it with `Access-Control-Allow-Origin: *`
+// was how every anonymous request ended up advertising a wildcard policy.
 func TestCORSPreflightShortCircuits(t *testing.T) {
 	called := false
 	inner := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -55,6 +61,7 @@ func TestCORSPreflightShortCircuits(t *testing.T) {
 	h := CORS("*")(inner)
 
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", "https://reader.example")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -64,8 +71,34 @@ func TestCORSPreflightShortCircuits(t *testing.T) {
 	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Fatalf("expected ACAO=*, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
 	}
+	if rec.Header().Get("Vary") != "Origin" {
+		t.Fatalf("expected Vary: Origin, got %q", rec.Header().Get("Vary"))
+	}
 	if called {
 		t.Fatalf("preflight must not reach the inner handler")
+	}
+}
+
+// TestCORSStaysSilentWithoutOrigin pins the fix for the wildcard leak: a
+// same-origin or non-browser request carries no Origin, so it must receive no
+// CORS headers at all. Anything else tells every site on the internet that the
+// API is readable cross-origin.
+func TestCORSStaysSilentWithoutOrigin(t *testing.T) {
+	var got http.Header
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		got = w.Header().Clone()
+	})
+	// Wildcard config: the loosest possible setting, and it must STILL stay
+	// quiet when there is no Origin to answer.
+	h := CORS("*")(inner)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/posts", nil))
+
+	if v := got.Get("Access-Control-Allow-Origin"); v != "" {
+		t.Fatalf("no Origin must mean no ACAO, got %q", v)
+	}
+	if v := got.Get("Access-Control-Allow-Credentials"); v != "" {
+		t.Fatalf("no Origin must mean no Allow-Credentials, got %q", v)
 	}
 }
 

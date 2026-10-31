@@ -10,7 +10,7 @@ import (
 )
 
 // makePost creates a post owned by author with the given status/body and
-// returns it. Used by the visibility/archive/author tests (spec #9).
+// returns it. Used by the visibility/archive/author tests.
 func makePost(t *testing.T, db *gorm.DB, author models.User, status, body, title string, at time.Time) models.Post {
 	t.Helper()
 	p := models.Post{

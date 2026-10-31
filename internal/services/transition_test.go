@@ -120,13 +120,50 @@ func TestApproveRacingDeleteCannotReviveThePost(t *testing.T) {
 	if err := db.Unscoped().Where("id = ?", post.ID).First(&row).Error; err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if row.DeletedAt.Valid && row.Status == models.PostPublished {
-		t.Fatalf("a deleted post must not be published (status=%q deleted=%v)",
-			row.Status, row.DeletedAt.Valid)
-	}
-	// One of the two must have been refused; both succeeding is the bug.
+	// Deliberately NOT asserting "deleted implies not published" here.
+	//
+	// approve→delete and delete→approve produce the *same* final row
+	// (deleted_at set, status published) and only the second is a defect, so a
+	// concurrent check cannot tell them apart and fails about one run in eight
+	// on correct behaviour — the author approving-publishes a post and then
+	// trashing it is perfectly legal. The defect is pinned deterministically by
+	// TestReviewCannotResurrectADeletedPost below; what this test still owns is
+	// the deadlock case, where both sides claim success on a live row.
 	if approveErr == nil && deleteErr == nil && !row.DeletedAt.Valid {
 		t.Fatalf("both approve and delete reported success but the post is live and published")
+	}
+	if approveErr != nil && deleteErr != nil {
+		t.Fatalf("both sides refused; one of them should have won (approve=%v delete=%v)", approveErr, deleteErr)
+	}
+}
+
+// TestReviewCannotResurrectADeletedPost is the deterministic half of R4-11:
+// once the author has removed a post, approving it must be refused rather than
+// flipping a trashed row to published. Run in order instead of concurrently so
+// the assertion is about behaviour, not about who won a race.
+func TestReviewCannotResurrectADeletedPost(t *testing.T) {
+	svc, db := newFileTestService(t)
+	author := makeUser(t, db, "writer4", "writer4@example.com", models.RoleUser)
+	admin := makeUser(t, db, "reviewer4", "reviewer4@example.com", models.RoleAdmin)
+	post := pendingPost(t, svc, author, "Gone")
+
+	if err := svc.DeletePost(context.Background(), author, post.ID); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	if _, err := svc.ReviewPost(context.Background(), admin, post.ID,
+		ReviewPostInput{Action: "approve"}); err == nil {
+		t.Fatalf("approving a deleted post must fail, not publish it")
+	}
+
+	var row models.Post
+	if err := db.Unscoped().Where("id = ?", post.ID).First(&row).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !row.DeletedAt.Valid {
+		t.Fatalf("the post must still be in the trash")
+	}
+	if row.Status == models.PostPublished {
+		t.Fatalf("a trashed post must not have been flipped to published (status=%q)", row.Status)
 	}
 }
 
@@ -148,12 +185,12 @@ func TestRestoreRacingEmptyTrashIsNotSilent(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		restoreErr = svc.RestoreTrash(context.Background(), post.ID)
+		restoreErr = svc.RestoreTrash(context.Background(), author, post.ID)
 	}()
 	go func() {
 		defer wg.Done()
 		<-start
-		_, _ = svc.EmptyTrash(context.Background())
+		_, _ = svc.EmptyTrash(context.Background(), author)
 	}()
 	close(start)
 	wg.Wait()
@@ -187,21 +224,30 @@ func TestEditCannotUndoAnApproval(t *testing.T) {
 		t.Fatalf("approve: %v", err)
 	}
 
-	// The author's save carries no status change (a title-only edit), so it must
-	// not touch status — the post stays published.
-	upd := UpdatePostInput{Title: "Edited while reviewed (typo fixed)"}
+	// The author's save carries no status change and no content change (a
+	// tag-only edit), so it must not touch status — the post stays published.
+	// A TITLE edit would legitimately send it back to the queue under the
+	// re-review rule; that path has its own test
+	// (TestLivePostContentEditRequeues), and using a tag here keeps this test
+	// aimed at the original defect: echoing the status we read over the one
+	// the reviewer just wrote.
+	upd := UpdatePostInput{Tags: []string{"reviewed"}}
 	if _, err := svc.UpdatePost(context.Background(), author, post.ID, upd); err != nil {
-		t.Fatalf("title-only edit after approval should succeed: %v", err)
+		t.Fatalf("tag-only edit after approval should succeed: %v", err)
 	}
 	var row models.Post
 	if err := db.Where("id = ?", post.ID).First(&row).Error; err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	if row.Status != models.PostPublished {
-		t.Fatalf("a title-only edit must not change status, got %q", row.Status)
+		t.Fatalf("a tag-only edit must not change status, got %q", row.Status)
 	}
-	if row.Title != "Edited while reviewed (typo fixed)" {
-		t.Fatalf("the title edit should have been applied, got %q", row.Title)
+	if len(row.Tags) == 0 {
+		var cnt int64
+		db.Table("post_tags").Where("post_id = ?", post.ID).Count(&cnt)
+		if cnt == 0 {
+			t.Fatalf("the tag edit should have been applied")
+		}
 	}
 }
 

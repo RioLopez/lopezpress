@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // newLimiterHandler wires a *Limiter in front of a trivial 200 handler so we
@@ -142,6 +145,98 @@ func TestLimiterStaysBoundedUnderChurn(t *testing.T) {
 	if lim.lru.Len() > lim.maxBuckets {
 		t.Fatalf("cache grew past cap: %d > %d", lim.lru.Len(), lim.maxBuckets)
 	}
+}
+
+// The three tests below cover the case the context-based test above cannot:
+// in production the limiter is installed OUTSIDE the mux, so it runs before the
+// auth middleware and the request context never carries a user id. It read only
+// the context, which made the advertised per-identity bucket silently per-IP —
+// an office behind one NAT shared one allowance and throttled each other, while
+// a token holder rotating addresses was never throttled as an account.
+func TestLimiterKeysBucketsByTokenAcrossIPs(t *testing.T) {
+	const secret = "test-secret-for-limiter-only"
+	lim := NewLimiter(LimiterConfig{RPS: 0.01, Burst: 1})
+	lim.SetTokenSecret(secret)
+	h := newLimiterHandler(lim)
+
+	token := signedTestToken(t, secret, "user-A")
+
+	// First address: allowed.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "198.51.100.7:1111"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first request: expected 200, got %d", rec.Code)
+	}
+
+	// Same account, different address: still the same bucket, so throttled.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.9:2222"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("one account from two addresses must share a bucket, got %d", rec.Code)
+	}
+}
+
+func TestLimiterSeparatesAccountsBehindOneIP(t *testing.T) {
+	const secret = "test-secret-for-limiter-only"
+	lim := NewLimiter(LimiterConfig{RPS: 0.01, Burst: 1})
+	lim.SetTokenSecret(secret)
+	h := newLimiterHandler(lim)
+
+	for _, uid := range []string{"user-A", "user-B"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "192.0.2.10:3333"
+		req.Header.Set("Authorization", "Bearer "+signedTestToken(t, secret, uid))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("account %s behind a shared IP: expected 200, got %d", uid, rec.Code)
+		}
+	}
+}
+
+// A token that does not verify must fall back to the address bucket. Otherwise
+// an attacker could spell any subject they like and burn a victim's allowance.
+func TestLimiterFallsBackToIPOnUnverifiableToken(t *testing.T) {
+	lim := NewLimiter(LimiterConfig{RPS: 0.01, Burst: 1})
+	lim.SetTokenSecret("test-secret-for-limiter-only")
+	h := newLimiterHandler(lim)
+
+	forged := signedTestToken(t, "some-other-secret", "user-A")
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "100.64.0.5:4444"
+		req.Header.Set("Authorization", "Bearer "+forged)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		want := http.StatusOK
+		if i == 1 {
+			want = http.StatusTooManyRequests
+		}
+		if rec.Code != want {
+			t.Fatalf("request %d: expected %d, got %d", i+1, want, rec.Code)
+		}
+	}
+}
+
+// signedTestToken mints an HS256 token shaped like the real ones (subject in
+// "sub"), so the limiter's verification path is exercised for real.
+func signedTestToken(t *testing.T, secret, sub string) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": sub,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	signed, err := tok.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return signed
 }
 
 // itoa is a tiny local helper to avoid importing strconv in the test for a

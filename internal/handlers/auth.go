@@ -50,8 +50,8 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 // writeInvalidBody is the repeated shorthand for "the JSON request body could
-// not be decoded". Centralised so the message stays consistent (P2-2 dedup of
-// the 16 call sites that previously inlined the identical string).
+// not be decoded". Centralised so the message stays consistent across the 16
+// call sites that previously inlined the identical string.
 func writeInvalidBody(w http.ResponseWriter) {
 	writeError(w, http.StatusBadRequest, "invalid request body")
 }
@@ -65,7 +65,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 // --- auth endpoints ---
 
 // Register creates a new user account and returns a signed JWT so the new
-// user is logged in immediately (spec 04 AC-2.2).
+// user is logged in immediately.
 // POST /api/auth/register
 func Register(w http.ResponseWriter, r *http.Request) {
 	var in services.RegisterInput
@@ -86,11 +86,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 // Me returns the public view of the currently authenticated user.
 // GET /api/auth/me  (requires JWT)
 func Me(w http.ResponseWriter, r *http.Request) {
-	me := userFromContext(r)
-	writeJSON(w, http.StatusOK, services.UserPublic{
-		ID: me.ID, Username: me.Username, Email: me.Email, Role: me.Role,
-		DisplayName: me.DisplayName, Bio: me.Bio, Avatar: me.Avatar, CreatedAt: me.CreatedAt,
-	})
+	writeJSON(w, http.StatusOK, services.PublicUser(userFromContext(r)))
 }
 
 // Logout is a client-side signal only. JWT is stateless, so the server does
@@ -102,7 +98,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 // ChangePassword lets the authenticated user change their own password and,
 // as a side effect, clears the must_change_password flag (first-boot admin
-// flow, spec #2). Requires the caller's current password.
+// flow). Requires the caller's current password.
 // POST /api/auth/change-password  (requires JWT)
 func ChangePassword(w http.ResponseWriter, r *http.Request) {
 	me := userFromContext(r)
@@ -205,7 +201,7 @@ func WithAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // isPasswordChangeWhitelisted reports whether the path is allowed while the
-// caller still has must_change_password set (spec #2 first-boot flow).
+// caller still has must_change_password set.
 func isPasswordChangeWhitelisted(path string) bool {
 	switch path {
 	case "/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/auth/logout-all":
@@ -267,7 +263,7 @@ func WithOptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
 		if h == "" {
-			// Spec 27: when the site is locked to signed-in readers, an
+			// When the site is locked to signed-in readers, an
 			// anonymous read is a 401 — the "login required" promise must be
 			// enforced on the API too, not only in the SPA's route guard.
 			if !svc.AllowAnonymous(r.Context()) {
@@ -289,11 +285,11 @@ func WithOptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 		// auth surface there is no change-password route (read-only only), so
 		// such a token is downgraded to an anonymous (zero) user — the caller
 		// still gets the public read scope, but never their private/personal
-		// posts. This mirrors WithAuth's lock (P1-5) so a pre-change-password
+		// posts. This mirrors WithAuth's lock, so a pre-change-password
 		// token can't keep browsing personal data.
 		if user.MustChangePassword {
 			user = models.User{}
-			// Spec 27: the downgrade produces an anonymous caller, so the same
+			// The downgrade produces an anonymous caller, so the same
 			// locked-site rule applies.
 			if !svc.AllowAnonymous(r.Context()) {
 				writeError(w, http.StatusUnauthorized, "authentication required")

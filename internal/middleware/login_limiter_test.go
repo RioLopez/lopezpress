@@ -282,7 +282,7 @@ func loginReqUsername(t *testing.T, username, ip string) *http.Request {
 // "email"), the account-level lockout still keys on that username. Today the
 // client sends the identifier in the "email" field, but this guards the
 // lockout against a future revision that introduces separate username/email
-// login fields (HANDOVER §7.2).
+// login fields.
 func TestLoginLimiterUsernameFieldFallback(t *testing.T) {
 	l := newTestLoginLimiter()
 	mw := l.Middleware(fakeHandler(http.StatusUnauthorized))

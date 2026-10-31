@@ -26,7 +26,7 @@ import (
 
 // UploadTimeout is a hard ceiling on a remote upload. A hung image host must
 // not pin a goroutine -- and the enclosing request -- indefinitely on a
-// low-core VPS (as-built audit Q11). Kept as a named constant so the value is
+// low-core VPS. Kept as a named constant so the value is
 // greppable and testable.
 const UploadTimeout = 10 * time.Second
 

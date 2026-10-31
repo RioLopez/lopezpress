@@ -106,6 +106,7 @@ func isImplausiblyCompressible(sizeBytes int64, pixels int64) bool {
 	// sizeBytes * 200 < pixels  <=>  fewer than 1 byte per 200 pixels.
 	return sizeBytes*200 < pixels
 }
+
 // reencodeStrippedImage decodes the image fully and re-encodes it, returning
 // only the bytes of a well-formed image. Everything the decoder ignores —
 // trailing garbage after IEND, appended payloads, malformed chunk data — is
@@ -135,9 +136,14 @@ func reencodeStrippedImage(data []byte, ext string) ([]byte, bool) {
 	var buf bytes.Buffer
 	switch normalizeExt(ext) {
 	case ".png":
-		err = png.Encode(&buf, src)
+		// BestCompression rather than the default: a PNG that arrives already
+		// optimised (pngquant, optipng) is otherwise re-inflated by the
+		// stdlib's faster setting, so the "re-encode to strip trailing
+		// payloads" step would cost bytes instead of saving them.
+		enc := &png.Encoder{CompressionLevel: png.BestCompression}
+		err = enc.Encode(&buf, src)
 	case ".jpg", ".jpeg":
-		err = jpeg.Encode(&buf, src, &jpeg.Options{Quality: 90})
+		err = jpeg.Encode(&buf, src, &jpeg.Options{Quality: jpegQuality})
 	case ".gif":
 		err = gif.Encode(&buf, src, nil)
 	}
@@ -146,6 +152,16 @@ func reencodeStrippedImage(data []byte, ext string) ([]byte, bool) {
 	}
 	return buf.Bytes(), true
 }
+
+// jpegQuality is the re-encode quality for every JPEG this site stores.
+//
+// 90 was chosen when the only goal was "do not visibly degrade a photo", and it
+// is expensive: the last ten points of JPEG quality buy a difference nobody can
+// see on a screen and cost roughly a quarter of the file. 82 is the level
+// image tools converge on for "visually lossless" delivery, and since every
+// byte here is served on every read of the article, the saving compounds far
+// past the one-time encode.
+const jpegQuality = 82
 
 // normalizeExt lower-cases an extension so the switch above is case-insensitive
 // (a ".PNG" upload is the same format as ".png").
@@ -160,6 +176,7 @@ func normalizeExt(ext string) string {
 	}
 	return string(out)
 }
+
 // reencodeStrippedImage decodes the image fully and re-encodes it, returning
 // only the bytes of a well-formed image. Everything the decoder ignores —
 

@@ -8,7 +8,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// Spec 33: the dashboard must answer "is anyone reading?" — trend, pending
+// The dashboard must answer "is anyone reading?" — trend, pending
 // queue and most-read list, all from data that already exists.
 func TestDashboardTrendAndTopPosts(t *testing.T) {
 	svc, db := newTestService(t)
@@ -86,7 +86,7 @@ func TestDashboardTrendAndTopPosts(t *testing.T) {
 		}
 	}
 
-	// The summary must not ship article bodies (spec 31 rule, kept here as a
+	// The summary must not ship article bodies (a rule kept here as a
 	// regression guard: this page renders titles only).
 	for _, p := range data.RecentPosts {
 		if p.Body != "" {

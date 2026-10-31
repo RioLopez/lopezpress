@@ -100,12 +100,12 @@ func seedUser(t *testing.T, db *gorm.DB, username, email, role string) models.Us
 func tokenFor(t *testing.T, svc *services.Service, username, email string) string {
 	t.Helper()
 	if _, err := svc.Register(context.Background(), services.RegisterInput{
-		Username: username, Email: email, Password: "secret123",
+		Username: username, Email: email, Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("register %s: %v", username, err)
 	}
 	res, err := svc.Login(context.Background(),
-		services.LoginInput{Email: username, Password: "secret123"}, services.LoginMeta{})
+		services.LoginInput{Email: username, Password: "Zp9!qLm2xR"}, services.LoginMeta{})
 	if err != nil {
 		t.Fatalf("login %s: %v", username, err)
 	}

@@ -7,7 +7,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// Spec 35: related posts = same category OR shared tag, published only.
+// Related posts = same category OR shared tag, published only.
 func TestRelatedPostsByCategoryAndTag(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -38,7 +38,7 @@ func TestRelatedPostsByCategoryAndTag(t *testing.T) {
 	sameTag := mk("same tag", other.ID, []string{"golang"})
 	unrelated := mk("unrelated", other.ID, []string{"cooking"})
 
-	got, err := svc.RelatedPosts(ctx, target.ID, 5)
+	got, err := svc.RelatedPosts(ctx, models.User{}, target.ID, 5)
 	if err != nil {
 		t.Fatalf("related: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRelatedPostsExcludesUnpublished(t *testing.T) {
 		t.Fatalf("hide post: %v", err)
 	}
 
-	got, err := svc.RelatedPosts(ctx, target.ID, 5)
+	got, err := svc.RelatedPosts(ctx, models.User{}, target.ID, 5)
 	if err != nil {
 		t.Fatalf("related: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestRelatedPostsEmptyForIsolatedPost(t *testing.T) {
 	isolated, _ := svc.CreatePost(ctx, root, CreatePostInput{Title: "lonely", Body: "b"})
 	other, _ := svc.CreatePost(ctx, root, CreatePostInput{Title: "other", Body: "b"})
 
-	got, err := svc.RelatedPosts(ctx, isolated.ID, 5)
+	got, err := svc.RelatedPosts(ctx, models.User{}, isolated.ID, 5)
 	if err != nil {
 		t.Fatalf("related: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRelatedPostsEmptyForIsolatedPost(t *testing.T) {
 func TestRelatedPostsUnknownPost(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
-	if _, err := svc.RelatedPosts(context.Background(), "does-not-exist", 5); err == nil {
+	if _, err := svc.RelatedPosts(context.Background(), models.User{}, "does-not-exist", 5); err == nil {
 		t.Fatalf("expected a not-found error")
 	} else if StatusOf(err) != 404 {
 		t.Fatalf("expected 404, got %d", StatusOf(err))

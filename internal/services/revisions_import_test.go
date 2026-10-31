@@ -1,6 +1,6 @@
 package services
 
-// Spec 31 (revisions) + spec 32 (markdown import).
+// Revision history + markdown import.
 
 import (
 	"context"

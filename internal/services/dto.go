@@ -14,7 +14,7 @@ type RegisterInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	// Code is the emailed verification code. Required only while the site has
-	// email verification switched on (spec 37, experimental); ignored
+	// email verification switched on (experimental); ignored
 	// otherwise so existing clients keep working.
 	Code string `json:"code"`
 }
@@ -65,9 +65,9 @@ type LoginInput struct {
 
 // CreatePostInput is the decoded payload for POST /api/posts.
 //
-// Spec 22: posts have two visibilities — "published" (public) and "private"
-// (author-only). Scheduled publishing and drafts are no longer supported, so
-// no scheduled_at field is accepted here.
+// Posts have two visibilities — "published" (public) and "private" (the author
+// and the operator roles). Scheduled publishing and drafts are no longer
+// supported, so no scheduled_at field is accepted here.
 type CreatePostInput struct {
 	Title string `json:"title"`
 	// Slug lets the client pin the permanent link; empty = derive from title.
@@ -115,31 +115,49 @@ type PostPage struct {
 }
 
 // UserStats aggregates the current user's own post metrics for the personal
-// center banner (spec 20): total post count + sum of view counts.
+// center banner: total post count + sum of view counts.
 type UserStats struct {
 	PostsTotal int64 `json:"posts_total"`
 	ViewsTotal int64 `json:"views_total"`
 }
 
 // UpdatePostInput is the decoded payload for PUT /api/posts/{id}.
-// Spec 22: same two-visibility model as CreatePostInput; no scheduled_at.
+// Same two-visibility model as CreatePostInput; no scheduled_at.
+//
+// "Absent" and "cleared" have to be different requests, and each field below
+// distinguishes them in the only way its own type allows. Getting this wrong
+// is not academic: while Cover was a plain string, "" was read as "the client
+// did not mention a cover", so the editor's 移除封面 button saved successfully
+// and changed nothing.
 type UpdatePostInput struct {
+	// Title and Body stay plain strings on purpose: ValidatePostContent
+	// refuses an empty one (400), so "" is not a value a client can set and
+	// there is no "cleared" state to tell apart from "absent".
 	Title string `json:"title"`
 	// Slug: empty means "leave the permanent link alone" (a link must not
-	// change just because the title was edited).
-	Slug       string   `json:"slug"`
-	Body       string   `json:"body"`
-	Status     string   `json:"status"`
-	CategoryID *int64   `json:"category_id"`
-	Tags       []string `json:"tags"`
-	Pinned     *bool    `json:"pinned"`
-	Cover      string   `json:"cover"`
+	// change just because the title was edited). A post always has a link, so
+	// an empty string has nothing else it could mean.
+	Slug   string `json:"slug"`
+	Body   string `json:"body"`
+	Status string `json:"status"`
+	// CategoryID: nil = unchanged, 0 = move to "no category", >0 = that
+	// category. 0 rather than a nullable pointer-to-pointer because
+	// UpdateCategoryInput.ParentID already uses 0 for "top level"; the
+	// editor's 不分类 option needs an encoding and nil is taken by "unchanged".
+	CategoryID *int64 `json:"category_id"`
+	// Tags: nil = unchanged, present-but-empty = remove every tag. JSON `[]`
+	// already decodes into a non-nil empty slice, so the split works without a
+	// pointer.
+	Tags   []string `json:"tags"`
+	Pinned *bool    `json:"pinned"`
+	// Cover: nil = unchanged, "" = remove the cover.
+	Cover *string `json:"cover"`
 }
 
 // CreateCategoryInput is the decoded payload for POST /api/categories.
 type CreateCategoryInput struct {
 	Name string `json:"name"`
-	// ParentID makes the new category a child (spec 27). nil/0 = top level.
+	// ParentID makes the new category a child. nil/0 = top level.
 	ParentID *int64 `json:"parent_id"`
 }
 
@@ -151,7 +169,7 @@ type UpdateCategoryInput struct {
 	ParentID *int64 `json:"parent_id"`
 }
 
-// UpdateTagInput is the decoded payload for PUT /api/tags/{id} (spec 25).
+// UpdateTagInput is the decoded payload for PUT /api/tags/{id}.
 type UpdateTagInput struct {
 	Name string `json:"name"`
 }
@@ -223,7 +241,7 @@ type ImportResult struct {
 	SnapshotFile string `json:"snapshot_file,omitempty"`
 }
 
-// Backup schema metadata written into every dump (spec #6). Importers verify
+// Backup schema metadata written into every dump. Importers verify
 // these before applying so a dump from an incompatible app version is
 // rejected up front rather than silently corrupting the database.
 const (
@@ -257,7 +275,7 @@ type TagWithCount struct {
 
 // CategoryWithCount is a category row plus how many live, visible posts it
 // holds. ParentID is included so the admin table and the public sidebar can
-// both build the two-level tree without a second request (spec 27).
+// both build the two-level tree without a second request.
 type CategoryWithCount struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
@@ -289,8 +307,14 @@ type AuthResult struct {
 	User    UserPublic `json:"user"`
 }
 
-// toPublic converts a models.User into the user-facing public shape.
-func toPublic(u models.User) UserPublic {
+// PublicUser converts a models.User into the user-facing public shape.
+//
+// Exported so handlers never hand-assemble this struct. Three handlers did, and
+// all three dropped MustChangePassword: the forced-password-change screen read
+// /api/auth/me, saw no flag, told the user "nothing to change" while every
+// other request came back 403. Adding a field here is cheap precisely because
+// there is one constructor; a second one always drifts.
+func PublicUser(u models.User) UserPublic {
 	return UserPublic{
 		ID:                 u.ID,
 		Username:           u.Username,
@@ -315,9 +339,15 @@ type CreateUserInput struct {
 }
 
 // UpdateUserInput is the decoded payload for PUT /api/users/{id}.
+//
+// Role only. Enable/disable lives on PUT /api/users/{id}/disabled
+// (SetUserDisabled) and nowhere else: two write paths for one flag meant the
+// stricter one — bump token_version, refuse admin↔admin in both directions —
+// was bypassed by the looser one, which only refused *disabling* and wrote the
+// whole row back. No client ever sent this field; the admin console has always
+// used the dedicated endpoint.
 type UpdateUserInput struct {
-	Role     string `json:"role"`
-	Disabled *bool  `json:"disabled"`
+	Role string `json:"role"`
 }
 
 // ChangePasswordInput is the decoded payload for POST /api/auth/change-password.
@@ -347,7 +377,7 @@ type LoginMeta struct {
 
 // ImportData is the decoded payload for POST /api/backup/import: the same
 // shape ExportBackup produces. All slices are empty-safe (nil ok). The
-// schema_version / app_version fields (spec #6) let the importer reject
+// schema_version / app_version fields let the importer reject
 // dumps from an incompatible app before touching the database.
 type ImportData struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -442,7 +472,7 @@ type AuthorView struct {
 type DashboardData struct {
 	PostsTotal int64 `json:"posts_total"`
 	ViewsTotal int64 `json:"views_total"`
-	// Spec 33: the dashboard answers "is anyone reading?" not just "how many
+	// The dashboard answers "is anyone reading?" not just "how many
 	// posts exist". PendingTotal is what needs a human today; ViewTrend is the
 	// last 30 days of de-duplicated reads; TopPosts is what people actually read.
 	PendingTotal int64             `json:"pending_total"`
@@ -505,7 +535,7 @@ type MarkdownImportResult struct {
 	Skipped []MarkdownSkip `json:"skipped"`
 }
 
-// UploadResult is what an upload endpoint returns (spec 36). `deduped` tells
+// UploadResult is what an upload endpoint returns. `deduped` tells
 // the editor "the library already had this exact picture, nothing was stored
 // twice", which it surfaces as a small notice instead of silently pretending a
 // new file appeared.
@@ -607,7 +637,7 @@ type SnapshotInfo struct {
 	ModTime time.Time `json:"mod_time"`
 }
 
-// ViewResult is the body of POST /api/posts/{id}/view (spec 23).
+// ViewResult is the body of POST /api/posts/{id}/view.
 //
 // Counted=false comes with a Reason ("duplicate" / "author" / "bot") so the
 // frontend can decide whether to show anything; the count is always the

@@ -32,7 +32,7 @@ func newTestService(t *testing.T) (*Service, *gorm.DB) {
 	}
 	// models.All() is the single entity list — the same one InitDB uses.
 	// This line used to be a hand-copied subset and had already lost ActionLog
-	// (every audited test printed "no such table: action_logs") plus the spec-36
+	// (every audited test printed "no such table: action_logs") plus the upload
 	// upload tables, which made every post-save fail on a missing ledger.
 	if err := db.AutoMigrate(models.All()...); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -61,7 +61,7 @@ func newTestService(t *testing.T) (*Service, *gorm.DB) {
 // makeUser creates a user directly in the DB with the given role and returns it.
 func makeUser(t *testing.T, db *gorm.DB, username, email, role string) models.User {
 	t.Helper()
-	hash, err := models.HashPassword("secret123")
+	hash, err := models.HashPassword("Zp9!qLm2xR")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestRegisterAndLoginRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// Register a fresh user.
-	created, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: "secret123"})
+	created, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: "Zp9!qLm2xR"})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestRegisterAndLoginRoundTrip(t *testing.T) {
 	}
 
 	// Duplicate register -> 409.
-	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: "secret123"})
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: "Zp9!qLm2xR"})
 	if StatusOf(err) != http.StatusConflict {
 		t.Fatalf("expected 409, got %v (err=%v)", StatusOf(err), err)
 	}
@@ -100,7 +100,7 @@ func TestRegisterAndLoginRoundTrip(t *testing.T) {
 	}
 
 	// Login with the username in the email field (existing behaviour).
-	res, err := svc.Login(ctx, LoginInput{Email: "alice", Password: "secret123"}, LoginMeta{})
+	res, err := svc.Login(ctx, LoginInput{Email: "alice", Password: "Zp9!qLm2xR"}, LoginMeta{})
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -226,17 +226,26 @@ func TestListPostsNonAdminFilter(t *testing.T) {
 		}
 	}
 
-	// root sees the whole moderation view: 2 public + 4 restricted = 6.
-	// NOTE: alice/bob's "private" requests were both forced to pending by
-	// CreatePost (plain users cannot create private posts), so this case does
-	// not exercise the "private is author-only" rule — that rule is covered
-	// by TestGetPostPrivateVisibility and TestListPostsPageVisibilityThreeBranches.
+	// root sees the whole moderation view: 2 public + 2 pending + 2 private
+	// = 6. Private is not hidden from the operator roles — an admin or root
+	// who cannot open the article cannot handle a report about it — while the
+	// two author cases above still confirm that a plain member sees only their
+	// own restricted posts.
 	allPosts, err := svc.ListPosts(ctx, root, "")
 	if err != nil {
 		t.Fatalf("ListPosts(root): %v", err)
 	}
 	if len(allPosts) != 6 {
-		t.Fatalf("root should see 6 posts (2 public + 4 pending), got %d", len(allPosts))
+		t.Fatalf("root should see all 6 posts (2 public + 2 pending + 2 private), got %d", len(allPosts))
+	}
+	sawForeignPrivate := false
+	for _, p := range allPosts {
+		if p.Status == models.PostPrivate && p.AuthorID != root.ID {
+			sawForeignPrivate = true
+		}
+	}
+	if !sawForeignPrivate {
+		t.Fatalf("root must see other users' private posts (operator visibility)")
 	}
 }
 
@@ -385,7 +394,7 @@ func contains(s, sub string) bool {
 
 // --- audit fixes (2026-10-15): privilege hierarchy + review-loop closure ---
 
-// TestResetPasswordHierarchy is the service-level regression for P0-1: the
+// TestResetPasswordHierarchy is the service-level regression test: the
 // hierarchical guard (via canManageUser) must reject an admin resetting the
 // unique root, while legitimate resets (root→admin, admin→user) succeed.
 func TestResetPasswordHierarchy(t *testing.T) {
@@ -398,15 +407,15 @@ func TestResetPasswordHierarchy(t *testing.T) {
 	author := makeUser(t, db, "author", "author@example.com", models.RoleUser)
 
 	// Admin MUST NOT be able to reset the root's password (would be takeover).
-	if err := svc.ResetPassword(ctx, admin, root.ID, "newpassword123"); err == nil {
+	if err := svc.ResetPassword(ctx, admin, root.ID, "Nv7&bGt4zR"); err == nil {
 		t.Fatal("expected admin→root reset to be forbidden, got nil")
 	}
 	// Root may reset an admin's password.
-	if err := svc.ResetPassword(ctx, root, admin.ID, "newpassword123"); err != nil {
+	if err := svc.ResetPassword(ctx, root, admin.ID, "Nv7&bGt4zR"); err != nil {
 		t.Fatalf("root resetting admin should succeed, got %v", err)
 	}
 	// Admin may reset a plain user's password.
-	if err := svc.ResetPassword(ctx, admin, author.ID, "newpassword123"); err != nil {
+	if err := svc.ResetPassword(ctx, admin, author.ID, "Nv7&bGt4zR"); err != nil {
 		t.Fatalf("admin resetting user should succeed, got %v", err)
 	}
 	// Password too short is still rejected (independent of hierarchy).
@@ -415,7 +424,7 @@ func TestResetPasswordHierarchy(t *testing.T) {
 	}
 }
 
-// TestAuthorResubmitsRejectedPost is the service-level regression for P0-4:
+// TestAuthorResubmitsRejectedPost is the service-level regression test:
 // the author of a rejected post may move it back to "pending" (clearing the
 // stale reviewer note), closing the "rejected → fix → resubmit" loop. A
 // different user cannot, and a non-rejected post's pending transition is
@@ -458,17 +467,27 @@ func TestAuthorResubmitsRejectedPost(t *testing.T) {
 	}
 }
 
-// TestAuthorCannotEscapeQueueViaPrivate locks in P1-14: an author may make
-// their own *published* post private, but cannot use "save as private" to
-// pull a pending or rejected post out of the review queue.
-func TestAuthorCannotEscapeQueueViaPrivate(t *testing.T) {
+// TestPrivateIsARealStateForAuthors replaces the old
+// TestAuthorCannotEscapeQueueViaPrivate.
+//
+// Authors may not move pending/rejected to private, on the
+// theory that it let them "escape the queue". But escaping the queue now leads
+// somewhere safe by construction: private never reaches a reader, so a
+// withdrawn submission is not published and no review is owed. The rule that
+// mattered — you cannot get published without review — is enforced on the way
+// out, not on the way back.
+//
+// What the old rule actually cost: an author who wanted to stop a submission
+// had no way to say so, and an author who asked for private at creation time
+// was silently queued for publication instead.
+func TestPrivateIsARealStateForAuthors(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
 	ctx := context.Background()
 
 	author := makeUser(t, db, "author", "author@example.com", models.RoleUser)
 
-	// published -> private is a legal unpublish.
+	// Unpublish: published -> private.
 	published := makePostNoTime(t, db, author, models.PostPublished, "body", "pub")
 	out, err := svc.UpdatePost(ctx, author, published.ID, UpdatePostInput{Status: models.PostPrivate})
 	if err != nil {
@@ -478,24 +497,96 @@ func TestAuthorCannotEscapeQueueViaPrivate(t *testing.T) {
 		t.Fatalf("expected private, got %q", out.Status)
 	}
 
-	// pending -> private must be ignored: the post stays in the queue.
+	// Withdraw a submission: pending -> private, and it reaches nobody.
 	pending := makePostNoTime(t, db, author, models.PostPending, "body", "pending")
 	out2, err := svc.UpdatePost(ctx, author, pending.ID, UpdatePostInput{Status: models.PostPrivate})
 	if err != nil {
-		t.Fatalf("pending->private call failed: %v", err)
+		t.Fatalf("pending->private failed: %v", err)
 	}
-	if out2.Status != models.PostPending {
-		t.Fatalf("author escaped the queue: expected pending, got %q", out2.Status)
+	if out2.Status != models.PostPrivate {
+		t.Fatalf("withdrawing a submission must land in private, got %q", out2.Status)
+	}
+	if _, err := svc.GetPost(ctx, models.User{}, pending.ID); err == nil {
+		t.Fatalf("a withdrawn submission must not be readable by an anonymous visitor")
 	}
 
-	// rejected -> private must also be ignored.
+	// Give up after a rejection: rejected -> private.
 	rejected := makePostNoTime(t, db, author, models.PostRejected, "body", "rejected")
 	out3, err := svc.UpdatePost(ctx, author, rejected.ID, UpdatePostInput{Status: models.PostPrivate})
 	if err != nil {
-		t.Fatalf("rejected->private call failed: %v", err)
+		t.Fatalf("rejected->private failed: %v", err)
 	}
-	if out3.Status != models.PostRejected {
-		t.Fatalf("author escaped rejected lane: expected rejected, got %q", out3.Status)
+	if out3.Status != models.PostPrivate {
+		t.Fatalf("expected private, got %q", out3.Status)
+	}
+}
+
+// TestGoingPublicFromPrivateNeedsReview is the other half of the promise: an
+// author who asks for readers is queued for review, whichever field value they
+// send. Private is not a back door to publication.
+func TestGoingPublicFromPrivateNeedsReview(t *testing.T) {
+	svc, db := newTestService(t)
+	defer closeDB(db)
+	ctx := context.Background()
+
+	author := makeUser(t, db, "author", "author@example.com", models.RoleUser)
+	root := makeUser(t, db, "root", "root@example.com", models.RoleRoot)
+
+	// Both spellings of "let people read this" mean "submit for review".
+	for _, requested := range []string{models.PostPublished, models.PostPending} {
+		p := makePostNoTime(t, db, author, models.PostPrivate, "body", "draft-"+requested)
+		out, err := svc.UpdatePost(ctx, author, p.ID, UpdatePostInput{Status: requested})
+		if err != nil {
+			t.Fatalf("private->%s failed: %v", requested, err)
+		}
+		if out.Status != models.PostPending {
+			t.Fatalf("private->%s must queue for review, got %q", requested, out.Status)
+		}
+	}
+
+	// The same author editing a LIVE post's words goes back into the queue.
+	// An approval covers the text that was reviewed; a rewrite afterwards is
+	// text nobody has seen, and honouring "published" here would make the
+	// editor a second, unreviewed publishing path. This is exactly the branch
+	// that used to be a silent no-op: the request fell through both cases and
+	// the post kept its old status while its body changed.
+	live := makePostNoTime(t, db, author, models.PostPublished, "body", "live")
+	out, err := svc.UpdatePost(ctx, author, live.ID, UpdatePostInput{Title: "rewritten", Status: models.PostPublished})
+	if err != nil {
+		t.Fatalf("editing a published post failed: %v", err)
+	}
+	if out.Status != models.PostPending {
+		t.Fatalf("rewriting a live post must queue for review, got %q", out.Status)
+	}
+	// The reviewer's previous verdict is gone with the text it judged — the
+	// queue must not render this submission as already reviewed.
+	if out.ReviewedBy != "" || out.ReviewedAt != nil {
+		t.Fatalf("re-entering the queue must clear review metadata, got by=%q at=%v",
+			out.ReviewedBy, out.ReviewedAt)
+	}
+
+	// Filing changes are not content changes. An author who only adds a tag
+	// keeps the article live — otherwise every administrative tweak would take
+	// the site's own front page offline until someone re-approved it.
+	filed := makePostNoTime(t, db, author, models.PostPublished, "body", "live-filing")
+	filedOut, err := svc.UpdatePost(ctx, author, filed.ID, UpdatePostInput{
+		Tags: []string{"filed"}, Status: models.PostPublished,
+	})
+	if err != nil {
+		t.Fatalf("filing-only edit failed: %v", err)
+	}
+	if filedOut.Status != models.PostPublished {
+		t.Fatalf("a filing-only edit must keep the post live, got %q", filedOut.Status)
+	}
+
+	// Root is the reviewer, so root's own request to publish is immediate.
+	rp := makePostNoTime(t, db, root, models.PostPrivate, "body", "root-pub")
+	out2, err := svc.UpdatePost(ctx, root, rp.ID, UpdatePostInput{Status: models.PostPublished})
+	if err != nil {
+		t.Fatalf("root private->published failed: %v", err)
+	}
+	if out2.Status != models.PostPublished {
+		t.Fatalf("root must publish immediately, got %q", out2.Status)
 	}
 }
 

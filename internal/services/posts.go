@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-
 	"lopezpress/internal/models"
 )
 
@@ -14,33 +13,47 @@ import (
 // CreatePost creates a post owned by user. AuthorID is set from user.ID.
 // The returned post has Author preloaded so the client sees the author.
 //
-// Role-based initial status (spec: review workflow):
-//   - root: published (no review needed).
-//   - admin / user: pending (enters the review queue; admin posts are
-//     reviewed by root, user posts by admin or root).
+// Initial status: a request to publish goes through review, a request to stay
+// private does not.
 //
-// An explicit status is only honoured when it is one of published / private
-// AND the caller is root. For admin/user the status is forced to "pending"
-// so a tampered request cannot bypass the review queue.
+//   - root: published or private exactly as requested.
+//   - admin / user asking for private: stored as private — really private.
+//   - admin / user asking for anything else (including nothing): pending, so
+//     a tampered request cannot bypass the review queue.
+//
+// The middle case used to be folded into "pending", which made the editor lie.
+// It offered a "只有你自己能看到，其他人访问会显示 404" radio, sent
+// status=private, and the post landed in the review queue; approving it then
+// flipped it to published. The author had chosen privacy and got publicity,
+// which is worse than having no such option at all.
+//
+// Review exists to stop harmful content from being *published*. A post that is
+// private reaches no reader, so there is nothing to moderate — the same reason
+// canSeePost keeps private/draft out of the review queue's reach. Skipping
+// review costs nothing; going public from private still queues for review (see
+// UpdatePost). Note that "no reader" does not mean "no operator": admin and
+// root can read a private post, because handling a report about it requires
+// reading it.
 func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePostInput) (models.Post, error) {
 	if err := ValidatePostContent(in.Title, in.Body); err != nil {
 		return models.Post{}, err
 	}
 	// Resolve the initial status by role.
 	var status string
-	switch user.Role {
-	case models.RoleRoot:
+	switch {
+	case user.Role == models.RoleRoot:
 		// Root publishes or keeps private as requested.
 		switch in.Status {
-		case "", models.PostPublished:
-			status = models.PostPublished
 		case models.PostPrivate:
 			status = models.PostPrivate
 		default:
 			status = models.PostPublished
 		}
+	case in.Status == models.PostPrivate:
+		// Anyone may write a private post; it never becomes public on its own.
+		status = models.PostPrivate
 	default:
-		// admin / user / unknown: always enter the pending review queue.
+		// admin / user / unknown asking for public: enter the review queue.
 		status = models.PostPending
 	}
 
@@ -60,7 +73,7 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 		CategoryID: in.CategoryID,
 		Cover:      in.Cover,
 	}
-	// Spec 29: allocate the permanent link before the insert so a single
+	// Allocate the permanent link before the insert so a single
 	// transaction covers both. The id is generated here (not by BeforeCreate)
 	// because the slug falls back to it when the title yields nothing usable.
 	if post.ID == "" {
@@ -113,14 +126,15 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 // GetPost returns a single post by id with the author preloaded.
 // Returns 404 when the post does not exist or the caller may not see it.
 //
-// It does NOT touch view_count (spec 23): counting moved to the explicit
+// It does NOT touch view_count: counting moved to the explicit
 // POST /api/posts/{id}/view endpoint so the read path stays side-effect free
 // and refreshes/previews no longer inflate the number.
 //
 // Visibility by status (spec: review + banned vault):
 //   - published: everyone (incl. anonymous).
-//   - private: the author ONLY. Not admins, not root — "仅自己可见" has to
-//     mean exactly that, and unpublished content needs no moderation.
+//   - private / draft: the author, plus admin and root. The content never
+//     reaches a reader, so it skips review — but the operators can open it,
+//     because handling a report about an article requires reading it.
 //   - pending / rejected: author, admin, or root (the review flow needs it).
 //   - banned: root only (the banned vault is invisible to the author and to
 //     other admins).
@@ -137,6 +151,7 @@ func (s *Service) GetPost(ctx context.Context, user models.User, id string) (mod
 	post.SanitizeReview()
 	return post, nil
 }
+
 // ListPosts returns posts ordered newest first, filtered by author_id unless
 // the caller is an admin. Returns the FULL matching set (no pagination).
 // Kept as an internal helper for tests; production code should use ListPostsPage.
@@ -147,11 +162,12 @@ func (s *Service) ListPosts(ctx context.Context, user models.User, status string
 	}
 	return page.Items, nil
 }
+
 // ListArchive returns every published post for the /archive page, newest
 // first. The author and category are preloaded for display, but the body is
 // excluded to keep the payload small on the low-budget VPS.
 //
-// Browsable anonymously (spec 22): the archive only ever lists posts whose
+// Browsable anonymously: the archive only ever lists posts whose
 // status is "published", which is by definition public — so every visitor
 // (logged-out or logged-in) sees the same full public set. The user
 // parameter is kept for call-signature stability but no longer scopes the
@@ -177,7 +193,7 @@ func (s *Service) ListArchive(ctx context.Context, user models.User) ([]models.P
 	return posts, nil
 }
 
-// ListArchivePage is the paginated form of ListArchive (spec 28).
+// ListArchivePage is the paginated form of ListArchive.
 //
 // The unpaginated version loads every published post on every visit, which is
 // fine for 12 posts and terrible for 2000 on a 1 vCPU box. This returns one
@@ -248,7 +264,7 @@ func (s *Service) FeedPosts(ctx context.Context, limit int) ([]models.Post, erro
 // GetPostPublic returns a published post without requiring authentication.
 // Only posts with status "published" are accessible.
 //
-// It does NOT touch view_count (spec 23) — see ReportView / GetPost.
+// It does NOT touch view_count — see ReportView / GetPost.
 func (s *Service) GetPostPublic(ctx context.Context, id string) (models.Post, error) {
 	var post models.Post
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,7 +33,22 @@ import (
 //     low on a low-spec machine.
 //   - Rate limiting uses an in-memory token bucket per identity; no Redis.
 type Config struct {
-	Port                 string
+	Port string
+	// Host is the interface the HTTP server binds to. Empty means 127.0.0.1
+	// (see ListenAddr): behind the same-host reverse proxy this project
+	// deploys, nothing outside the box has any reason to reach the Go port.
+	//
+	// The server used to bind ":" + Port, i.e. every interface. That is not a
+	// theoretical exposure: with the port merely reachable — a forgotten
+	// security-group rule, a ufw insert, a container port publish — a scanner
+	// that finds :8081 talks to Go directly and skips nginx entirely, which
+	// also skips every header and deny rule nginx would have applied, and gets
+	// answers straight from the application. Loopback by default makes "the
+	// app is only reachable through the proxy" the default rather than a thing
+	// the operator must remember to arrange.
+	//
+	// Set HOST=0.0.0.0 explicitly for Docker or a multi-host setup.
+	Host                 string
 	JWTSecret            string
 	JWTExpiryHours       int
 	DBPath               string
@@ -46,25 +62,31 @@ type Config struct {
 	BackupDir            string // where JSON backup dumps are written
 	AdminInitialPassword string // optional; if set, used as admin's initial password on first boot
 	CORSOrigins          string // comma-separated allowed origins; "*" allows all (dev default)
-	SmmsToken            string // SM.MS image-host token held server-side (spec #7); optional
+	SmmsToken            string // SM.MS image-host token held server-side; optional
 	// TrustedProxies is the comma-separated IP/CIDR allow-list whose
-	// X-Forwarded-For headers are believed (spec 23 / TODO P2-6). Empty
+	// X-Forwarded-For headers are believed. Empty
 	// falls back to loopback only — see internal/clientip.
 	TrustedProxies string
 	// CaptchaEnabled turns the login challenge on. Default true: the whole
 	// point is that it is not something an operator has to remember to switch
 	// on before an incident.
 	CaptchaEnabled bool
-	// CaptchaSlideAfter is how many failed logins a client may accumulate
-	// before the sliding puzzle replaces the four-character image. Counted per
-	// client IP, and cleared on a successful login.
-	CaptchaSlideAfter int
+	// HealthShowVersion makes GET /health include the build version and commit.
+	// Default FALSE: the probe is unauthenticated, so on a public deployment it
+	// is a free "which build are you running" oracle for anyone port-scanning —
+	// and once an attacker knows the exact commit, "is this build vulnerable to
+	// <the CVE fixed in the next commit>" needs no guessing. The version is
+	// available where it belongs: `lopezpress -version` over ssh, and the
+	// startup log line. Turn this on only for a private/staging deploy where a
+	// load balancer needs to read it over HTTP.
+	HealthShowVersion bool
 }
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	return &Config{
 		Port: envOr("PORT", "8080"),
+		Host: envOr("HOST", "127.0.0.1"), // loopback unless told otherwise
 		// JWT_SECRET has NO default. An empty value is replaced at startup with
 		// a freshly generated random secret (see ensureJWTSecret), because a
 		// hard-coded default is not a weak default — it is a published one.
@@ -106,20 +128,32 @@ func Load() *Config {
 		// CORS origins whitelist. Default "*" (dev); in prod, set to your real
 		// frontend origin(s) comma-separated. Never pair "*" with credentials.
 		CORSOrigins: envOr("CORS_ORIGINS", "*"),
-		// SM.MS image-host token held server-side (spec #7). The browser no
+		// SM.MS image-host token held server-side. The browser no
 		// longer carries this secret; /api/upload proxies to SM.MS when it
 		// is set. Falls back to the site-config token when empty.
 		SmmsToken: os.Getenv("SM_MS_TOKEN"),
-		// Proxy trust list for client-IP resolution (spec 23 / P2-6).
+		// Proxy trust list for client-IP resolution.
 		// Empty -> internal/clientip trusts loopback only (nginx on the same
 		// host). Set it in prod when the proxy lives on another host.
 		TrustedProxies: envOr("TRUSTED_PROXIES", clientip.DefaultTrustedProxySpec),
 		// Login captcha. On by default and it stays on: an operator who had to
 		// remember to enable it before an incident is an operator who did not.
 		CaptchaEnabled: envBoolOr("CAPTCHA_ENABLED", true),
-		// Failures before the image captcha becomes a sliding puzzle.
-		CaptchaSlideAfter: envIntOr("CAPTCHA_SLIDE_AFTER", 3),
+		// Default off: a public probe should not answer "which build is this".
+		HealthShowVersion: envBoolOr("HEALTH_SHOW_VERSION", false),
 	}
+}
+
+// ListenAddr returns the host:port the HTTP server binds to, e.g.
+// "127.0.0.1:8081". JoinHostPort is used rather than string concatenation so
+// a bare IPv6 HOST ("::1") becomes "[::1]:8081" instead of an unparseable
+// "::1:8081".
+func (c *Config) ListenAddr() string {
+	host := strings.TrimSpace(c.Host)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, c.Port)
 }
 
 // ValidateSecurity enforces security-sensitive configuration.
@@ -346,7 +380,7 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 
 	// One-shot manual migrations run BEFORE AutoMigrate. AutoMigrate only
 	// adds missing columns/tables and never drops; dropping the deprecated
-	// posts.scheduled_at column (spec #8) requires the hand-written
+	// posts.scheduled_at column requires the hand-written
 	// migration below, gated by the schema_migrations table.
 	if err := runManualMigrations(db); err != nil {
 		return nil, "", fmt.Errorf("manual migration: %w", err)
@@ -394,13 +428,13 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 		return nil, "", fmt.Errorf("create slug index: %w", err)
 	}
 
-	// Spec 31: presets MUST be seeded before the demo data — otherwise the
+	// Presets MUST be seeded before the demo data — otherwise the
 	// demo's own 技术/随笔/教程 rows win the "categories are empty" check and
 	// the designed two-level tree never appears on a fresh install.
 	seedPresetCategories(db)
 	seededPwd := seedDemoData(db, cfg.AdminInitialPassword)
 	seedSiteConfig(db)
-	// Spec 36: adopt whatever is already on disk into the upload metadata
+	// Adopt whatever is already on disk into the upload metadata
 	// table. Must run after AutoMigrate created upload_files on a fresh DB,
 	// and it is idempotent so a restart is a single SELECT.
 	backfillUploads(db, cfg.UploadDir)
@@ -409,7 +443,7 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 }
 
 // seedPresetCategories fills the shipped two-level category tree on a fresh
-// database only (spec 27). An existing install keeps whatever the owner built;
+// database only. An existing install keeps whatever the owner built;
 // they can still apply the preset explicitly from the admin page, which is
 // idempotent and never renames or deletes anything.
 func seedPresetCategories(db *gorm.DB) {
@@ -563,7 +597,7 @@ func min(a, b int) int {
 // live schema.
 //
 // This is the durable guard for the class of bug that produced 0008: because
-// AutoMigrate is deliberately never run against existing tables (see §7.1),
+// AutoMigrate is deliberately never run against existing tables,
 // a column added to a model without a matching hand-written migration simply
 // does not exist, and the failure only shows up later as a 500 on one
 // endpoint. A startup WARN makes that immediately visible instead.

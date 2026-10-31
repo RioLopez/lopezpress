@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// TestListSnapshotsRootOnly covers the P2-14 snapshot listing: the endpoint
+// TestListSnapshotsRootOnly covers the snapshot listing: the endpoint
 // behind the new restore UI is root-only (a snapshot holds every account and
-// password hash — same gate as RestoreSnapshot, as-built audit Q7), returns
+// password hash — same gate as RestoreSnapshot), returns
 // an empty list (not an error) when the directory is absent, and filters to
 // snapshot-*.db files only.
 func TestListSnapshotsRootOnly(t *testing.T) {

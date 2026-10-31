@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -15,16 +16,16 @@ import (
 // --- auth ---
 
 // Register creates a new user account and signs them straight in, returning
-// the same AuthResult shape as Login. Spec 04 AC-2.2 requires registration to
-// log the user in automatically, so the client can drop straight into the app
+// the same AuthResult shape as Login. Registration must log the user in
+// automatically, so the client can drop straight into the app
 // without a second round trip to /api/auth/login. Returns 409 if the username
 // or email is already taken.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, error) {
 	if in.Username == "" || in.Email == "" || in.Password == "" {
 		return nil, newErr(http.StatusBadRequest, "username, email and password are required")
 	}
-	if len(in.Password) < 8 {
-		return nil, newErr(http.StatusBadRequest, "password must be at least 8 characters")
+	if err := ValidatePasswordForUser(in.Password, in.Username, in.Email); err != nil {
+		return nil, err
 	}
 	if !isValidUsername(in.Username) {
 		return nil, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
@@ -48,7 +49,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 		return nil, newErr(http.StatusConflict, "username or email already in use")
 	}
 
-	// Spec 37 (experimental, off by default): prove the address before the
+	// (experimental, off by default): prove the address before the
 	// account exists. Ordered after the duplicate check so a rejected sign-up
 	// does not burn the code the user paid an email for.
 	if err := s.verifyRegisterCode(ctx, in); err != nil {
@@ -73,21 +74,17 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 	return &AuthResult{
 		Token:   token,
 		Expires: expires,
-		User:    toPublic(u),
+		User:    PublicUser(u),
 	}, nil
 }
 
 // Login verifies credentials (by username OR email) and returns a signed JWT
 // along with the public view of the user. Every attempt (success or failure)
 // is recorded in login_log, and a successful login updates the user's
-// last_login_ip / last_login_at (spec 14).
+// last_login_ip / last_login_at.
 func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*AuthResult, error) {
-	// The identifier is normally sent in "email" (it may be either a username
-	// or an email); a client may also send it explicitly in "username".
-	identifier := in.Email
-	if identifier == "" {
-		identifier = in.Username
-	}
+	// The identifier arrives in "email" but may be a username or an address.
+	identifier := cmp.Or(in.Email, in.Username)
 	if identifier == "" || in.Password == "" {
 		return nil, newErr(http.StatusBadRequest, "email (or username) and password are required")
 	}
@@ -102,10 +99,11 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 	if err := s.db.WithContext(ctx).
 		Where("username = ? OR email = ?", identifier, identifier).
 		First(&user).Error; err != nil {
+		// Burn a real bcrypt comparison before answering, or the clock becomes a
+		// username oracle: "no such user" returns in a microsecond while "wrong
+		// password" spends ~60 ms hashing. The 401 body is identical either way.
+		models.VerifyPasswordAgainstNothing(in.Password)
 		return recordFail("", identifier, http.StatusUnauthorized, "invalid credentials")
-	}
-	if user.Disabled {
-		return recordFail(user.ID, identifier, http.StatusForbidden, "account is disabled")
 	}
 	if !models.VerifyPassword(in.Password, user.PasswordHash) {
 		// Security notification: notify the account owner of a failed attempt
@@ -115,6 +113,12 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 		})
 		return recordFail(user.ID, identifier, http.StatusUnauthorized, "invalid credentials")
 	}
+	// Disabled is checked *after* the password on purpose: checking it first
+	// handed 403 "account is disabled" to anyone who typed a suspended account's
+	// address — an existence check needing no password and no lockout budget.
+	if user.Disabled {
+		return recordFail(user.ID, identifier, http.StatusForbidden, "account is disabled")
+	}
 
 	// Success: record audit + update last-login fields (best-effort).
 	// Detect a "new location" (IP or browser differs from the previous login)
@@ -122,8 +126,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 	s.notifyNewLocation(ctx, user, meta)
 	s.RecordLogin(ctx, user.ID, identifier, meta.IP, meta.UA, true)
 	_ = s.db.WithContext(ctx).Model(&user).Updates(map[string]any{
-		"last_login_ip": meta.IP,
-		"last_login_at": time.Now(),
+		"last_login_ip": meta.IP, "last_login_at": time.Now(),
 	}).Error
 
 	token, expires, err := s.SignToken(user.ID, user.Role, user.TokenVersion)
@@ -134,7 +137,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput, meta LoginMeta) (*Au
 	return &AuthResult{
 		Token:   token,
 		Expires: expires,
-		User:    toPublic(user),
+		User:    PublicUser(user),
 	}, nil
 }
 
@@ -219,7 +222,6 @@ func (s *Service) Authenticate(ctx context.Context, rawToken string) (models.Use
 	// leave every session it already holds fully usable (including writes)
 	// until the token happens to expire. This is the Authenticate-level
 	// counterpart of the must_change_password gate in the handlers.
-	// (as-built audit Q6)
 	if user.Disabled {
 		return models.User{}, newErr(http.StatusForbidden, "account is disabled")
 	}

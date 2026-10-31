@@ -1,6 +1,6 @@
 package services
 
-// Spec 23: view de-duplication + spec 25: tag rename.
+// View de-duplication + tag rename.
 
 import (
 	"context"
@@ -138,7 +138,7 @@ func TestReportViewRejectsNonPublished(t *testing.T) {
 	}
 }
 
-// Spec 24: the page size comes from site config and is clamped to the offered
+// The page size comes from site config and is clamped to the offered
 // set.
 func TestListPageSizeFromConfig(t *testing.T) {
 	svc, db := newTestService(t)
@@ -170,7 +170,7 @@ func TestListPageSizeFromConfig(t *testing.T) {
 	}
 }
 
-// Spec 24: when the caller omits size, ListPostsPage uses the configured size.
+// When the caller omits size, ListPostsPage uses the configured size.
 func TestListPostsPageUsesConfiguredSize(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -223,7 +223,7 @@ func TestListPostsPageUsesConfiguredSize(t *testing.T) {
 	}
 }
 
-// Spec 25: renaming a tag keeps every post association.
+// Renaming a tag keeps every post association.
 func TestUpdateTagKeepsAssociations(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)

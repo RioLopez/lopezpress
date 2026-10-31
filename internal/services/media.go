@@ -38,7 +38,7 @@ const (
 
 // UploadImage validates client-supplied bytes and stores them.
 //
-// Round 77 changes (spec 36):
+// Round 77 changes:
 //   - the file name is an opaque 22-char base62 id, not "<unix-ms>-<hex>",
 //     so a URL no longer leaks when the image was uploaded;
 //   - the bytes are hashed and de-duplicated: uploading the same picture twice
@@ -259,7 +259,7 @@ func normalizeUploadKind(kind string) string {
 
 // uploadFileLimit returns the per-file ceiling for a kind, falling back to the
 // process-level default when the site row carries no usable value (a database
-// seeded before spec 36 has zeros in those columns).
+// seeded before the image library has zeros in those columns).
 func uploadFileLimit(cfg models.SiteConfig, kind string) int64 {
 	var limit int64
 	switch kind {

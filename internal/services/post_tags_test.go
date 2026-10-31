@@ -8,7 +8,7 @@ import (
 )
 
 // TestCreatePostSavesTagsAtomically verifies that CreatePost persists the post
-// row and its tag associations together (P3-1): a post created with tags must
+// row and its tag associations together: a post created with tags must
 // carry exactly those tags, with blank and duplicate names collapsed. This
 // guards the transaction refactor of CreatePost.
 func TestCreatePostSavesTagsAtomically(t *testing.T) {
@@ -99,7 +99,7 @@ func TestTagNamesAreCaseInsensitive(t *testing.T) {
 }
 
 // TestUpdatePostReplacesTagsInTransaction verifies that UpdatePost's tag
-// handling (Clear + Append inside a transaction, P3-1) actually replaces the
+// handling (Clear + Append inside a transaction) actually replaces the
 // association set rather than appending: an update with a new tag list drops
 // the old tags, and an empty list clears them.
 func TestUpdatePostReplacesTagsInTransaction(t *testing.T) {

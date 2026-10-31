@@ -17,7 +17,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- one-time email codes (spec 37, experimental) ---
+// --- one-time email codes (experimental) ---
 //
 // This file owns the mechanics: mint a code, store its HMAC, mail it, and
 // verify a submitted one. The business rules of the three flows that use it

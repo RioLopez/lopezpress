@@ -8,8 +8,8 @@ import (
 	"lopezpress/internal/models"
 )
 
-// TestImportAndRestoreAreRootOnly is the regression test for the as-built
-// audit finding Q7: a backup payload is attacker-controllable JSON that can
+// TestImportAndRestoreAreRootOnly guards the root gate: a backup payload is
+// attacker-controllable JSON that can
 // carry arbitrary user rows (including role "root" and foreign password
 // hashes), and RestoreSnapshot replaces the whole database too. Before the
 // gate, any admin could import a hand-crafted backup and mint/overwrite a

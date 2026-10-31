@@ -13,7 +13,7 @@ import (
 )
 
 // buildOldSchema creates a DB with the legacy posts table (with scheduled_at)
-// plus a few rows, to simulate a database created before spec #8.
+// plus a few rows, to simulate a database created before that migration.
 func buildOldSchema(t *testing.T, path string) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -275,12 +275,12 @@ func TestDisambiguateDuplicateSlugs(t *testing.T) {
 		got[r.ID] = r.Slug
 	}
 	want := map[string]string{
-		"p1": "same-slug",     // oldest keeps it
-		"p2": "same-slug-3",   // -2 was taken by p5, so the next free one
+		"p1": "same-slug",   // oldest keeps it
+		"p2": "same-slug-3", // -2 was taken by p5, so the next free one
 		"p3": "same-slug-4",
 		"p4": "same-slug-5",
-		"p5": "same-slug-2",   // untouched: it was never part of the group
-		"p6": "",              // empty means "no slug yet", not a collision
+		"p5": "same-slug-2", // untouched: it was never part of the group
+		"p6": "",            // empty means "no slug yet", not a collision
 	}
 	for id, w := range want {
 		if got[id] != w {

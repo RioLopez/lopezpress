@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestBannedPostFrozenForAuthor is the regression test for the as-built audit
-// finding Q2: an author must not be able to keep editing (or soft-deleting)
+// TestBannedPostFrozenForAuthor guards the ban freeze: an author must not be
+// able to keep editing (or soft-deleting)
 // their own post once the root has pulled it into the banned vault. Root keeps
 // editorial access, but even root must leave the vault through the dedicated
 // vault endpoints (send-back / permanent delete), never through DeletePost's

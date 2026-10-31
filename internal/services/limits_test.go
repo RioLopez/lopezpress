@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"lopezpress/internal/models"
 )
@@ -269,6 +269,66 @@ func TestEmailVerifyRequiresSmtpHost(t *testing.T) {
 	cfg.SmtpHost = ""
 	if err := validateSiteConfig(cfg); err != nil {
 		t.Fatalf("verification off with no SMTP must be accepted: %v", err)
+	}
+}
+
+// A site_url with a path used to save cleanly and then rewrite every link in
+// /feed and /sitemap.xml. Production ran with "http://<ip>:8088/admin" for a
+// while: the feed advertised "…/admin/p/<slug>" — a 404 — and the sitemap
+// became a list of dead links that also told crawlers where the admin lives.
+// The old check only looked at the scheme, so a path sailed through.
+func TestSiteURLRejectsPathQueryAndFragment(t *testing.T) {
+	base := models.SiteConfig{SiteName: "Echo", ImgHostMode: "local"}
+	for _, bad := range []string{
+		"https://example.com/admin",
+		"https://example.com/blog/",
+		"https://example.com?x=1",
+		"https://example.com#top",
+		"https://example.com/some/deep/path",
+	} {
+		cfg := base
+		cfg.SiteURL = bad
+		if err := validateSiteConfig(cfg); StatusOf(err) != http.StatusBadRequest {
+			t.Fatalf("site url %q must be refused, got %v (err=%v)", bad, StatusOf(err), err)
+		}
+	}
+
+	// Bare origins — including a trailing slash, a port, and IPv6 — are the
+	// only shapes the field is meant to hold.
+	for _, ok := range []string{
+		"",
+		"https://example.com",
+		"https://example.com/",
+		"http://47.115.62.125:8088",
+		"http://[::1]:8081",
+	} {
+		cfg := base
+		cfg.SiteURL = ok
+		if err := validateSiteConfig(cfg); err != nil {
+			t.Fatalf("site url %q must be accepted: %v", ok, err)
+		}
+	}
+}
+
+// The reader in /feed and /sitemap.xml cannot trust what is already in the
+// database: the /admin value was stored by a build that accepted it. feedBaseURL
+// therefore reduces whatever it is handed to a bare origin on every request, so
+// links come out right even before the operator re-saves the settings form.
+func TestCanonicalSiteURLStripsEverythingButTheOrigin(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com":             "https://example.com",
+		"https://example.com/":            "https://example.com",
+		"https://example.com/admin":       "https://example.com",
+		"https://example.com/admin/p/xx":  "https://example.com",
+		"http://47.115.62.125:8088/admin": "http://47.115.62.125:8088",
+		"":                                "",
+		"not a url":                       "",
+		"ftp://example.com":               "",
+	}
+	for in, want := range cases {
+		if got := canonicalSiteURL(in); got != want {
+			t.Fatalf("canonicalSiteURL(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

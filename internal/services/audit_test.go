@@ -102,9 +102,10 @@ func TestAuditWritesRowWithoutRequestIdentity(t *testing.T) {
 	}
 
 	// context.Background(): no request, no identity — exactly the cron case.
-	if _, err := svc.EmptyTrash(context.Background()); err != nil {
-		t.Fatalf("empty trash: %v", err)
-	}
+	// The zero-value actor is deliberate: the point is that audit() still writes
+	// a row when nobody claims the action. Calling it directly keeps the test
+	// about the fallback rather than about one use case's signature.
+	svc.audit(context.Background(), models.User{}, "empty_trash", "trash", "deleted=0")
 
 	rows := auditRows(t, db, "empty_trash")
 	if len(rows) != 1 {

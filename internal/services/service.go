@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
 	"lopezpress/internal/config"
+	"lopezpress/internal/models"
 )
 
 // Service carries the shared dependencies (db + cfg) and implements every
@@ -25,12 +27,23 @@ type Service struct {
 	mailT *mailThrottler
 
 	// viewPruneMu / viewPruneDay throttle the post_views retention sweep to
-	// once per UTC day per process (spec 23).
+	// once per UTC day per process.
 	viewPruneMu  sync.Mutex
 	viewPruneDay string
 
+	// Buffered view counting (views_flush.go). viewMu guards all four fields
+	// below: the per-post increments, the de-duplication rows waiting to be
+	// written, the current day's "already counted" set, and when the buffer was
+	// last emptied.
+	viewMu        sync.Mutex
+	viewPending   map[string]int64
+	viewRows      []models.PostView
+	viewSeen      map[string]struct{}
+	viewSeenDay   string
+	viewLastFlush time.Time
+
 	// publicRead caches site_configs.public_read so the anonymous-read gate
-	// does not hit the database on every read (spec 27). Invalidated by
+	// does not hit the database on every read. Invalidated by
 	// UpdateSiteConfig.
 	publicReadMu  sync.RWMutex
 	publicRead    bool
@@ -48,15 +61,27 @@ type Service struct {
 	// from walking a list of a thousand addresses instead.
 	codeIPMu sync.Mutex
 	codeIP   map[string]*ipCodeWindow
+
+	// Per-account upload buckets (upload_limits.go). Quotas cap total bytes;
+	// these cap the rate, so a script with one session cannot keep the decoder
+	// busy indefinitely.
+	uploadMu    sync.Mutex
+	uploadGates map[string]*uploadBuckets
 }
 
 // New builds a Service backed by db and cfg.
 func New(db *gorm.DB, cfg *config.Config) *Service {
 	return &Service{
-		db:     db,
-		cfg:    cfg,
-		mailT:  newMailThrottler(),
-		thumbs: make(chan string, thumbQueueCap),
+		db:          db,
+		cfg:         cfg,
+		mailT:       newMailThrottler(),
+		thumbs:      make(chan string, thumbQueueCap),
+		viewPending: make(map[string]int64),
+		viewSeen:    make(map[string]struct{}),
+		// Start the flush clock at construction. Left at the zero value the
+		// first counted view of every process would look overdue by decades
+		// and pay a transaction on behalf of everyone who follows.
+		viewLastFlush: time.Now(),
 	}
 }
 

@@ -36,7 +36,7 @@ func TestAdminCannotRewriteAnotherAuthorsContent(t *testing.T) {
 	}
 	// Cover rewrite → 403.
 	if _, err := svc.UpdatePost(ctx, admin, post.ID,
-		UpdatePostInput{Cover: "/uploads/admin-choice.png"}); StatusOf(err) != http.StatusForbidden {
+		UpdatePostInput{Cover: strPtr("/uploads/admin-choice.png")}); StatusOf(err) != http.StatusForbidden {
 		t.Fatalf("admin rewriting another author's cover: expected 403, got %v (err=%v)", StatusOf(err), err)
 	}
 
@@ -139,24 +139,27 @@ func TestRevisionAccessSplitsReadAndWrite(t *testing.T) {
 	}
 }
 
-// R7-05 (visibility half): the revision list of a post is that post's content,
-// one version per row. The visibility model says a private or draft post is
-// author-only — even root is excluded — so the revision endpoint must not hand
-// an admin the private text through a side door. Before this, assertCanReadHistory
-// checked only the reader's role, never whether the post was even visible to
-// them, so an admin could read the history of a private post the model said
-// they could not see.
-func TestAdminCannotReadHistoryOfAPrivatePost(t *testing.T) {
+// History access is DERIVED from visibility, never decided independently.
+//
+// The original bug was not that admins saw too much — it was that
+// assertCanReadHistory checked only the reader's role, never whether the post
+// was visible to them at all, so the revision endpoint was a side door around
+// canSeePost. What this test protects is therefore the link, not a fixed answer
+// per role: whoever canSeePost accepts may read the history, and whoever it
+// rejects gets 404. Since private is visible to admin/root by design, they read
+// it too; an unrelated member still must not.
+func TestHistoryAccessFollowsVisibility(t *testing.T) {
 	svc, db := newTestService(t)
 	ctx := context.Background()
 	author := makeUser(t, db, "ph-author", "ph-author@example.com", models.RoleUser)
 	admin := makeUser(t, db, "ph-admin", "ph-admin@example.com", models.RoleAdmin)
 	root := makeUser(t, db, "ph-root", "ph-root@example.com", models.RoleRoot)
+	other := makeUser(t, db, "ph-other", "ph-other@example.com", models.RoleUser)
 
-	// A private post: strictly author-only. A plain author's new posts enter
-	// the review queue, and only a published post may be made private by its
-	// author, so the test sets the state directly (a fixture convenience, not
-	// a path any request can reach without review).
+	// A private post. A plain author's new posts enter the review queue, and
+	// only a published post may be made private by its author, so the test sets
+	// the state directly (a fixture convenience, not a path any request can
+	// reach without review).
 	post, err := svc.CreatePost(ctx, author, CreatePostInput{
 		Title: "Secret draft", Body: "first",
 	})
@@ -167,7 +170,7 @@ func TestAdminCannotReadHistoryOfAPrivatePost(t *testing.T) {
 		Update("status", models.PostPrivate).Error; err != nil {
 		t.Fatalf("set private: %v", err)
 	}
-	// Produce a revision so there is something to leak.
+	// Produce a revision so there is something to read.
 	if _, err := svc.UpdatePost(ctx, author, post.ID, UpdatePostInput{Body: "second"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -176,17 +179,23 @@ func TestAdminCannotReadHistoryOfAPrivatePost(t *testing.T) {
 	if _, err := svc.ListRevisions(ctx, author, post.ID); err != nil {
 		t.Fatalf("author must read their own history: %v", err)
 	}
-	// Admin and even root must be refused with 404 (the post does not exist to
-	// them, so the endpoint must not confirm it does).
-	if _, err := svc.ListRevisions(ctx, admin, post.ID); StatusOf(err) != http.StatusNotFound {
-		t.Fatalf("admin reading a private post's history: want 404, got %v (err=%v)", StatusOf(err), err)
+	// An unrelated member must not — and gets 404, not 403, so the endpoint
+	// never confirms the post exists. This is the case the canSeePost link
+	// exists for: a role-only check would let any signed-in reader in.
+	if _, err := svc.ListRevisions(ctx, other, post.ID); StatusOf(err) != http.StatusNotFound {
+		t.Fatalf("unrelated member reading a private post's history: want 404, got %v (err=%v)", StatusOf(err), err)
 	}
-	if _, err := svc.ListRevisions(ctx, root, post.ID); StatusOf(err) != http.StatusNotFound {
-		t.Fatalf("root reading a private post's history: want 404, got %v (err=%v)", StatusOf(err), err)
+	// Operators read it too: private is visible to admin/root, so it is
+	// readable history to them as well.
+	if _, err := svc.ListRevisions(ctx, admin, post.ID); err != nil {
+		t.Fatalf("admin must read a private post's history (operator visibility): %v", err)
+	}
+	if _, err := svc.ListRevisions(ctx, root, post.ID); err != nil {
+		t.Fatalf("root must read a private post's history: %v", err)
 	}
 
 	// A published post's history stays readable by a reviewer — that is the
-	// reason admins can read history at all, and the fix must not take it away.
+	// reason admins can read history at all.
 	pub, err := svc.CreatePost(ctx, author, CreatePostInput{
 		Title: "Public", Body: "v1", Status: models.PostPublished,
 	})

@@ -18,7 +18,7 @@ var ErrNoRootAccount = errors.New("no root account found in this database")
 // returns the new plaintext exactly once, for the caller to print in a console
 // banner.
 //
-// This is the offline escape hatch for the situation created by the P0-1 fix:
+// This is the offline escape hatch for a locked-out root:
 // an admin may no longer reset root, and root's own password change requires
 // the current password, so a forgotten root password used to be unrecoverable
 // through the API. Whoever can read the database file can already take over

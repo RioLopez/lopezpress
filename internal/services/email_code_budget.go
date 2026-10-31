@@ -20,7 +20,7 @@ const (
 	// emailCodeIPLimit is deliberately small. A human needs two codes at most
 	// (one typo, one resend); ten leaves room for a shared office NAT while
 	// keeping a script from turning the VPS into a mail relay.
-	emailCodeIPLimit = 10
+	emailCodeIPLimit  = 10
 	emailCodeIPWindow = time.Hour
 )
 

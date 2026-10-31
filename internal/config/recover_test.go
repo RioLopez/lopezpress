@@ -27,7 +27,7 @@ func newRecoverTestDB(t *testing.T) *gorm.DB {
 }
 
 // TestResetRootPasswordForCLIRotates covers the happy path plus every side
-// effect the recovery path promises (spec #22 AC-1.1..AC-1.3, AC-3.2):
+// effect the recovery path promises:
 // a new random password that verifies, forced rotation, and a bumped
 // token_version that kills existing sessions.
 func TestResetRootPasswordForCLIRotates(t *testing.T) {

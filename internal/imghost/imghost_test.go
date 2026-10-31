@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestUploadHonorsContext is the regression test for as-built audit finding
-// Q11: the SM.MS proxy used http.DefaultClient with no timeout, so a hung
+// TestUploadHonorsContext guards the SM.MS proxy timeout: it used
+// http.DefaultClient with no timeout, so a hung
 // remote would pin a goroutine (and the enclosing upload handler)
 // indefinitely on a low-core VPS. The fix binds the call to the request
 // context and gives it a hard 10s client timeout. This test proves the context

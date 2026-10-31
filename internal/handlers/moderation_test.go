@@ -31,19 +31,19 @@ func seedModerationFixtures(t *testing.T, svc *services.Service, db *gorm.DB) (r
 	ctx := context.Background()
 
 	rootRes, err := svc.Register(ctx, services.RegisterInput{
-		Username: "root", Email: "root@example.com", Password: "secret123",
+		Username: "root", Email: "root@example.com", Password: "Zp9!qLm2xR",
 	})
 	if err != nil {
 		t.Fatalf("register root: %v", err)
 	}
 	adminRes, err := svc.Register(ctx, services.RegisterInput{
-		Username: "admin", Email: "admin@example.com", Password: "secret123",
+		Username: "admin", Email: "admin@example.com", Password: "Zp9!qLm2xR",
 	})
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
 	authorRes, err := svc.Register(ctx, services.RegisterInput{
-		Username: "author", Email: "author@example.com", Password: "secret123",
+		Username: "author", Email: "author@example.com", Password: "Zp9!qLm2xR",
 	})
 	if err != nil {
 		t.Fatalf("register author: %v", err)
@@ -290,7 +290,7 @@ func TestDeleteBannedPermanentlyRemovesPost(t *testing.T) {
 }
 
 // TestResetPasswordForbidsAdminResettingRoot is the regression test for the
-// P0-1 privilege-escalation: an admin must not be able to reset the unique
+// Privilege escalation: an admin must not be able to reset the unique
 // root's password (which would let them log in as root and take over the
 // site). The handler only checks requireAdmin, so the hierarchical guard lives
 // in the service via canManageUser.
@@ -299,7 +299,7 @@ func TestResetPasswordForbidsAdminResettingRoot(t *testing.T) {
 
 	root, admin, _ := seedModerationFixtures(t, svc, db)
 
-	body := `{"password":"newpassword123"}`
+	body := `{"password":"Nv7&bGt4zR"}`
 	req := withUser(
 		httptest.NewRequest(http.MethodPost, "/api/users/"+root.ID+"/reset-password", strings.NewReader(body)),
 		admin,
@@ -320,7 +320,7 @@ func TestResetPasswordAllowsAdminResettingUser(t *testing.T) {
 
 	_, admin, author := seedModerationFixtures(t, svc, db)
 
-	body := `{"password":"newpassword123"}`
+	body := `{"password":"Nv7&bGt4zR"}`
 	req := withUser(
 		httptest.NewRequest(http.MethodPost, "/api/users/"+author.ID+"/reset-password", strings.NewReader(body)),
 		admin,

@@ -9,10 +9,10 @@ import (
 	"image/color"
 	"image/png"
 	"net/http"
-	"sync"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"gorm.io/gorm"
@@ -57,7 +57,7 @@ func countFiles(t *testing.T, dir string) int {
 	return len(entries)
 }
 
-// TestUploadDeduplicatesIdenticalBytes covers spec 36 §4: the second upload of
+// TestUploadDeduplicatesIdenticalBytes covers dedup: the second upload of
 // the same picture must reuse the first row, write nothing to disk, and say so.
 func TestUploadDeduplicatesIdenticalBytes(t *testing.T) {
 	svc, db, dir := freshUploadService(t)
@@ -587,11 +587,11 @@ func TestUploadAcceptsNormalImagesRegardlessOfCompression(t *testing.T) {
 func TestResolveUploadFileRejectsIllegalNames(t *testing.T) {
 	svc, _ := newFileTestService(t)
 	bad := []string{
-		"\x00.png",              // embedded NUL
-		"a\x01b.png",            // control byte
-		"..\\..\\data\\app.db",  // backslash traversal (Windows separator)
-		"c:/windows/win.ini",    // drive colon
-		"a/b.png",               // forward slash
+		"\x00.png",               // embedded NUL
+		"a\x01b.png",             // control byte
+		"..\\..\\data\\app.db",   // backslash traversal (Windows separator)
+		"c:/windows/win.ini",     // drive colon
+		"a/b.png",                // forward slash
 		strings.Repeat("x", 300), // over any filesystem limit
 	}
 	for _, name := range bad {

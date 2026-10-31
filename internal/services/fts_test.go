@@ -22,6 +22,7 @@ func newPost(t *testing.T, svc *Service, author models.User, title, body, status
 //   - searching by a word in body
 //   - searching by a word in title
 //   - searching by author username
+//
 // All go through the single ListPostsPage.Search path; the driver (pure-Go
 // SQLite, no FTS5) performs these via LIKE.
 func TestSearchHitByTitleBodyAndAuthor(t *testing.T) {
@@ -92,7 +93,7 @@ func TestSearchSoftDeleteIsolation(t *testing.T) {
 	}
 
 	// Restore: search hits the post again.
-	if err := svc.RestoreTrash(ctx, p.ID); err != nil {
+	if err := svc.RestoreTrash(ctx, author, p.ID); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	page, err = svc.ListPostsPage(ctx, author, ListPostsQuery{Search: "zebra", PageSize: 20})

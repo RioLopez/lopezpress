@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-
 	"lopezpress/internal/models"
 )
 
@@ -107,7 +106,7 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	payload := map[string]any{
-		// Spec #6: top-level metadata so importers can validate schema/app
+		// Top-level metadata so importers can validate schema/app
 		// compatibility before applying a destructive restore.
 		"schema_version": BackupSchemaVersion,
 		"app_version":    BackupAppVersion,

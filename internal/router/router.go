@@ -29,10 +29,10 @@ const (
 // route-level privilege guard (P4): the router enforces it via
 // handlers.RequireRole, so handlers must NOT re-check roles themselves.
 type route struct {
-	method  string
-	path    string
-	auth    authMode
-	roles   []string // nil = any caller; else the exact allowed role list
+	method string
+	path   string
+	auth   authMode
+	roles  []string // nil = any caller; else the exact allowed role list
 	// maxBody overrides the default request-body ceiling for this route. Zero
 	// means "use defaultBodyLimit". Only the multipart upload needs more.
 	//
@@ -62,7 +62,7 @@ var routes = []route{
 	// pre-authentication flow, and the kind it returns is decided by the
 	// caller's failure history, not by anything in the request.
 	{method: "GET", path: "/api/auth/captcha", auth: authPublic, handler: handlers.IssueCaptcha},
-	// Email verification (spec 37, experimental, off by default). Both answer
+	// Email verification (experimental, off by default). Both answer
 	// identically whether or not the address has an account.
 	{method: "POST", path: "/api/auth/email-code", auth: authPublic, handler: handlers.RequestEmailCode},
 	{method: "POST", path: "/api/auth/password/reset", auth: authPublic, handler: handlers.ResetPasswordWithCode},
@@ -74,7 +74,7 @@ var routes = []route{
 	{method: "GET", path: "/api/authors/{username}", auth: authOptional, handler: handlers.GetAuthor},
 	{method: "GET", path: "/api/site-config", auth: authPublic, handler: handlers.GetSiteConfig},
 	// Read a published article without authentication. Only returns posts with
-	// status "published"; no longer increments view_count (spec 23 — counting
+	// status "published"; no longer increments view_count (counting
 	// moved to POST /api/posts/{id}/view).
 	{method: "GET", path: "/api/posts/{id}/public", auth: authOptional, handler: handlers.GetPostPublic},
 
@@ -92,18 +92,18 @@ var routes = []route{
 	{method: "GET", path: "/api/auth/me", auth: authRequired, handler: handlers.Me},
 	{method: "PUT", path: "/api/auth/me", auth: authRequired, handler: handlers.UpdateMe},
 	{method: "POST", path: "/api/auth/logout", auth: authRequired, handler: handlers.Logout},
-	// Change-own-password (first-boot admin flow, spec #2).
+	// Change-own-password (first-boot admin flow).
 	{method: "POST", path: "/api/auth/change-password", auth: authRequired, handler: handlers.ChangePassword},
-	// Personal-center metrics (spec 20) + security center.
+	// Personal-center metrics + security center.
 	{method: "GET", path: "/api/me/stats", auth: authRequired, handler: handlers.MeStats},
 	{method: "GET", path: "/api/me/login-history", auth: authRequired, handler: handlers.MeLoginHistory},
 	{method: "POST", path: "/api/auth/logout-all", auth: authRequired, handler: handlers.LogoutAll},
-	// Verified email change (spec 37): the code goes to the *new* address, and
+	// Verified email change: the code goes to the *new* address, and
 	// only an authenticated session may request one.
 	{method: "POST", path: "/api/me/email-change/request", auth: authRequired, handler: handlers.RequestEmailChange},
 	{method: "POST", path: "/api/me/email-change/confirm", auth: authRequired, handler: handlers.ConfirmEmailChange},
 
-	// ---- Read-only surface: optional auth (spec 22) ----
+	// ---- Read-only surface: optional auth ----
 	{method: "GET", path: "/api/posts", auth: authOptional, handler: handlers.ListPosts},
 	{method: "GET", path: "/api/posts/recent", auth: authOptional, handler: handlers.RecentPosts},
 	{method: "GET", path: "/api/posts/archive", auth: authOptional, handler: handlers.ListArchive},
@@ -119,7 +119,7 @@ var routes = []route{
 
 	// ---- Authenticated: post writes (strict JWT, any user) ----
 	{method: "POST", path: "/api/posts", auth: authRequired, handler: handlers.CreatePost},
-	// View report (spec 23): optional auth so anonymous readers count too.
+	// View report: optional auth so anonymous readers count too.
 	{method: "POST", path: "/api/posts/{id}/view", auth: authOptional, handler: handlers.ReportView},
 	{method: "PUT", path: "/api/posts/{id}", auth: authRequired, handler: handlers.UpdatePost},
 	{method: "DELETE", path: "/api/posts/{id}", auth: authRequired, handler: handlers.DeletePost},
@@ -132,7 +132,7 @@ var routes = []route{
 	{method: "POST", path: "/api/upload", auth: authRequired, maxBody: maxUploadBodyLimit, handler: handlers.UploadImage},
 	// Personal view: only the caller's own uploads. This exists so "withdraw
 	// an image I uploaded" has somewhere to live without handing out a
-	// site-wide directory (spec 36 §1).
+	// site-wide directory.
 	{method: "GET", path: "/api/me/uploads", auth: authRequired, handler: handlers.ListMyUploads},
 	{method: "DELETE", path: "/api/me/uploads/{name}", auth: authRequired, handler: handlers.DeleteMyUpload},
 
@@ -218,15 +218,25 @@ var routes = []route{
 // the package-level services.Service installed by handlers.Init (called from
 // cmd/server before the router is built).
 //
-// loginLimiter (spec #3) wraps ONLY POST /api/auth/login with a stricter,
+// loginLimiter wraps ONLY POST /api/auth/login with a stricter,
 // login-specific limiter (IP + account dual bucket + 5-failure lockout).
 // The general limiter still applies to every other route.
 func New(cfg *config.Config, limiter *middleware.Limiter, loginLimiter *middleware.LoginLimiter) http.Handler {
 	mux := http.NewServeMux()
 
-	// Special cases that don't fit the table: the exact-root index, the health
-	// probe, and the login endpoint (which carries its own dedicated limiter).
-	mux.HandleFunc("GET /", rootIndex)
+	// Special cases that don't fit the table: the catch-all, the health probes,
+	// and the login endpoint (which carries its own dedicated limiter).
+	//
+	// "/" is the catch-all, not an API index. It used to answer
+	// {"service":"lopezpress","endpoints":[…]} — a free route map naming the
+	// project, which is exactly the fingerprint a self-hosted box should not
+	// hand out. In production nginx serves the SPA at "/" and never forwards
+	// here, so the index was invisible to normal readers and visible only to
+	// whoever was already probing the Go port directly — the one audience that
+	// should learn nothing. A method-agnostic catch-all also replaces the
+	// text/plain "404 page not found" the stdlib would emit, which is itself a
+	// Go signature.
+	mux.HandleFunc("/", notFoundJSON)
 	// Two probes, two questions. /health is liveness (process up, no DB touch —
 	// a supervisor must not restart-loop over a disk problem); /health/ready is
 	// readiness (can this instance serve, which requires the database to answer).
@@ -283,16 +293,19 @@ func register(mux *http.ServeMux, routes []route) {
 	}
 }
 
-// rootIndex serves the API index. The "/" pattern is a subtree prefix that
-// would swallow EVERY unmatched path (incl. /favicon.ico -> 200 JSON noise),
-// so it is restricted to the exact root; unknown paths fall through to 404.
-func rootIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
+// notFoundJSON answers every path no route claimed. It is the catch-all for
+// "/", so it must never describe what the application is: the same body and
+// the same status for a missing page, a missing API, and a probe for /.git —
+// nothing to distinguish one guess from another.
+//
+// The body is JSON so it matches every other error the API can produce; the
+// stdlib default (text/plain "404 page not found") leaks the language's
+// standard library string and stands out against real responses.
+func notFoundJSON(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = w.Write([]byte(`{"service":"lopezpress","endpoints":["/health","/api/auth/register","/api/auth/login","/api/posts","/api/posts/{id}","/feed","/sitemap.xml"]}`))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(`{"error":"not found"}`))
 }
 
 // health is the liveness probe.

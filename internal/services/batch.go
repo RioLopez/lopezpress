@@ -10,7 +10,7 @@ import (
 )
 
 // BatchPostAction is the closed set of bulk operations the admin console may
-// request (spec 26). Anything else is a 400 — never a silent no-op.
+// request. Anything else is a 400 — never a silent no-op.
 const (
 	BatchPublish     = "publish"
 	BatchPrivate     = "private"
@@ -26,7 +26,7 @@ const (
 const maxBatchIDs = 100
 
 // BatchSkip records one post that could not be processed, with the
-// BatchUpdatePosts applies one bulk action to many posts (spec 26).
+// BatchUpdatePosts applies one bulk action to many posts.
 //
 // DESIGN: every action delegates to the existing single-item service method
 // (UpdatePost / DeletePost) instead of re-implementing the rules. That means

@@ -89,7 +89,7 @@ func TestChangePasswordRevokesOldTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	newTok, _, err := svc.ChangePassword(ctx, u, ChangePasswordInput{CurrentPassword: "secret123", NewPassword: "newsecret123"})
+	newTok, _, err := svc.ChangePassword(ctx, u, ChangePasswordInput{CurrentPassword: "Zp9!qLm2xR", NewPassword: "newsecret123"})
 	if err != nil {
 		t.Fatalf("ChangePassword: %v", err)
 	}

@@ -27,7 +27,7 @@ func autoBackupTestService(t *testing.T) (*Service, func(enabled bool, keep int)
 	return svc, set
 }
 
-// Spec 34 AC-1: off by default means the job must not write anything.
+// Off by default means the job must not write anything.
 func TestAutoBackupOffWritesNothing(t *testing.T) {
 	svc, set := autoBackupTestService(t)
 	set(false, 7)
@@ -45,7 +45,7 @@ func TestAutoBackupOffWritesNothing(t *testing.T) {
 	}
 }
 
-// Spec 34 AC-2: at most one snapshot per UTC day; the second call is a no-op.
+// At most one snapshot per UTC day; the second call is a no-op.
 func TestAutoBackupOncePerDay(t *testing.T) {
 	svc, set := autoBackupTestService(t)
 	set(true, 7)
@@ -71,7 +71,7 @@ func TestAutoBackupOncePerDay(t *testing.T) {
 	}
 }
 
-// Spec 34 AC-3: retention keeps the newest `keep` files and deletes the rest.
+// Retention keeps the newest `keep` files and deletes the rest.
 func TestAutoBackupPrunesOldSnapshots(t *testing.T) {
 	svc, set := autoBackupTestService(t)
 	set(true, 3)
@@ -113,7 +113,7 @@ func TestAutoBackupPrunesOldSnapshots(t *testing.T) {
 	}
 }
 
-// Spec 34 AC-4: a pre-import snapshot is never deleted by the auto prune —
+// A pre-import snapshot is never deleted by the auto prune —
 // they are separate retention policies.
 func TestAutoBackupPruneIgnoresImportSnapshots(t *testing.T) {
 	svc, set := autoBackupTestService(t)

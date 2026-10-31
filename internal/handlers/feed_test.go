@@ -19,7 +19,7 @@ func TestFeedRSSHandler(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Register(ctx, services.RegisterInput{
-		Username: "author", Email: "author@example.com", Password: "secret123",
+		Username: "author", Email: "author@example.com", Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestFeedRSSHandler(t *testing.T) {
 		Update("role", models.RoleRoot).Error; err != nil {
 		t.Fatalf("promote author to root: %v", err)
 	}
-	login, err := svc.Login(ctx, services.LoginInput{Email: "author@example.com", Password: "secret123"}, services.LoginMeta{})
+	login, err := svc.Login(ctx, services.LoginInput{Email: "author@example.com", Password: "Zp9!qLm2xR"}, services.LoginMeta{})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -73,6 +73,23 @@ func TestFeedRSSHandler(t *testing.T) {
 	}
 }
 
+// An image in the body used to leak a dangling "!" into the feed description:
+// the link pattern matched the "[alt](url)" half of "![alt](url)" and left the
+// "!" behind, so a photo-heavy post read "!个人简历 !机房 …". The image form is
+// now stripped first and its alt text kept as the snippet.
+func TestFeedExcerptStripsImageMarkdown(t *testing.T) {
+	got := feedExcerpt("![个人简历](https://example.com/a.png)\n正文", 320)
+	if strings.Contains(got, "!") {
+		t.Fatalf("feed excerpt still contains an image bang: %q", got)
+	}
+	if !strings.Contains(got, "个人简历") {
+		t.Fatalf("feed excerpt dropped the image alt text: %q", got)
+	}
+	if !strings.Contains(got, "正文") {
+		t.Fatalf("feed excerpt dropped body text: %q", got)
+	}
+}
+
 // TestSitemapHandler verifies the public sitemap lists the home/archive pages
 // and every published post with an absolute /read/ link.
 func TestSitemapHandler(t *testing.T) {
@@ -80,7 +97,7 @@ func TestSitemapHandler(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Register(ctx, services.RegisterInput{
-		Username: "author2", Email: "author2@example.com", Password: "secret123",
+		Username: "author2", Email: "author2@example.com", Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -90,7 +107,7 @@ func TestSitemapHandler(t *testing.T) {
 		Update("role", models.RoleRoot).Error; err != nil {
 		t.Fatalf("promote author to root: %v", err)
 	}
-	login, err := svc.Login(ctx, services.LoginInput{Email: "author2@example.com", Password: "secret123"}, services.LoginMeta{})
+	login, err := svc.Login(ctx, services.LoginInput{Email: "author2@example.com", Password: "Zp9!qLm2xR"}, services.LoginMeta{})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -115,13 +132,13 @@ func TestSitemapHandler(t *testing.T) {
 	if !strings.Contains(body, "<urlset") {
 		t.Fatalf("sitemap missing <urlset>: %s", body)
 	}
-	// Spec 29: canonical post links use the slug when the post has one.
+	// Canonical post links use the slug when the post has one.
 	if !strings.Contains(body, "/p/map-me") {
 		t.Fatalf("sitemap should advertise the slug permalink: %s", body)
 	}
 }
 
-// Spec 29: a row created before slugs existed has an empty slug and must keep
+// A row created before slugs existed has an empty slug and must keep
 // being advertised through the UUID route rather than disappearing.
 func TestSitemapFallsBackToIDWithoutSlug(t *testing.T) {
 	_, db := setup(t)
@@ -152,7 +169,7 @@ func TestSitemapEncodesChineseSlug(t *testing.T) {
 	svc, db := setup(t)
 	ctx := context.Background()
 	if _, err := svc.Register(ctx, services.RegisterInput{
-		Username: "zha", Email: "zha@example.com", Password: "secret123",
+		Username: "zha", Email: "zha@example.com", Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -160,7 +177,7 @@ func TestSitemapEncodesChineseSlug(t *testing.T) {
 		Update("role", models.RoleRoot).Error; err != nil {
 		t.Fatalf("promote: %v", err)
 	}
-	login, err := svc.Login(ctx, services.LoginInput{Email: "zha@example.com", Password: "secret123"}, services.LoginMeta{})
+	login, err := svc.Login(ctx, services.LoginInput{Email: "zha@example.com", Password: "Zp9!qLm2xR"}, services.LoginMeta{})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -195,5 +212,79 @@ func TestSitemapEncodesChineseSlug(t *testing.T) {
 	}
 	if !strings.Contains(fb, "/p/%E5%89%8D%E5%90%8E%E7%AB%AF%E5%88%86%E7%A6%BB%E6%9E%B6%E6%9E%84") {
 		t.Fatalf("feed slug not percent-encoded as expected: %s", fb)
+	}
+}
+
+// feedBaseURL must never hand a path to the link builders. A stored
+// "http://host:8088/admin" turned every <loc> and every <link> into
+// "…/admin/p/<slug>" — 404s that also advertised where the admin lives — and
+// it stayed that way until someone re-saved the settings form. Reducing to the
+// origin on read makes the files correct without that step.
+func TestFeedBaseURLReducesStoredValueToOrigin(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com":             "https://example.com",
+		"https://example.com/":            "https://example.com",
+		"https://example.com/admin":       "https://example.com",
+		"https://example.com/blog/posts":  "https://example.com",
+		"http://47.115.62.125:8088/admin": "http://47.115.62.125:8088",
+	}
+	for in, want := range cases {
+		r := httptest.NewRequest(http.MethodGet, "/feed", nil)
+		r.Host = "fallback.example"
+		if got := feedBaseURL(r, in); got != want {
+			t.Fatalf("feedBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	// An unusable value must fall back to the request, not emit a broken prefix.
+	r := httptest.NewRequest(http.MethodGet, "/feed", nil)
+	r.Host = "fallback.example"
+	if got := feedBaseURL(r, "not a url"); got != "http://fallback.example" {
+		t.Fatalf("unparseable site_url must fall back to Host, got %q", got)
+	}
+	// X-Forwarded-Proto is honoured on the fallback path (nginx terminates TLS).
+	r.Header.Set("X-Forwarded-Proto", "https")
+	if got := feedBaseURL(r, ""); got != "https://fallback.example" {
+		t.Fatalf("forwarded proto ignored on fallback, got %q", got)
+	}
+}
+
+// The symptom that started this: with the /admin value stored, the sitemap and
+// feed advertised URLs the site answers 404 for. Assert on the rendered output,
+// not just the helper — the helper is only useful if both files use it.
+func TestFeedAndSitemapIgnoreAStoredURLPath(t *testing.T) {
+	_, db := setup(t)
+	var cfg models.SiteConfig
+	if err := db.Where("id = ?", 1).First(&cfg).Error; err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.SiteURL = "http://example.com:8088/admin"
+	if err := db.Model(&cfg).Where("id = ?", 1).Update("site_url", cfg.SiteURL).Error; err != nil {
+		t.Fatalf("store site_url: %v", err)
+	}
+
+	posts := []models.Post{{Title: "T", Body: "b", Status: "published", Slug: "hello"}}
+	for i := range posts {
+		if err := db.Create(&posts[i]).Error; err != nil {
+			t.Fatalf("seed post: %v", err)
+		}
+	}
+
+	for _, path := range []string{"/feed", "/sitemap.xml"} {
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Host = "example.com:8088"
+		if path == "/feed" {
+			FeedRSS(rec, r)
+		} else {
+			Sitemap(rec, r)
+		}
+		body := rec.Body.String()
+		if strings.Contains(body, "/admin/") {
+			t.Fatalf("%s still advertises the configured path: %s", path, body)
+		}
+		if !strings.Contains(body, "http://example.com:8088/p/hello") {
+			t.Fatalf("%s did not build the link from the bare origin: %s", path, body)
+		}
 	}
 }

@@ -1,6 +1,6 @@
 package services
 
-// Spec #9: service-layer unit tests covering the three visibility
+// Service-layer unit tests covering the three visibility
 // branches, GetPostPublic's private->404, the sort-column whitelist
 // fallback, and the public-only scoping of ListArchive / GetAuthor.
 
@@ -12,7 +12,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- ListPostsPage: the three visibility branches (spec 22 + #9) ---
+// --- ListPostsPage: the three visibility branches ---
 
 func TestListPostsPageVisibilityThreeBranches(t *testing.T) {
 	svc, db := newTestService(t)
@@ -58,39 +58,38 @@ func TestListPostsPageVisibilityThreeBranches(t *testing.T) {
 		t.Fatalf("alice should see exactly 2 posts (1 pub + 1 own private), got %d", len(alicePage.Items))
 	}
 
-	// 3) Admin: sees everything EXCEPT other people's private posts. "Private"
-	// is strictly author-only, so alice's private post is invisible to the
-	// admin; the admin's own private post is not.
+	// 3) Admin: everything except the banned vault. Private posts are
+	// included — an operator reads them to handle reports and to answer the
+	// author, but cannot rewrite their words (UpdatePost's R5-05 guard).
 	adminPage, err := svc.ListPostsPage(ctx, admin, ListPostsQuery{PageSize: 100})
 	if err != nil {
 		t.Fatalf("admin list: %v", err)
 	}
-	if len(adminPage.Items) != 2 {
-		t.Fatalf("admin should see 2 posts (public + own private), got %d", len(adminPage.Items))
+	if len(adminPage.Items) != 3 {
+		t.Fatalf("admin should see all 3 posts, got %d", len(adminPage.Items))
 	}
+	seenByAdmin := map[string]bool{}
 	for _, p := range adminPage.Items {
-		if p.ID == privA.ID {
-			t.Fatalf("admin must not see another user's private post")
-		}
+		seenByAdmin[p.ID] = true
+	}
+	if !seenByAdmin[privA.ID] {
+		t.Fatalf("admin must see another user's private post (operator visibility)")
 	}
 
-	// 4) Root: the banned vault plus every non-private post — but still no
-	// other people's private posts ("仅自己可见" applies to root too).
+	// 4) Root: the same set plus the banned vault.
 	rootPage, err := svc.ListPostsPage(ctx, root, ListPostsQuery{PageSize: 100})
 	if err != nil {
 		t.Fatalf("root list: %v", err)
 	}
-	if len(rootPage.Items) != 1 {
-		t.Fatalf("root should see 1 post (the published one), got %d", len(rootPage.Items))
+	if len(rootPage.Items) != 3 {
+		t.Fatalf("root should see all 3 posts, got %d", len(rootPage.Items))
 	}
-	for _, p := range rootPage.Items {
-		if p.Status == models.PostPrivate {
-			t.Fatalf("root must not see another user's private post, got %q", p.Title)
-		}
+	if rootPage.Total != 3 {
+		t.Fatalf("root total should be 3, got %d", rootPage.Total)
 	}
 }
 
-// --- GetPostPublic: private posts must 404 (spec #9) ---
+// --- GetPostPublic: private posts must 404 ---
 
 func TestGetPostPublicPrivateReturns404(t *testing.T) {
 	svc, db := newTestService(t)

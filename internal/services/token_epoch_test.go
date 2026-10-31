@@ -57,8 +57,8 @@ func TestImportBackupCannotReviveRevokedToken(t *testing.T) {
 			{ID: stale.ID, Username: stale.Username, Email: stale.Email, Role: models.RoleUser, PasswordHash: stale.PasswordHash, TokenVersion: stale.TokenVersion},
 		},
 		PasswordHashes: map[string]string{
-			root.ID:   root.PasswordHash,
-			stale.ID:  stale.PasswordHash,
+			root.ID:  root.PasswordHash,
+			stale.ID: stale.PasswordHash,
 		},
 	}
 	if _, err := svc.ImportBackup(ctx, root, in, false); err != nil {

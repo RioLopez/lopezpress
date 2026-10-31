@@ -19,7 +19,7 @@ import (
 
 // clientIP extracts the best-effort client IP. The trust rules (proxy headers
 // are only honoured when they arrive from a configured proxy) live in
-// internal/clientip — see spec 23 / TODO P2-6.
+// internal/clientip.
 func clientIP(r *http.Request) string {
 	return clientip.Client(r)
 }

@@ -14,13 +14,19 @@ import (
 	"lopezpress/internal/services"
 )
 
+// testClient is the address every request in this file comes from. It has to
+// match on issue and on verify: the store binds a challenge to the client it
+// was handed to, so a test that issued from one address and solved from another
+// would (correctly) be refused.
+const testClient = "203.0.113.9"
+
 // enableCaptcha installs a captcha store for the duration of one test. The
 // handlers package reads a process-wide store because production wires it once
 // at startup, so the test has to put it back — otherwise every later login
 // test in this package would suddenly demand a picture.
 func enableCaptcha(t *testing.T) *captcha.Store {
 	t.Helper()
-	st := captcha.New(2*time.Minute, 3)
+	st := captcha.New(2 * time.Minute)
 	captcha.Init(st)
 	t.Cleanup(func() { captcha.Init(nil) })
 	return st
@@ -32,20 +38,20 @@ func seedLoginUser(t *testing.T) {
 	t.Helper()
 	s, _ := setup(t)
 	if _, err := s.Register(context.Background(), services.RegisterInput{
-		Username: "alice", Email: "alice@example.com", Password: "secret123",
+		Username: "alice", Email: "alice@example.com", Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }
 
 // loginRequest builds a login POST carrying the given captcha fields.
-func loginRequest(email, password, captchaID, captchaCode string, captchaX int) *http.Request {
+func loginRequest(email, password, captchaID, captchaCode string) *http.Request {
 	body := fmt.Sprintf(
-		`{"email":%q,"password":%q,"captcha_id":%q,"captcha_code":%q,"captcha_x":%d}`,
-		email, password, captchaID, captchaCode, captchaX,
+		`{"email":%q,"password":%q,"captcha_id":%q,"captcha_code":%q}`,
+		email, password, captchaID, captchaCode,
 	)
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
-	req.RemoteAddr = "203.0.113.9:5555"
+	req.RemoteAddr = testClient + ":5555"
 	return req
 }
 
@@ -56,7 +62,7 @@ func TestLoginRequiresCaptcha(t *testing.T) {
 	enableCaptcha(t)
 
 	rec := httptest.NewRecorder()
-	Login(rec, loginRequest("alice", "secret123", "", "", 0))
+	Login(rec, loginRequest("alice", "Zp9!qLm2xR", "", ""))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 without a captcha, got %d (body=%s)", rec.Code, rec.Body.String())
@@ -74,7 +80,7 @@ func TestLoginRequiresCaptcha(t *testing.T) {
 	}
 	// A rejected attempt hands back a usable challenge, so a human who misread
 	// four letters does not have to retype their password to get another one.
-	if resp.Captcha.ID == "" {
+	if resp.Captcha.ID == "" || resp.Captcha.Image == "" {
 		t.Fatalf("rejection must carry a fresh challenge: %s", rec.Body.String())
 	}
 }
@@ -86,13 +92,13 @@ func TestLoginWithSolvedCaptchaSucceeds(t *testing.T) {
 	seedLoginUser(t)
 	st := enableCaptcha(t)
 
-	ch, err := st.IssueWithAnswerForTest("203.0.113.9", "ABCD")
+	ch, err := st.IssueWithAnswerForTest(testClient, "ABCD")
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 
 	rec := httptest.NewRecorder()
-	Login(rec, loginRequest("alice", "secret123", ch.ID, "abcd", 0))
+	Login(rec, loginRequest("alice", "Zp9!qLm2xR", ch.ID, "abcd"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200 with a solved captcha, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -105,79 +111,87 @@ func TestCaptchaCannotBeReplayed(t *testing.T) {
 	seedLoginUser(t)
 	st := enableCaptcha(t)
 
-	ch, err := st.IssueWithAnswerForTest("203.0.113.9", "ABCD")
+	ch, err := st.IssueWithAnswerForTest(testClient, "ABCD")
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 
 	first := httptest.NewRecorder()
-	Login(first, loginRequest("alice", "wrong-password", ch.ID, "ABCD", 0))
+	Login(first, loginRequest("alice", "wrong-password", ch.ID, "ABCD"))
 	if first.Code != http.StatusUnauthorized {
 		t.Fatalf("first attempt should reach the password check (401), got %d", first.Code)
 	}
 
 	second := httptest.NewRecorder()
-	Login(second, loginRequest("alice", "secret123", ch.ID, "ABCD", 0))
+	Login(second, loginRequest("alice", "Zp9!qLm2xR", ch.ID, "ABCD"))
 	if second.Code != http.StatusBadRequest {
 		t.Fatalf("replayed challenge must be refused, got %d (body=%s)", second.Code, second.Body.String())
 	}
 }
 
-// TestWrongPasswordEscalatesToSlide: repeated wrong passwords move this client
-// from the four-character image to the sliding puzzle.
-func TestWrongPasswordEscalatesToSlide(t *testing.T) {
+// TestCaptchaSolvedElsewhereIsRefused is the handler-level counterpart of the
+// store test: an answer solved on another address cannot be spent here, so a
+// captcha farm has to feed the same IP that is doing the guessing.
+func TestCaptchaSolvedElsewhereIsRefused(t *testing.T) {
+	seedLoginUser(t)
+	st := enableCaptcha(t)
+
+	ch, err := st.IssueWithAnswerForTest("198.51.100.7", "ABCD")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	Login(rec, loginRequest("alice", "Zp9!qLm2xR", ch.ID, "ABCD"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a foreign challenge must be refused, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestWrongPasswordTightensAllowance: repeated wrong passwords cut this
+// client's picture allowance, which is what actually slows a guessing loop.
+func TestWrongPasswordTightensAllowance(t *testing.T) {
 	seedLoginUser(t)
 	st := enableCaptcha(t)
 
 	for i := 0; i < 3; i++ {
-		ch, err := st.IssueWithAnswerForTest("203.0.113.9", "ABCD")
+		ch, err := st.IssueWithAnswerForTest(testClient, "ABCD")
 		if err != nil {
 			t.Fatalf("issue %d: %v", i, err)
 		}
 		rec := httptest.NewRecorder()
-		Login(rec, loginRequest("alice", "definitely-wrong", ch.ID, "ABCD", 0))
+		Login(rec, loginRequest("alice", "definitely-wrong", ch.ID, "ABCD"))
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d: want 401, got %d", i+1, rec.Code)
 		}
 	}
 
-	next, err := st.Issue("203.0.113.9")
-	if err != nil {
-		t.Fatalf("issue: %v", err)
-	}
-	if next.Kind != captcha.KindSlide {
-		t.Fatalf("after three wrong passwords the next challenge must be a slide, got %q", next.Kind)
-	}
-	if next.Bg == "" || next.Tile == "" {
-		t.Fatalf("slide challenge incomplete: %+v", next)
+	if got := st.FailureCount(testClient); got < 3 {
+		t.Fatalf("want at least 3 recorded failures, got %d", got)
 	}
 }
 
-// TestSuccessfulLoginResetsEscalation: getting in clears the streak, so the
-// next login is back to the cheap picture.
-func TestSuccessfulLoginResetsEscalation(t *testing.T) {
+// TestSuccessfulLoginResetsStreak: getting in clears the streak, so tomorrow's
+// typo starts from a clean record.
+func TestSuccessfulLoginResetsStreak(t *testing.T) {
 	seedLoginUser(t)
 	st := enableCaptcha(t)
 
-	// Three failures already puts the client on the slide tier.
 	for i := 0; i < 3; i++ {
-		st.NoteFailure("203.0.113.9")
-	}
-	if got := st.KindFor("203.0.113.9"); got != captcha.KindSlide {
-		t.Fatalf("precondition: want slide tier, got %q", got)
+		st.NoteFailure(testClient)
 	}
 
-	ch, err := st.IssueWithAnswerForTest("203.0.113.9", "WXYZ")
+	ch, err := st.IssueWithAnswerForTest(testClient, "WXYZ")
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 	rec := httptest.NewRecorder()
-	Login(rec, loginRequest("alice", "secret123", ch.ID, "WXYZ", 0))
+	Login(rec, loginRequest("alice", "Zp9!qLm2xR", ch.ID, "WXYZ"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
-	if got := st.KindFor("203.0.113.9"); got != captcha.KindImage {
-		t.Fatalf("successful login must reset the tier, got %q", got)
+	if got := st.FailureCount(testClient); got != 0 {
+		t.Fatalf("successful login must reset the streak, got %d", got)
 	}
 }
 
@@ -188,7 +202,7 @@ func TestCaptchaIssueEndpointReportsEnabled(t *testing.T) {
 	enableCaptcha(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/captcha", nil)
-	req.RemoteAddr = "203.0.113.9:5555"
+	req.RemoteAddr = testClient + ":5555"
 	rec := httptest.NewRecorder()
 	IssueCaptcha(rec, req)
 
@@ -206,11 +220,42 @@ func TestCaptchaIssueEndpointReportsEnabled(t *testing.T) {
 		t.Fatalf("unexpected payload: %s", rec.Body.String())
 	}
 	if resp.Captcha.Kind != captcha.KindImage {
-		t.Fatalf("clean client must get the image kind, got %q", resp.Captcha.Kind)
+		t.Fatalf("want the image kind, got %q", resp.Captcha.Kind)
 	}
 	if !strings.HasPrefix(resp.Captcha.Image, "data:image/png;base64,") {
 		t.Fatalf("image must be a png data URI, got %.40q", resp.Captcha.Image)
 	}
+	// The answer must never travel to the browser, and the response must not be
+	// cacheable: a shared cache would hand one user's picture to the next.
+	if strings.Contains(rec.Body.String(), "answer") {
+		t.Fatalf("payload must not mention the answer: %s", rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("captcha must not be cacheable, got Cache-Control=%q", got)
+	}
+}
+
+// TestCaptchaIssueEndpointRateLimits: over the burst the endpoint answers 429
+// with Retry-After, not a picture.
+func TestCaptchaIssueEndpointRateLimits(t *testing.T) {
+	_, _ = setup(t)
+	enableCaptcha(t)
+
+	code := http.StatusOK
+	for i := 0; i < 40 && code == http.StatusOK; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/captcha", nil)
+		req.RemoteAddr = testClient + ":5555"
+		rec := httptest.NewRecorder()
+		IssueCaptcha(rec, req)
+		code = rec.Code
+		if code == http.StatusTooManyRequests {
+			if rec.Header().Get("Retry-After") == "" {
+				t.Fatal("429 must carry Retry-After")
+			}
+			return
+		}
+	}
+	t.Fatalf("issuing 40 pictures in a row must hit the limiter, last status %d", code)
 }
 
 // TestCaptchaDisabledLetsOldClientsThrough: with the feature off the login
@@ -224,7 +269,7 @@ func TestCaptchaDisabledLetsOldClientsThrough(t *testing.T) {
 	t.Cleanup(func() { cfg.CaptchaEnabled = prev })
 
 	rec := httptest.NewRecorder()
-	Login(rec, loginRequest("alice", "secret123", "", "", 0))
+	Login(rec, loginRequest("alice", "Zp9!qLm2xR", "", ""))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("captcha off must allow a plain login, got %d (body=%s)", rec.Code, rec.Body.String())
 	}

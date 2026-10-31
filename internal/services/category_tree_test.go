@@ -1,6 +1,6 @@
 package services
 
-// Spec 27: anonymous-read switch + two-level category tree + preset tree.
+// Anonymous-read switch + two-level category tree + preset tree.
 
 import (
 	"context"

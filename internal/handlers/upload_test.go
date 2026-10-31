@@ -15,7 +15,7 @@ import (
 func TestUploadImageOversizeReturns413(t *testing.T) {
 	_, _ = setup(t)
 
-	// The body cap now depends on the site policy (spec 36), so probe it with a
+	// The body cap now depends on the site policy, so probe it with a
 	// bodyless request first and then write one byte past whatever it returns.
 	probe := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
 	limit := maxUploadBytes(probe)

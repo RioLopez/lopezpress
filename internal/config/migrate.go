@@ -27,7 +27,7 @@ type migration struct {
 // copy a new addXxxColumn function, which is exactly the clone class this
 // registry removes.
 var migrations = []migration{
-	// 0001: drop the deprecated posts.scheduled_at (spec 8).
+	// 0001: drop the deprecated posts.scheduled_at.
 	{version: "0001_drop_scheduled_at", up: dropScheduledAt},
 	// 0002: SMTP settings for security notifications.
 	{version: "0002_add_smtp_columns", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
@@ -61,11 +61,11 @@ var migrations = []migration{
 	{version: "0008_add_site_url", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
 		{name: "site_url", ddl: "ALTER TABLE site_configs ADD COLUMN site_url TEXT"},
 	})},
-	// 0009: posts.slug (human-readable permanent link, spec 29).
+	// 0009: posts.slug (human-readable permanent link).
 	{version: "0009_add_post_slug", up: ensureColumns(&models.Post{}, []columnSpec{
 		{name: "slug", ddl: "ALTER TABLE posts ADD COLUMN slug TEXT"},
 	}, "CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug)")},
-	// 0010: daily snapshot settings (spec 34).
+	// 0010: daily snapshot settings.
 	{version: "0010_add_auto_backup", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
 		{name: "auto_backup", ddl: "ALTER TABLE site_configs ADD COLUMN auto_backup INTEGER DEFAULT 0"},
 		{name: "backup_keep", ddl: "ALTER TABLE site_configs ADD COLUMN backup_keep INTEGER DEFAULT 7"},
@@ -77,7 +77,7 @@ var migrations = []migration{
 	{version: "0011_add_token_version", up: ensureColumns(&models.User{}, []columnSpec{
 		{name: "token_version", ddl: "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"},
 	})},
-	// 0012: image storage policy (spec 36). Three quotas plus two profile
+	// 0012: image storage policy. Three quotas plus two profile
 	// switches. Defaults match the model tags so a pre-existing row and a
 	// freshly created one behave identically.
 	{version: "0012_add_upload_quota", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
@@ -92,7 +92,7 @@ var migrations = []migration{
 		`UPDATE site_configs SET upload_max_avatar = 524288 WHERE upload_max_avatar IS NULL OR upload_max_avatar <= 0`,
 		`UPDATE site_configs SET user_quota_bytes = 20971520 WHERE user_quota_bytes IS NULL OR user_quota_bytes <= 0`,
 		`UPDATE site_configs SET site_quota_bytes = 524288000 WHERE site_quota_bytes IS NULL OR site_quota_bytes <= 0`)},
-	// 0013: email verification settings (spec 37). Experimental feature, off by
+	// 0013: email verification settings. Experimental feature, off by
 	// default — the DEFAULT 0 is the feature flag itself, not an oversight.
 	{version: "0013_add_email_verify", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
 		{name: "email_verify_enabled", ddl: "ALTER TABLE site_configs ADD COLUMN email_verify_enabled INTEGER DEFAULT 0"},
@@ -118,12 +118,18 @@ var migrations = []migration{
 		}
 		return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_unique ON posts(slug) WHERE slug <> ''`).Error
 	}},
-	// 0015: site_configs.site_description — the RSS channel tagline. Empty by
-	// default: the feed falls back to the site title, so an upgrade does not
-	// silently change an existing site's description.
+	// 0015: site_configs.site_description (RSS tagline). Empty by default so an
+	// upgrade does not silently change an existing site's description.
 	{version: "0015_add_site_description", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
 		{name: "site_description", ddl: "ALTER TABLE site_configs ADD COLUMN site_description VARCHAR(512)"},
 	})},
+	// 0016: normalize any legacy "draft" posts to "private" (idempotent).
+	{version: "0016_retire_draft_status", up: func(db *gorm.DB) error {
+		if !db.Migrator().HasTable(&models.Post{}) {
+			return nil
+		}
+		return db.Exec(`UPDATE posts SET status = 'private' WHERE status = 'draft'`).Error
+	}},
 }
 
 // disambiguateDuplicateSlugs rewrites colliding slugs so a unique index can be

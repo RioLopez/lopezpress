@@ -1,6 +1,6 @@
 package clientip
 
-// Spec 23 / TODO P2-6: X-Forwarded-For is only believed when the request
+// X-Forwarded-For is only believed when the request
 // actually arrived from a configured proxy.
 
 import (
@@ -176,18 +176,18 @@ func TestHostOnly(t *testing.T) {
 // on top. Everything below must collapse to a single key.
 func TestClientCanonicalisesAddressSpellings(t *testing.T) {
 	cases := map[string]string{
-		"127.0.0.1":          "127.0.0.1",
-		"  127.0.0.1  ":      "127.0.0.1",
-		"::ffff:127.0.0.1":   "127.0.0.1", // IPv4-mapped over a dual-stack socket
-		"::FFFF:127.0.0.1":   "127.0.0.1",
-		"::1":                "::1",
-		"0:0:0:0:0:0:0:1":    "::1",
-		"2001:0DB8::1":       "2001:db8::1",
-		"2001:db8::1":        "2001:db8::1",
-		"2001:0db8:0000::1":  "2001:db8::1",
-		"fe80::1%eth0":       "fe80::1", // zone is not identity
-		"[::1]":              "::1",
-		"203.0.113.7":        "203.0.113.7",
+		"127.0.0.1":         "127.0.0.1",
+		"  127.0.0.1  ":     "127.0.0.1",
+		"::ffff:127.0.0.1":  "127.0.0.1", // IPv4-mapped over a dual-stack socket
+		"::FFFF:127.0.0.1":  "127.0.0.1",
+		"::1":               "::1",
+		"0:0:0:0:0:0:0:1":   "::1",
+		"2001:0DB8::1":      "2001:db8::1",
+		"2001:db8::1":       "2001:db8::1",
+		"2001:0db8:0000::1": "2001:db8::1",
+		"fe80::1%eth0":      "fe80::1", // zone is not identity
+		"[::1]":             "::1",
+		"203.0.113.7":       "203.0.113.7",
 	}
 	for in, want := range cases {
 		if got := canonical(in); got != want {

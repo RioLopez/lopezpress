@@ -159,7 +159,7 @@ func TestRestoreTrashWorksWhenNothingRaces(t *testing.T) {
 	if err := svc.DeletePost(ctx, author, p.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := svc.RestoreTrash(ctx, p.ID); err != nil {
+	if err := svc.RestoreTrash(ctx, author, p.ID); err != nil {
 		t.Fatalf("restore must succeed when nothing else touches the row: %v", err)
 	}
 	var row models.Post
@@ -167,7 +167,7 @@ func TestRestoreTrashWorksWhenNothingRaces(t *testing.T) {
 		t.Fatalf("the restored post should be live again: %v", err)
 	}
 	// Restoring twice is a conflict, not a silent success.
-	if err := svc.RestoreTrash(ctx, p.ID); StatusOf(err) != http.StatusBadRequest {
+	if err := svc.RestoreTrash(ctx, author, p.ID); StatusOf(err) != http.StatusBadRequest {
 		t.Fatalf("a second restore should be refused (not in trash), got %v (err=%v)", StatusOf(err), err)
 	}
 }

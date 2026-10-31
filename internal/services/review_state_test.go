@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestReviewPostStatePrecondition is the regression test for as-built audit
-// finding Q1: ReviewPost / BanPost had no state precondition, so a published
+// TestReviewPostStatePrecondition guards the review precondition: ReviewPost
+// / BanPost had no state precondition, so a published
 // post could be suddenly rejected (public content vanishes) and a banned post
 // could be approved straight back to published, skipping the mandatory
 // send-back-to-author fix step.

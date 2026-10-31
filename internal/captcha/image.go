@@ -1,7 +1,13 @@
 package captcha
 
 import (
+	"bytes"
+	"encoding/base64"
+	"image"
 	"image/color"
+	"image/draw"
+	"image/png"
+	"strings"
 	"sync"
 
 	"github.com/mojocn/base64Captcha"
@@ -19,11 +25,13 @@ import (
 const (
 	imageHeight = 50
 	// Width is not cosmetic. The driver sizes each glyph at
-	// height*(7..13)/16 — up to 40px here — and lays them out in equal
-	// width/len slots. At the previous 132px the slots were 33px, so the
-	// widest glyphs overlapped their neighbours and four characters became
-	// unreadable. 180px gives 45px per slot, which clears the largest glyph.
-	imageWidth = 180
+	// height*(7..16)/16 — up to 40px here — and lays the characters out in
+	// equal width/len slots starting at each slot's left edge, with no right
+	// margin. At 180px the slots were 45px wide and a wide glyph in the last
+	// slot ran past the canvas: test renders cut the fourth character in half.
+	// 200px gives 50px per slot, which leaves roughly ten pixels of slack for
+	// the widest glyph plus its random growth.
+	imageWidth = 200
 	// noiseCount is zero on purpose.
 	//
 	// The library's noise is *characters* drawn from the same alphabet as the
@@ -35,10 +43,21 @@ const (
 	// Interference lines (see showLineOptions) do the anti-OCR work instead:
 	// a line can cross a character without ever being mistaken for one.
 	noiseCount = 0
-	// showLineOptions mixes a hollow line with a sine wave. Both are thin
-	// enough to leave the four characters readable and irregular enough to
-	// break the connected-component assumptions a simple OCR pass makes.
-	showLineOptions = base64Captcha.OptionShowHollowLine | base64Captcha.OptionShowSineLine
+	// showLineOptions adds one interference line. The choice is between two
+	// extremes in this library and nothing in between:
+	//
+	//	OptionShowSineLine    a deep-coloured band ten pixels thick. In a test
+	//	                      render it crossed the characters like a bent bar
+	//	                      and hid their lower halves — a captcha that
+	//	                      honest people fail.
+	//	OptionShowHollowLine  a light two-pixel curve sweeping the whole width.
+	//
+	// The hollow one is chosen: it still breaks the connected-component
+	// assumption a naive OCR pass makes, while leaving every glyph readable.
+	// Anti-OCR is not the line's job here — that work is done server side by
+	// single use, three attempts, a two-minute life, binding to the client and
+	// a per-client issue limit, none of which an OCR improvement touches.
+	showLineOptions = base64Captcha.OptionShowHollowLine
 )
 
 var (
@@ -85,5 +104,43 @@ func newImageWith(answer string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return item.EncodeB64string(), nil
+	return padHorizontally(item.EncodeB64string(), padX)
+}
+
+// padX is the background margin added on each side, in pixels.
+//
+// The driver starts the first glyph at x=0 and gives each slot no right margin,
+// so the outermost characters sit flush against the border. Nothing is actually
+// missing — the glyph is inside the canvas — but a character touching the edge
+// reads as cut off, and a captcha that looks broken is a captcha the operator
+// disables. Four pixels of background on each side cost nothing and remove the
+// doubt. Width on the frontend is imageWidth + 2*padX; the two must agree, or
+// object-fit rescales and reintroduces the very edges this is protecting.
+const padX = 4
+
+// padHorizontally re-encodes a data-URI PNG onto a wider canvas of the same
+// background colour.
+func padHorizontally(dataURI string, pad int) (string, error) {
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(dataURI, prefix) || pad <= 0 {
+		return dataURI, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(dataURI[len(prefix):])
+	if err != nil {
+		return "", err
+	}
+	src, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()+2*pad, b.Dy()))
+	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: imageBackground}, image.Point{}, draw.Src)
+	draw.Draw(dst, image.Rect(pad, 0, pad+b.Dx(), b.Dy()), src, b.Min, draw.Over)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return "", err
+	}
+	return prefix + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }

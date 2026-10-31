@@ -11,9 +11,18 @@ import (
 
 // GetPostPrevNext returns the previous and next published posts (by created_at)
 // relative to the given post id.
-func (s *Service) GetPostPrevNext(ctx context.Context, id string) (PostNav, error) {
+//
+// The anchor post is checked against canSeePost first: this endpoint takes an
+// id, and an endpoint that answers "200 with a neighbour" for a post you cannot
+// read while answering 404 for an id that does not exist is an existence
+// oracle. The neighbours themselves are always published, so they need no
+// further filtering.
+func (s *Service) GetPostPrevNext(ctx context.Context, me models.User, id string) (PostNav, error) {
 	var current models.Post
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&current).Error; err != nil {
+		return PostNav{}, newErr(http.StatusNotFound, "post not found")
+	}
+	if !canSeePost(me, current) {
 		return PostNav{}, newErr(http.StatusNotFound, "post not found")
 	}
 

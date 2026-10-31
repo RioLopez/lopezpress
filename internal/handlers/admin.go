@@ -47,7 +47,11 @@ func DownloadBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read backup")
+		// The name passed ResolveBackupFile, so it was valid a moment ago; it
+		// vanished before we could open it. 404 (not 500) keeps the response
+		// consistent with the "callers get 404, never 403, to avoid leaking
+		// existence" contract used everywhere else in this handler.
+		writeError(w, http.StatusNotFound, "backup file no longer exists")
 		return
 	}
 	defer f.Close()
@@ -111,9 +115,9 @@ func ExportBackup(w http.ResponseWriter, r *http.Request) {
 // POST /api/backup/import (auth, admin) — destructive: replaces current data.
 // The payload can carry arbitrary user rows (incl. role "root" and foreign
 // password hashes), so importing is a whole-database replace and is
-// root-only (as-built audit Q7). The service re-checks the actor.
+// root-only. The service re-checks the actor.
 //
-// Spec #6 enhancements:
+// enhancements:
 //   - ?dry_run=1 returns the validated stats WITHOUT applying the import and
 //     without taking a snapshot, so an operator can preview before committing.
 //   - The payload's schema_version / app_version are validated up front; an
@@ -123,9 +127,11 @@ func ExportBackup(w http.ResponseWriter, r *http.Request) {
 func ImportBackup(w http.ResponseWriter, r *http.Request) {
 	dryRun := r.URL.Query().Get("dry_run") == "1" || r.URL.Query().Get("dry_run") == "true"
 	var in services.ImportData
-	// Cap the decoded body so a maliciously/huge upload cannot exhaust the
-	// 1.5 GB instance's memory (P1-6). A backup is a few MB at most.
-	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
+	// The body ceiling is the route table's (maxBackupImportLimit, 20 MiB) and
+	// is applied by the router before this handler runs. It used to be repeated
+	// here with the same number, which made two places look authoritative while
+	// only one of them could ever fire. The MaxBytesError branch below stays:
+	// the router installs that reader, so its error still lands here.
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -144,10 +150,10 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 // RestoreSnapshot restores the database from a previously created VACUUM INTO
-// snapshot file (spec #6). The name is validated server-side (snapshot-*.db,
+// snapshot file. The name is validated server-side (snapshot-*.db,
 // no path components).
 // POST /api/backup/restore-snapshot  body: {"file":"snapshot-20260101-000000.db"}
-// (auth, root-only: whole-database replace, as-built audit Q7)
+// (auth, root-only: whole-database replace)
 func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		File string `json:"file"`
@@ -174,13 +180,13 @@ func RestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A destructive database restore is a security-relevant event; record who
-	// did it and from which snapshot (P1-7).
+	// did it and from which snapshot.
 	writeJSON(w, http.StatusOK, stats)
 }
 
 // ListSnapshots returns the available VACUUM INTO snapshot files for the
-// restore UI (P2-14). Root-only: a snapshot holds every account and password
-// hash, so it is gated like RestoreSnapshot itself (as-built audit Q7).
+// restore UI. Root-only: a snapshot holds every account and password
+// hash, so it is gated like RestoreSnapshot itself.
 // GET /api/backup/snapshots (auth, root)
 func ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	snaps, err := svc.ListSnapshots(r.Context(), userFromContext(r))
@@ -191,7 +197,7 @@ func ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snaps)
 }
 
-// GetAutoBackupStatus reports the daily-snapshot state (spec 34).
+// GetAutoBackupStatus reports the daily-snapshot state.
 // GET /api/admin/backup/auto (root only)
 //
 // Root-only for the same reason the snapshot list is: the file names and
@@ -223,7 +229,7 @@ func RunAutoBackupNow(w http.ResponseWriter, r *http.Request) {
 // ListTrash returns soft-deleted posts inside the 7-day recovery window.
 // GET /api/trash (auth, admin)
 func ListTrash(w http.ResponseWriter, r *http.Request) {
-	rows, err := svc.ListTrash(r.Context())
+	rows, err := svc.ListTrash(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -235,17 +241,17 @@ func ListTrash(w http.ResponseWriter, r *http.Request) {
 // POST /api/trash/{id}/restore (auth, admin)
 func RestoreTrash(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := svc.RestoreTrash(r.Context(), id); err != nil {
+	if err := svc.RestoreTrash(r.Context(), userFromContext(r), id); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// EmptyTrash permanently deletes every soft-deleted post.
+// EmptyTrash permanently deletes every soft-deleted post the caller may manage.
 // POST /api/trash/empty (auth, admin)
 func EmptyTrash(w http.ResponseWriter, r *http.Request) {
-	n, err := svc.EmptyTrash(r.Context())
+	n, err := svc.EmptyTrash(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

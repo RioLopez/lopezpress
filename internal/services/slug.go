@@ -16,7 +16,7 @@ import (
 // so CreatePost can build the id BEFORE insert and use it as the slug fallback.
 func newID() string { return uuid.NewString() }
 
-// Permanent links (spec 29).
+// Permanent links.
 //
 // A post is addressed by an opaque UUID in the canonical read route. That is
 // fine for machines and useless for humans: it cannot be dictated, printed, or
@@ -165,7 +165,7 @@ func itoa(n int) string {
 }
 
 // BackfillSlugs gives a permanent link to every post created before the slug
-// column existed (spec 29). Idempotent: it only touches rows whose slug is
+// column existed. Idempotent: it only touches rows whose slug is
 // empty, so running it on every boot costs one indexed query.
 //
 // It lives in services (not in the migration) because slug generation belongs

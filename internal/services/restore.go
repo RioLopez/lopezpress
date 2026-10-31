@@ -14,9 +14,9 @@ import (
 	"lopezpress/internal/models"
 )
 
-// RestoreSnapshot re-imports a previously created VACUUM INTO snapshot file
-// (spec #6: /api/backup/restore-snapshot). The snapshot is a raw .db file, so
-// restoring means copying it over the live DB file after a clean close. For
+// RestoreSnapshot re-imports a previously created VACUUM INTO snapshot file.
+// The snapshot is a raw .db file, so restoring means copying it over the live
+// DB file after a clean close. For
 // SQLite this is done by: 1) VACUUM INTO the live db to a temp, 2) the
 // snapshot is already a full consistent file so we just point the app at the
 // next restart — but to restore IN-PROCESS we instead delete all rows and
@@ -27,9 +27,21 @@ import (
 // second SQLite handle and copying table contents row-by-row into the live
 // DB inside one transaction. This keeps everything in-process and atomic.
 //
-// Root-only (as-built audit Q7): restoring replaces the whole database
+// Root-only: restoring replaces the whole database
 // including the users table, so it shares ImportBackup's takeover risk and
 // is gated to the single root at the service layer.
+//
+// What it replaces, and what it deliberately does not — the two table lists
+// differ from ImportBackup's, and that asymmetry is a decision, not an
+// oversight. Replaced: users, categories, tags, posts, post_tags and
+// post_revisions. Kept: upload_files, site_configs and the log tables
+// (audit_log, login_log, email_codes). The kept ones are instance state, not
+// content: a snapshot's image rows describe files that live under THIS
+// server's upload dir only if it is the same server, and its SMTP password and
+// audit trail belong to the box being restored onto, not to the point in time
+// being restored from. ImportBackup is the endpoint that replaces everything,
+// library included; it is fed by an exported dump that carries the files'
+// metadata with it.
 func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filename string, opt RestoreSnapshotOptions) (BackupStats, error) {
 	if !IsRoot(actor) {
 		return BackupStats{}, newErr(http.StatusForbidden, "only the root can restore a snapshot")
@@ -39,7 +51,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 		return BackupStats{}, newErr(http.StatusBadRequest, "invalid snapshot name")
 	}
 	snapPath := filepath.Join(s.backupDir(), name)
-	// Spec 34: both the pre-import snapshots and the daily auto snapshots are
+	// Both the pre-import snapshots and the daily auto snapshots are
 	// restorable — they are written by the same VACUUM INTO path.
 	if !isSnapshotName(name) {
 		return BackupStats{}, newErr(http.StatusBadRequest, "only snapshot-*.db / auto-*.db files can be restored")
@@ -91,7 +103,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 		return snapStats, nil
 	}
 
-	// Gate 1 — the confirmation phrase. Import has had this since spec #6; the
+	// Gate 1 — the confirmation phrase. Import has had this since the start; the
 	// snapshot restore, which is strictly more destructive (it also replaces
 	// the account table), did not. A single POST against a stale or empty
 	// snapshot replaced a live site with an empty one.
@@ -134,17 +146,11 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 	liveMax := s.maxTokenVersion(ctx)
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clear live tables in dependency order.
-		if err := tx.Unscoped().Where("1 = 1").Delete(&models.PostTag{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Unscoped().Where("1 = 1").Delete(&models.Post{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("1 = 1").Delete(&models.Tag{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("1 = 1").Delete(&models.Category{}).Error; err != nil {
+		// Content first, through the list both wholesale-replace paths share.
+		// Keeping a private copy here is what let post_revisions survive a
+		// restore: rows pointing at destroyed posts, or (same ids, snapshot of
+		// this site) pre-restore history grafted onto restored articles.
+		if err := clearContentTablesTx(tx); err != nil {
 			return err
 		}
 		if err := tx.Where("1 = 1").Delete(&models.User{}).Error; err != nil {
@@ -251,7 +257,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, actor models.User, filena
 // ListSnapshots returns the available snapshot-*.db files, newest first.
 // Root-only: a snapshot is a whole-database artifact (it contains every
 // account and password hash), so listing it is gated exactly like restoring
-// it (as-built audit Q7). The frontend restore UI (P2-14) needs this to
+// it. The frontend restore UI needs this to
 // offer anything to restore.
 func (s *Service) ListSnapshots(ctx context.Context, actor models.User) ([]SnapshotInfo, error) {
 	if !IsRoot(actor) {

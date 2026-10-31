@@ -1,6 +1,6 @@
 package services
 
-// Spec 26: bulk actions on posts delegate to the single-item service methods,
+// Bulk actions on posts delegate to the single-item service methods,
 // so the role matrix and status machine are inherited rather than re-written.
 
 import (

@@ -137,20 +137,20 @@ func TestUsernameValidation(t *testing.T) {
 	cases := []string{"аdmin", "ad min", "ad!min", "ab", "admin@"}
 	for _, name := range cases {
 		_, err := svc.CreateUser(ctx, root, CreateUserInput{
-			Username: name, Email: "x" + "@example.com", Password: "password1",
+			Username: name, Email: "x" + "@example.com", Password: "Wq4#nBv7sK",
 		})
 		if StatusOf(err) != http.StatusBadRequest {
 			t.Fatalf("username %q: expected 400, got %v (err=%v)", name, StatusOf(err), err)
 		}
 	}
 
-	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "Admin", Email: "a@example.com", Password: "password1"}); err != nil {
+	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "Admin", Email: "a@example.com", Password: "Wq4#nBv7sK"}); err != nil {
 		t.Fatalf("create Admin: %v", err)
 	}
-	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "admin", Email: "b@example.com", Password: "password1"}); StatusOf(err) != http.StatusConflict {
+	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "admin", Email: "b@example.com", Password: "Wq4#nBv7sK"}); StatusOf(err) != http.StatusConflict {
 		t.Fatalf("case-only duplicate: expected 409, got %v (err=%v)", StatusOf(err), err)
 	}
-	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "other", Email: "A@EXAMPLE.COM", Password: "password1"}); StatusOf(err) != http.StatusConflict {
+	if _, err := svc.CreateUser(ctx, root, CreateUserInput{Username: "other", Email: "A@EXAMPLE.COM", Password: "Wq4#nBv7sK"}); StatusOf(err) != http.StatusConflict {
 		t.Fatalf("case-only duplicate email: expected 409, got %v (err=%v)", StatusOf(err), err)
 	}
 }

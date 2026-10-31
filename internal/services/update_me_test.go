@@ -17,7 +17,7 @@ func TestUpdateMe_UsernameEmail(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed two users: the caller and a second user to collide against.
-	hash, _ := models.HashPassword("password123")
+	hash, _ := models.HashPassword("Ht6$rCj3pM")
 	caller := models.User{Username: "alice", Email: "alice@example.com", PasswordHash: hash, Role: models.RoleUser}
 	if err := db.Create(&caller).Error; err != nil {
 		t.Fatalf("seed caller: %v", err)
@@ -64,7 +64,7 @@ func TestUpdateMe_UsernameEmail(t *testing.T) {
 
 	// 6. Set avatar/bio then clear them with explicit empty strings.
 	//
-	// Since spec 36 an avatar must point at an image that is actually in the
+	// An avatar must point at an image that is actually in the
 	// library — a free-form string let any member render a tracking pixel on
 	// every article they wrote. Seed the row the avatar will reference.
 	avatarRow := models.UploadFile{

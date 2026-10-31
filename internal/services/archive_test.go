@@ -1,6 +1,6 @@
 package services
 
-// Spec 28: paginated archive.
+// Paginated archive.
 
 import (
 	"context"

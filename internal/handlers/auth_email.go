@@ -7,7 +7,7 @@ import (
 	"lopezpress/internal/services"
 )
 
-// --- email verification endpoints (spec 37, experimental) ---
+// --- email verification endpoints (experimental) ---
 //
 // Four endpoints, split by who may call them:
 //
@@ -86,9 +86,5 @@ func ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, services.UserPublic{
-		ID: user.ID, Username: user.Username, Email: user.Email, Role: user.Role,
-		DisplayName: user.DisplayName, Bio: user.Bio, Avatar: user.Avatar,
-		CreatedAt: user.CreatedAt,
-	})
+	writeJSON(w, http.StatusOK, services.PublicUser(user))
 }

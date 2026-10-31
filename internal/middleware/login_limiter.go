@@ -64,10 +64,9 @@ type failRecord struct {
 	at    time.Time
 }
 
-
-// LoginLimiter is a purpose-built limiter for the /api/auth/login endpoint
-// (spec #3). Unlike the general per-identity Limiter, it enforces two
-// independent rate limits and a failure-based lockout:
+// LoginLimiter is a purpose-built limiter for the /api/auth/login endpoint.
+// Unlike the general per-identity Limiter, it enforces two independent rate
+// limits and a failure-based lockout:
 //
 //   - IP bucket: 0.5 rps / burst 3 — stops an attacker from blasting
 //     logins from one address.

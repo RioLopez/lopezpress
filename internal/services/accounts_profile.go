@@ -38,7 +38,7 @@ func (s *Service) ListUserLogins(ctx context.Context, actor models.User, id stri
 	return logs, nil
 }
 
-// --- profile / author (spec 15) ---
+// --- profile / author ---
 
 // UpdateMe edits the caller's own profile. A nil pointer leaves a field
 // unchanged; a non-nil pointer (including an empty string) overwrites it, so
@@ -87,10 +87,10 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
-		// Spec 36: keep the avatar edge in the image ledger in step, so the
+		// Keep the avatar edge in the image ledger in step, so the
 		// gallery can tell whose picture a file is (and refuse to hard-delete
 		// it silently).
-		return setAvatarUploadRefTx(tx, user.ID, user.Avatar)
+		return setSlotUploadRefTx(tx, "avatar", user.ID, user.Avatar)
 	})
 	if err != nil {
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update profile")
@@ -102,11 +102,11 @@ func (s *Service) UpdateMe(ctx context.Context, id string, in UpdateMeInput) (mo
 // in this site's library, or — only when the site owner allows it — an
 // absolute http(s) URL.
 //
-// Anything else is rejected rather than stored. Before spec 36 the avatar was
-// a free-form string: any member could point it at a tracking pixel, a
-// javascript: payload that some future renderer might honour, or a file that
-// does not exist. Since every avatar is rendered on every post the user
-// authored, that is a site-wide surface, not a personal one.
+// Anything else is rejected rather than stored. Before the image library an
+// avatar was a free-form string: any member could point it at a tracking
+// pixel, a javascript: payload that some future renderer might honour, or a
+// file that does not exist. Since every avatar is rendered on every post the
+// user authored, that is a site-wide surface, not a personal one.
 func (s *Service) validateAvatarValue(ctx context.Context, value string, allowExternal bool) error {
 	if value == "" {
 		return nil // clearing the avatar is always allowed
@@ -196,6 +196,12 @@ func (s *Service) GetAuthor(ctx context.Context, username string) (AuthorView, e
 		},
 	}
 	var posts []models.Post
+	// Published only, whatever the caller's role. This is the PUBLIC author page
+	// (/authors/:username) — a visitor's view of what someone wrote, not "my
+	// posts". It deliberately does NOT follow canSeePost: an admin browsing a
+	// profile sees what a stranger sees, and the author's own drafts live in the
+	// composer. Do not "fix" this into a visibility-filtered query — one URL
+	// would then mean different things to different viewers.
 	if err := s.db.WithContext(ctx).
 		Where("author_id = ? AND status = ?", user.ID, "published").
 		Preload("Category").Preload("Tags").
@@ -212,7 +218,7 @@ func (s *Service) GetAuthor(ctx context.Context, username string) (AuthorView, e
 	return view, nil
 }
 
-// --- dashboard (spec 06) ---
+// --- dashboard ---
 
 // dashboardTrendDays is the trend window. 30 days keeps the payload under a
 // few hundred bytes and still shows a month of rhythm on a 1 vCPU box.
@@ -235,7 +241,7 @@ func (s *Service) GetDashboard(ctx context.Context) (DashboardData, error) {
 	if recentPosts == nil {
 		recentPosts = []models.Post{}
 	}
-	// Spec 31: the dashboard is a summary, not a reader. Shipping the full
+	// The dashboard is a summary, not a reader. Shipping the full
 	// body of the five newest posts made the admin home page the heaviest
 	// response in the app (the observed demo payload was ~4 KB of Markdown for
 	// a page that renders titles only).
@@ -253,7 +259,7 @@ func (s *Service) GetDashboard(ctx context.Context) (DashboardData, error) {
 	var pendingTotal int64
 	s.db.WithContext(ctx).Model(&models.Post{}).Where("status = ?", "pending").Count(&pendingTotal)
 
-	// Spec 33: 30-day view trend. post_views.day is stored as "YYYY-MM-DD" in
+	// 30-Day view trend. post_views.day is stored as "YYYY-MM-DD" in
 	// UTC, so GROUP BY day is a plain string aggregation (one indexed scan).
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	since := today.AddDate(0, 0, -(dashboardTrendDays - 1)).Format("2006-01-02")
@@ -325,7 +331,7 @@ func (s *Service) applyIdentityChange(ctx context.Context, user *models.User, in
 			return newErr(http.StatusBadRequest, "invalid email")
 		}
 		if email != user.Email {
-			// Spec 37: with email verification switched on, the address may only
+			// With email verification switched on, the address may only
 			// move through the code flow (ConfirmEmailChange). Without this
 			// guard the whole feature would be one PUT away from being bypassed
 			// — the form is a convenience, the server is the contract.

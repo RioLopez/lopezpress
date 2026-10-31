@@ -66,11 +66,11 @@ func setup(t *testing.T) (*services.Service, *gorm.DB) {
 func mustToken(t *testing.T, svc *services.Service, username, email string) string {
 	t.Helper()
 	if _, err := svc.Register(context.Background(), services.RegisterInput{
-		Username: username, Email: email, Password: "secret123",
+		Username: username, Email: email, Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	res, err := svc.Login(context.Background(), services.LoginInput{Email: username, Password: "secret123"}, services.LoginMeta{})
+	res, err := svc.Login(context.Background(), services.LoginInput{Email: username, Password: "Zp9!qLm2xR"}, services.LoginMeta{})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRegisterHandler(t *testing.T) {
 	svc, _ := setup(t)
 	_ = svc
 
-	body := `{"username":"newuser","email":"new@example.com","password":"secret123"}`
+	body := `{"username":"newuser","email":"new@example.com","password":"Zp9!qLm2xR"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	Register(rec, req)
@@ -107,12 +107,12 @@ func TestLoginHandler(t *testing.T) {
 	svc, _ := setup(t)
 	// Seed a user.
 	if _, err := svc.Register(context.Background(), services.RegisterInput{
-		Username: "alice", Email: "alice@example.com", Password: "secret123",
+		Username: "alice", Email: "alice@example.com", Password: "Zp9!qLm2xR",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	body := `{"email":"alice","password":"secret123"}`
+	body := `{"email":"alice","password":"Zp9!qLm2xR"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	Login(rec, req)
@@ -199,7 +199,7 @@ func TestCRUDHandlersRoundTrip(t *testing.T) {
 	}
 
 	// LIST — router registers withOptionalAuth(ListPosts); mirror that here
-	// so the test exercises the same wrapper as production (P2-10).
+	// so the test exercises the same wrapper as production.
 	req = httptest.NewRequest(http.MethodGet, "/api/posts", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec = httptest.NewRecorder()
@@ -269,7 +269,7 @@ func TestRecoverAndLoggerChain(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 }
 
-// TestOptionalAuthDowngradesMustChangePassword locks in P1-5: a user still
+// TestOptionalAuthDowngradesMustChangePassword: a user still
 // flagged must_change_password hitting an optional-auth read endpoint is
 // downgraded to an anonymous user — they may only see public data, never
 // their own private posts. Mirrors WithAuth's first-boot lock so a
@@ -307,7 +307,7 @@ func TestOptionalAuthDowngradesMustChangePassword(t *testing.T) {
 	}
 }
 
-// TestListPostsRejectsBadPageParam guards P2-7: an explicitly-supplied but
+// TestListPostsRejectsBadPageParam: an explicitly-supplied but
 // non-numeric ?page= (e.g. "abc") must be rejected with 400 instead of
 // silently degrading to the legacy bare-array branch.
 //

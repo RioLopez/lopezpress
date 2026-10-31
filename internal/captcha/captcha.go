@@ -1,12 +1,12 @@
 // Package captcha issues and verifies the login challenge.
 //
-// Two kinds exist, and which one a caller gets is not their choice: it is
-// decided by how many times that client has already failed to log in. A
-// first-time visitor solves a four-character image, an attacker who keeps
-// guessing gets the sliding puzzle. Making the kind depend on failure count
-// (rather than on a fixed step number) is deliberate — a step counter is
-// defeated by rotating usernames, because every fresh account restarts at step
-// one and never escalates.
+// One kind only: a four-character picture. An earlier version escalated to a
+// sliding puzzle after repeated failures; it measured well on paper and badly
+// in practice — the widget was unfamiliar and hard to operate, and a captcha
+// nobody can solve protects nothing, because the operator switches it off.
+// The defences that actually matter here are cheap and invisible: the answer
+// is never sent, each picture authorises exactly one attempt, a challenge is
+// bound to the client that asked for it, and issuing is rate limited.
 //
 // State is in-process only. The site runs one binary against SQLite and has no
 // Redis; a captcha lives for two minutes, so a restart merely costs the user one
@@ -19,15 +19,14 @@ import (
 	"time"
 )
 
-// Kind names the interaction the frontend must render.
+// Kind names the interaction the frontend must render. There is exactly one
+// value now; it is kept in the payload so an older frontend keeps working.
 type Kind string
 
 const (
 	// KindImage is a four-character picture: letters and digits, no look-alikes
 	// (0/O, 1/I/l) so a human does not fail on fonts.
 	KindImage Kind = "image"
-	// KindSlide is a puzzle piece the user drags into a gap.
-	KindSlide Kind = "slide"
 )
 
 // Verification errors. Callers map these to a message and, importantly, treat
@@ -39,84 +38,73 @@ var (
 	ErrExpired  = errors.New("captcha: challenge expired")
 	ErrWrong    = errors.New("captcha: answer incorrect")
 	ErrTooMany  = errors.New("captcha: too many attempts on this challenge")
-	ErrBadKind  = errors.New("captcha: answer does not match the challenge kind")
+	ErrBadKind  = errors.New("captcha: empty answer")
 	ErrNotReady = errors.New("captcha: store not initialised")
-
-	defaultSlide = 3
+	// ErrRateLimited means this client has asked for more pictures than the
+	// window allows. It is the only error a caller should surface as 429.
+	ErrRateLimited = errors.New("captcha: issuing too fast")
 )
 
-// Challenge is what the browser receives. The answer never appears here: for
-// the image kind only the rendered picture is sent, and for the slide kind only
-// the piece's vertical offset — the horizontal target is exactly what the user
-// has to work out.
+// Challenge is what the browser receives. The answer never appears here — only
+// the rendered picture — and there is no field an attacker could use to derive
+// it: the id is 128 random bits and refers to state held on the server.
 type Challenge struct {
 	ID        string `json:"id"`
 	Kind      Kind   `json:"kind"`
-	Image     string `json:"image,omitempty"`
-	Bg        string `json:"bg,omitempty"`
-	Tile      string `json:"tile,omitempty"`
-	TileY     int    `json:"tile_y,omitempty"`
-	TileSize  int    `json:"tile_size,omitempty"`
+	Image     string `json:"image"`
 	ExpiresIn int    `json:"expires_in"`
 }
 
 // Answer is what the browser sends back alongside the credentials.
 type Answer struct {
-	// Code is the four characters the user typed (image kind).
+	// Code is the four characters the user typed.
 	Code string
-	// X is where the user dropped the piece, in per-mille of the image width
-	// (0..1000), not in CSS pixels. The form is responsive and the picture is
-	// scaled on narrow screens, so a pixel offset measured in the browser would
-	// disagree with the server by the scale factor.
-	X int
 }
 
-// entry is one outstanding challenge. tries is per-challenge, so guessing the
-// four characters costs a fresh challenge each time and the stored answer is
-// never worth brute-forcing at 32^4 with a handful of attempts.
+// entry is one outstanding challenge.
+//
+// client is the address the challenge was issued to. Binding it costs nothing
+// and closes the resale path: an answer solved on a clean machine cannot be
+// spent from the attacker's, so a captcha farm has to feed the same address
+// that is doing the guessing. tries is per-challenge, so a wrong answer
+// invalidates the value of the picture rather than the picture itself.
 type entry struct {
-	kind    Kind
+	client  string
 	answer  string
-	x       int
-	y       int
-	size    int
 	expires time.Time
 	tries   int
 }
 
-// failure counts stale login failures per client so the policy can escalate.
+// failure counts stale login failures per client. It no longer selects a
+// harder challenge — it tightens the issuing window instead.
 type failure struct {
 	count int
 	at    time.Time
 }
 
-// Store holds outstanding challenges and the per-client failure history.
+// Store holds outstanding challenges and the per-client bookkeeping.
 type Store struct {
-	mu         sync.Mutex
-	items      map[string]*entry
-	fails      map[string]*failure
-	ttl        time.Duration
-	slideAfter int
-	maxTries   int
-	now        func() time.Time
+	mu     sync.Mutex
+	items  map[string]*entry
+	fails  map[string]*failure
+	issues map[string]*issueWindow
+	ttl    time.Duration
+	maxTry int
+	now    func() time.Time
 }
 
-// New returns a Store. ttl bounds how long a challenge stays solvable;
-// slideAfter is the failure count at which the slide replaces the image.
-func New(ttl time.Duration, slideAfter int) *Store {
+// New returns a Store. ttl bounds how long a challenge stays solvable.
+func New(ttl time.Duration) *Store {
 	if ttl <= 0 {
 		ttl = 2 * time.Minute
 	}
-	if slideAfter <= 0 {
-		slideAfter = defaultSlide
-	}
 	return &Store{
-		items:      make(map[string]*entry),
-		fails:      make(map[string]*failure),
-		ttl:        ttl,
-		slideAfter: slideAfter,
-		maxTries:   5,
-		now:        time.Now,
+		items:  make(map[string]*entry),
+		fails:  make(map[string]*failure),
+		issues: make(map[string]*issueWindow),
+		ttl:    ttl,
+		maxTry: maxTries,
+		now:    time.Now,
 	}
 }
 
@@ -140,13 +128,13 @@ func Default() *Store {
 	return defaultStore
 }
 
-// Issue creates a fresh challenge of the kind this client currently deserves.
+// Issue creates a fresh challenge for this client.
 func (s *Store) Issue(client string) (Challenge, error) {
 	return s.issue(client, "")
 }
 
-// IssueWithAnswerForTest creates an image challenge whose answer the caller
-// chooses, so tests in other packages can solve it.
+// IssueWithAnswerForTest creates a challenge whose answer the caller chooses,
+// so tests in other packages can solve it.
 //
 // It is not a hole: nothing in the router can reach it, and it grants the
 // ability to *set* an answer, never to read one. The honest alternatives were
@@ -164,59 +152,62 @@ func (s *Store) issue(client, fixedAnswer string) (Challenge, error) {
 	if s == nil {
 		return Challenge{}, ErrNotReady
 	}
-	kind := s.KindFor(client)
-	if fixedAnswer != "" {
-		// A fixed answer only makes sense for the picture kind.
-		kind = KindImage
-	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !s.allowIssueLocked(client) {
+		return Challenge{}, ErrRateLimited
+	}
 
 	id, err := newID()
 	if err != nil {
 		return Challenge{}, err
 	}
-	e := &entry{kind: kind, expires: s.now().Add(s.ttl)}
-	c := Challenge{ID: id, Kind: kind, ExpiresIn: int(s.ttl.Seconds())}
 
-	switch kind {
-	case KindSlide:
-		ch, x, y, size, err := newSlide()
-		if err != nil {
-			return Challenge{}, err
-		}
-		e.x, e.y, e.size = x, y, size
-		c.Bg, c.Tile, c.TileY, c.TileSize = ch.bg, ch.tile, y, size
-	default:
-		var b64, code string
-		if fixedAnswer != "" {
-			code = fixedAnswer
-			b64, err = newImageWith(code)
-		} else {
-			b64, code, err = newImage()
-		}
-		if err != nil {
-			return Challenge{}, err
-		}
-		e.answer = code
-		c.Image = b64
+	var b64, code string
+	if fixedAnswer != "" {
+		code = fixedAnswer
+		b64, err = newImageWith(code)
+	} else {
+		b64, code, err = newImage()
+	}
+	if err != nil {
+		return Challenge{}, err
 	}
 
-	s.items[id] = e
+	s.items[id] = &entry{
+		client:  client,
+		answer:  code,
+		expires: s.now().Add(s.ttl),
+	}
 	s.reapLocked()
-	return c, nil
+
+	return Challenge{
+		ID:        id,
+		Kind:      KindImage,
+		Image:     b64,
+		ExpiresIn: int(s.ttl.Seconds()),
+	}, nil
 }
 
 // Verify consumes the challenge and reports whether the answer matches.
 //
 // A challenge is single-use whether it succeeds or runs out of attempts: on
 // success because the answer must not be replayable, on failure because leaving
-// it alive lets one challenge be guessed indefinitely.
-func (s *Store) Verify(id string, a Answer) error {
+// it alive lets one picture be guessed indefinitely.
+//
+// client must be the address the challenge was issued to. A mismatch is
+// rejected without touching tries: otherwise anyone who guessed an id could
+// burn a stranger's attempts and lock them out of their own login.
+func (s *Store) Verify(client, id string, a Answer) error {
 	if s == nil {
 		return ErrNotReady
 	}
+	if id == "" {
+		return ErrNotFound
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -228,41 +219,26 @@ func (s *Store) Verify(id string, a Answer) error {
 		delete(s.items, id)
 		return ErrExpired
 	}
+	if e.client != client {
+		return ErrWrong
+	}
+	// An empty field is what the browser sends when someone presses Sign in
+	// before typing. It is not a guess, so it must not eat the attempt budget —
+	// but it must not be treated as a correct answer either.
+	if a.Code == "" {
+		return ErrBadKind
+	}
+
 	e.tries++
-	if e.tries > s.maxTries {
+	if e.tries > s.maxTry {
 		delete(s.items, id)
 		return ErrTooMany
 	}
-
-	switch e.kind {
-	case KindSlide:
-		if a.X <= 0 || a.X > slideXScale {
-			return ErrWrong
+	if !equalFoldASCII(a.Code, e.answer) {
+		if e.tries >= s.maxTry {
+			delete(s.items, id)
 		}
-		// Convert the reported per-mille into the image's own coordinates, then
-		// compare against the notch with a tolerance. The tolerance is what
-		// makes the puzzle solvable by a human: nobody lands within one pixel of
-		// a target they only saw dimmed behind noise.
-		px := a.X * slideWidth / slideXScale
-		if abs(px-e.x) > slideTolerance {
-			if e.tries >= s.maxTries {
-				delete(s.items, id)
-			}
-			return ErrWrong
-		}
-	case KindImage:
-		if a.Code == "" {
-			return ErrBadKind
-		}
-		if !equalFoldASCII(a.Code, e.answer) {
-			if e.tries >= s.maxTries {
-				delete(s.items, id)
-			}
-			return ErrWrong
-		}
-	default:
-		delete(s.items, id)
-		return ErrBadKind
+		return ErrWrong
 	}
 
 	delete(s.items, id)

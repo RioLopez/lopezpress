@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,8 +23,8 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 	if in.Username == "" || in.Email == "" || in.Password == "" {
 		return models.User{}, newErr(http.StatusBadRequest, "username, email and password are required")
 	}
-	if len(in.Password) < 8 {
-		return models.User{}, newErr(http.StatusBadRequest, "password must be at least 8 characters")
+	if err := ValidatePasswordForUser(in.Password, in.Username, in.Email); err != nil {
+		return models.User{}, err
 	}
 	if !isValidUsername(in.Username) {
 		return models.User{}, newErr(http.StatusBadRequest, "username must be 3-32 characters: letters, digits, _ or -, starting with a letter or digit")
@@ -75,7 +74,7 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 	return u, nil
 }
 
-// UpdateUser changes role/disabled for a user with hierarchical protection.
+// UpdateUser changes a user's role with hierarchical protection.
 //
 // Role changes:
 //   - The target role must be one of user/admin/root; anything else → 400.
@@ -86,10 +85,11 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 //   - An admin may demote a user to user (no-op), but may not demote an
 //     admin or themselves below admin.
 //
-// Disabled changes:
-//   - An admin may toggle disabled only for plain users.
-//   - root may toggle disabled for admin and user accounts, but never for root.
-//   - No one may disable themselves.
+// Enable/disable is NOT handled here. It used to be, and that second door was
+// strictly weaker than the one it duplicated: it refused disabling an admin
+// but happily re-enabled an admin that root had shut down, and it wrote the
+// whole row back from a stale snapshot. PUT /api/users/{id}/disabled
+// (SetUserDisabled) is the only path, and it applies the full rule set.
 func (s *Service) UpdateUser(ctx context.Context, actor models.User, id string, in UpdateUserInput) (models.User, error) {
 	var user models.User
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
@@ -102,20 +102,28 @@ func (s *Service) UpdateUser(ctx context.Context, actor models.User, id string, 
 			return models.User{}, err
 		}
 	}
-	if in.Disabled != nil {
-		if err := applyDisabledChange(&user, actor, *in.Disabled); err != nil {
-			return models.User{}, err
-		}
+	// Nothing to write: return the record as-is. Doing this before the UPDATE
+	// keeps "PUT with an empty body against the root" a 200 no-op instead of a
+	// conflict, which is what it was before the row guard existed.
+	if user.Role == prevRole {
+		return user, nil
 	}
 
-	if err := s.db.WithContext(ctx).Save(&user).Error; err != nil {
+	// Column-level update, not Save. A whole-row write echoes back the snapshot
+	// read at the top of this function, so a password reset or a disable
+	// landing in between would be silently overwritten with stale values —
+	// quietly undoing a session revocation. `role <> 'root'` makes the unique
+	// root immutable even if something raced the check above.
+	res := s.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND role <> ?", id, models.RoleRoot).
+		Update("role", user.Role)
+	if res.Error != nil {
 		return models.User{}, newErr(http.StatusInternalServerError, "failed to update user")
 	}
-	detail := "role=" + prevRole + "->" + user.Role
-	if in.Disabled != nil {
-		detail += "; disabled=" + strconv.FormatBool(user.Disabled)
+	if res.RowsAffected == 0 {
+		return models.User{}, newErr(http.StatusConflict, "user changed while you were editing; reload and try again")
 	}
-	s.audit(ctx, actor, "update_user", "user:"+id, detail)
+	s.audit(ctx, actor, "update_user", "user:"+id, "role="+prevRole+"->"+in.Role)
 	return user, nil
 }
 
@@ -159,40 +167,30 @@ func applyRoleChange(user *models.User, actor models.User, newRole string) error
 	return nil
 }
 
-// applyDisabledChange validates and applies a disabled flag. It runs after any
-// role change, so the root guard sees the role this request is leaving behind.
-func applyDisabledChange(user *models.User, actor models.User, disabled bool) error {
-	// Never disable yourself, and never disable the unique root.
-	if disabled && user.ID == actor.ID {
-		return newErr(http.StatusForbidden, "cannot disable your own account")
-	}
-	if user.Role == models.RoleRoot {
-		return newErr(http.StatusForbidden, "the root account cannot be disabled")
-	}
-	if disabled && actor.Role == models.RoleAdmin && user.Role == models.RoleAdmin {
-		return newErr(http.StatusForbidden, "admin cannot disable another admin")
-	}
-	user.Disabled = disabled
-	return nil
-}
-
 // ResetPassword sets a new password hash for a user on behalf of an admin.
 // The actor is checked against the three-tier hierarchy: no caller may reset
 // the unique root's password, and a plain admin may only reset plain users
 // (never another admin, never self). This mirrors the other user-management
 // endpoints, which all route through canManageUser.
 func (s *Service) ResetPassword(ctx context.Context, actor models.User, id, password string) error {
-	if len(password) < 8 {
-		return newErr(http.StatusBadRequest, "password must be at least 8 characters")
-	}
 	var user models.User
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		return newErr(http.StatusNotFound, "user not found")
 	}
 	// Hierarchical guard: reuse the single authority for "may actor manage
 	// target" so this endpoint can never diverge from UpdateUser/DeleteUser.
+	// It runs BEFORE the password policy on purpose: an admin asking to reset
+	// the root's password must be told they may not, not that their proposed
+	// password is weak — otherwise the answer describes a request that was
+	// never going to be honoured.
 	if !canManageUser(actor, user) {
 		return newErr(http.StatusForbidden, "you do not have permission to reset this password")
+	}
+	// Password policy after the lookup, not before: the context check needs the
+	// account's own username and address. This endpoint is admin-only, so the
+	// order leaks nothing an admin cannot already read from the user list.
+	if err := ValidatePasswordForUser(password, user.Username, user.Email); err != nil {
+		return err
 	}
 	hash, err := models.HashPassword(password)
 	if err != nil {
@@ -215,7 +213,6 @@ func (s *Service) ResetPassword(ctx context.Context, actor models.User, id, pass
 // current password, enforces a minimum new-password length, and clears the
 // must_change_password flag so the flag can never re-trigger after the user
 // has picked a password of their own. Used by the first-boot admin flow
-// (spec #2: admin is seeded with a random console-banner password).
 //
 // It also bumps the user's TokenVersion, which revokes every JWT issued
 // before the change (a compromised token stops working the moment the owner
@@ -226,8 +223,8 @@ func (s *Service) ChangePassword(ctx context.Context, user models.User, in Chang
 	if !models.VerifyPassword(in.CurrentPassword, user.PasswordHash) {
 		return "", time.Time{}, newErr(http.StatusUnauthorized, "current password is incorrect")
 	}
-	if len(in.NewPassword) < 8 {
-		return "", time.Time{}, newErr(http.StatusBadRequest, "new password must be at least 8 characters")
+	if err := ValidatePasswordForUser(in.NewPassword, user.Username, user.Email); err != nil {
+		return "", time.Time{}, err
 	}
 	hash, err := models.HashPassword(in.NewPassword)
 	if err != nil {
@@ -310,7 +307,28 @@ func (s *Service) DeleteUser(ctx context.Context, actor models.User, id string) 
 	if postCount > 0 {
 		return newErr(http.StatusConflict, "please transfer or delete this user's posts first")
 	}
-	if err := s.db.WithContext(ctx).Delete(&user).Error; err != nil {
+	// The avatar edge in the image ledger is owned by the user row, not by a
+	// post, so nothing else releases it. Left behind, that image is pinned at
+	// ref_count = 1 for an account that no longer exists — the gallery never
+	// offers it for deletion again. The predicate is "user-level edge"
+	// (empty post_id) rather than kind = 'avatar' so any future user-owned slot
+	// inherits the same cleanup. Post edges need no handling here: the count
+	// above already refused the delete while any post references this author.
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var uploadIDs []string
+		if err := tx.Model(&models.UploadRef{}).
+			Where("post_id = '' AND user_id = ?", id).Pluck("upload_id", &uploadIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("post_id = '' AND user_id = ?", id).Delete(&models.UploadRef{}).Error; err != nil {
+			return err
+		}
+		if err := recountUploadRefsTx(tx, uploadIDs); err != nil {
+			return err
+		}
+		return tx.Delete(&user).Error
+	})
+	if err != nil {
 		return newErr(http.StatusInternalServerError, "failed to delete user")
 	}
 	s.audit(ctx, actor, "delete_user", "user:"+id, "username="+user.Username)

@@ -131,12 +131,12 @@ func TestGetPostNotFound(t *testing.T) {
 }
 
 // TestGetPostPrivateVisibility is the regression test for the visibility
-// guard: a private post is readable only by its author — not by another
-// user, not by an admin, not by root (strict "仅自己可见"). Anyone else gets
-// 404 so the post's existence is not leaked. Pending/rejected posts stay
-// readable by admin/root for the review flow. A banned post is visible to
-// root only (the banned vault), so even the author and a plain admin are
-// blocked from it.
+// guard. A private post is readable by its author and by the operator roles
+// (admin/root) — an operator who cannot open the article cannot handle a
+// report about it. Anonymous visitors and unrelated members still get 404, so
+// the post's existence is not leaked to them. Pending/rejected posts follow
+// the same rule for the review flow. A banned post is visible to root only
+// (the banned vault), so even the author and a plain admin are blocked.
 func TestGetPostPrivateVisibility(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -175,8 +175,8 @@ func TestGetPostPrivateVisibility(t *testing.T) {
 		wantOK bool
 	}{
 		{"author reads own private", author, priv.ID, true},
-		{"root blocked from other's private", root, priv.ID, false},
-		{"admin blocked from other's private", admin, priv.ID, false},
+		{"root reads other's private (operator)", root, priv.ID, true},
+		{"admin reads other's private (operator)", admin, priv.ID, true},
 		{"other user blocked from private", other, priv.ID, false},
 		{"anonymous blocked from private", models.User{}, priv.ID, false},
 		{"anonymous reads published", models.User{}, pub.ID, true},
@@ -293,11 +293,11 @@ func signExpiredToken(userID string) string {
 // are escaped so untrusted search input is treated as literal text.
 func TestEscapeLike(t *testing.T) {
 	cases := map[string]string{
-		"hello":         "hello",
-		"100%":          "100\\%",
-		"a_b":           "a\\_b",
-		`path\to`:       `path\\to`,
-		"%_\\":          "\\%\\_\\\\",
+		"hello":   "hello",
+		"100%":    "100\\%",
+		"a_b":     "a\\_b",
+		`path\to`: `path\\to`,
+		"%_\\":    "\\%\\_\\\\",
 	}
 	for in, want := range cases {
 		if got := escapeLike(in); got != want {
@@ -338,10 +338,10 @@ func TestRegisterDuplicateByEmail(t *testing.T) {
 	defer closeDB(db)
 	ctx := context.Background()
 
-	if _, err := svc.Register(ctx, RegisterInput{Username: "u1x", Email: "same@example.com", Password: "password1"}); err != nil {
+	if _, err := svc.Register(ctx, RegisterInput{Username: "u1x", Email: "same@example.com", Password: "Wq4#nBv7sK"}); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	if _, err := svc.Register(ctx, RegisterInput{Username: "u2x", Email: "same@example.com", Password: "password2"}); StatusOf(err) != http.StatusConflict {
+	if _, err := svc.Register(ctx, RegisterInput{Username: "u2x", Email: "same@example.com", Password: "Jm5%tDk8wQ"}); StatusOf(err) != http.StatusConflict {
 		t.Fatalf("expected 409 on duplicate email, got %v (err=%v)", StatusOf(err), err)
 	}
 }
@@ -359,10 +359,17 @@ func TestLoginMissingFields(t *testing.T) {
 
 // --- role-based visibility + review workflow ---
 
-// TestCreatePostVisibilityWhitelist verifies role-gated initial status: a
-// plain user always enters the review queue (pending) regardless of the
-// requested value; only a root can publish or keep private. Stale client
-// values cannot bypass the queue.
+// TestCreatePostVisibilityWhitelist verifies the role-gated initial status.
+//
+// Two outcomes are legal for a non-root author: ask for readers and land in
+// the review queue, or ask to stay private and stay private. Anything else the
+// client sends (draft, scheduled, banned, a typo) is coerced to pending, so a
+// tampered request still cannot publish.
+//
+// The private case is not a convenience: the editor prints "只有你自己能看到"
+// next to that radio, and it used to send status=private that the server
+// turned into pending, which a reviewer would then publish. Honouring it is
+// what makes the label true.
 func TestCreatePostVisibilityWhitelist(t *testing.T) {
 	svc, db := newTestService(t)
 	defer closeDB(db)
@@ -371,8 +378,8 @@ func TestCreatePostVisibilityWhitelist(t *testing.T) {
 	alice := makeUser(t, db, "alice", "alice@example.com", "user")
 	root := makeUser(t, db, "root", "root@example.com", "root")
 
-	// A plain user is forced into the queue no matter what the client asks.
-	for _, status := range []string{"", "published", "draft", "scheduled", "banned"} {
+	// Asking for readers (or sending junk) puts a plain user in the queue.
+	for _, status := range []string{"", "published", "draft", "scheduled", "banned", "Pending", "PUBLIC"} {
 		p, err := svc.CreatePost(ctx, alice, CreatePostInput{Title: "t", Body: "x", Status: status})
 		if err != nil {
 			t.Fatalf("CreatePost(status=%q): %v", status, err)
@@ -380,6 +387,18 @@ func TestCreatePostVisibilityWhitelist(t *testing.T) {
 		if p.Status != models.PostPending {
 			t.Fatalf("user status %q -> %q, want pending", status, p.Status)
 		}
+	}
+
+	// Asking to stay private is honoured, and reaches no reader.
+	priv, err := svc.CreatePost(ctx, alice, CreatePostInput{Title: "t", Body: "x", Status: models.PostPrivate})
+	if err != nil {
+		t.Fatalf("CreatePost(user private): %v", err)
+	}
+	if priv.Status != models.PostPrivate {
+		t.Fatalf("user private -> %q, want private", priv.Status)
+	}
+	if _, err := svc.GetPost(ctx, models.User{}, priv.ID); err == nil {
+		t.Fatalf("a private post must not be readable by an anonymous visitor")
 	}
 
 	// A root's explicit private is preserved.
@@ -530,7 +549,7 @@ func TestUpdatePostIgnoresStaleStatus(t *testing.T) {
 	}
 }
 
-// TestRegisterIssuesUsableToken covers spec 04 AC-2.2: registering must log the
+// TestRegisterIssuesUsableToken: registering must log the
 // user straight in, meaning the returned JWT actually authenticates as the new
 // user without a separate login call.
 func TestRegisterIssuesUsableToken(t *testing.T) {
@@ -538,7 +557,7 @@ func TestRegisterIssuesUsableToken(t *testing.T) {
 	defer closeDB(db)
 	ctx := context.Background()
 
-	res, err := svc.Register(ctx, RegisterInput{Username: "carol", Email: "carol@example.com", Password: "secret123"})
+	res, err := svc.Register(ctx, RegisterInput{Username: "carol", Email: "carol@example.com", Password: "Zp9!qLm2xR"})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -559,7 +578,7 @@ func TestRegisterIssuesUsableToken(t *testing.T) {
 	}
 
 	// Duplicates still conflict, even with the token-issuing flow.
-	if _, err := svc.Register(ctx, RegisterInput{Username: "carol", Email: "carol@example.com", Password: "secret123"}); StatusOf(err) != http.StatusConflict {
+	if _, err := svc.Register(ctx, RegisterInput{Username: "carol", Email: "carol@example.com", Password: "Zp9!qLm2xR"}); StatusOf(err) != http.StatusConflict {
 		t.Fatalf("expected 409 on duplicate, got %v (err=%v)", StatusOf(err), err)
 	}
 }

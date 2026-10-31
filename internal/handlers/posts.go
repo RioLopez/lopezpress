@@ -22,7 +22,7 @@ func GetPostPublic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, post)
 }
 
-// ReportView records one de-duplicated read of a post (spec 23).
+// ReportView records one de-duplicated read of a post.
 //
 // POST /api/posts/{id}/view (optional auth)
 //
@@ -45,7 +45,7 @@ func ReportView(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// GetPostBySlug resolves a permanent link (spec 29).
+// GetPostBySlug resolves a permanent link.
 // GET /api/permalinks/{slug} (optional auth)
 //
 // Visibility is decided by canSeePost inside the service, so an unpublished
@@ -60,7 +60,7 @@ func GetPostBySlug(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, post)
 }
 
-// ListRevisions returns the edit history of one post (spec 31).
+// ListRevisions returns the edit history of one post.
 // GET /api/posts/{id}/revisions (auth)
 func ListRevisions(w http.ResponseWriter, r *http.Request) {
 	me := userFromContext(r)
@@ -90,14 +90,14 @@ func RestoreRevision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, post)
 }
 
-// GetRelatedPosts returns posts sharing a category or tag (spec 35).
+// GetRelatedPosts returns posts sharing a category or tag.
 // GET /api/posts/{id}/related (optional auth)
 //
 // Optional auth, not no-auth: the handler itself never needs the user, but
 // keeping it on the optional surface means a locked site (public_read=false)
 // is enforced by the same middleware as every other read route.
 func GetRelatedPosts(w http.ResponseWriter, r *http.Request) {
-	posts, err := svc.RelatedPosts(r.Context(), r.PathValue("id"), 5)
+	posts, err := svc.RelatedPosts(r.Context(), userFromContext(r), r.PathValue("id"), 5)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -110,7 +110,7 @@ func GetRelatedPosts(w http.ResponseWriter, r *http.Request) {
 func GetPostPrevNext(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	nav, err := svc.GetPostPrevNext(r.Context(), id)
+	nav, err := svc.GetPostPrevNext(r.Context(), userFromContext(r), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -133,7 +133,7 @@ func ListArchive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, posts)
 }
 
-// ListArchivePaged is the paginated archive (spec 28).
+// ListArchivePaged is the paginated archive.
 // GET /api/posts/archive/paged?page=&size= (optional auth)
 //
 // The old GET /api/posts/archive keeps returning the full array for backward
@@ -174,7 +174,7 @@ func ListPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Legacy bare-array form: no pagination/search requested. The explicit
-	// PageSize keeps this branch's shape stable (spec 24 changed the *default*
+	// PageSize keeps this branch's shape stable (the paged path uses its own *default*
 	// page size for the paged path; this one is a diagnostic/back-compat
 	// endpoint, not the public list).
 	if p.Page == 0 && p.Size == 0 && p.Search == "" && p.Category == "" && p.Tag == "" {
@@ -225,7 +225,7 @@ func GetPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, post)
 }
 
-// BatchUpdatePosts applies one bulk action to many posts (spec 26).
+// BatchUpdatePosts applies one bulk action to many posts.
 // POST /api/admin/posts/batch (auth, admin)
 //
 // Partial success is intentional: the response reports affected rows plus the
@@ -248,12 +248,11 @@ func BatchUpdatePosts(w http.ResponseWriter, r *http.Request) {
 // CreatePost creates a post owned by the authenticated user.
 // POST /api/posts (auth)
 func CreatePost(w http.ResponseWriter, r *http.Request) {
-	// Cap the body before it is decoded. The service layer enforces per-field
-	// ceilings, but those run AFTER json.Decode has already materialised the
-	// whole payload in memory — the same amplification the login endpoint had
-	// (R3-05: a multi-megabyte field cost hundreds of MB of RSS per request).
-	// 1 MiB covers a 256 KiB body plus JSON overhead with room to spare.
-	r.Body = http.MaxBytesReader(w, r.Body, services.MaxRequestBodyBytes)
+	// The 1 MiB body ceiling (services.MaxRequestBodyBytes) is the route table's
+	// default and is applied by the router before this handler runs — it is what
+	// keeps a multi-megabyte field from being materialised by json.Decode. It is
+	// deliberately not repeated here: two identical caps mean the lower one wins
+	// silently and the other becomes a comment that lies about being enforced.
 	var in services.CreatePostInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -275,7 +274,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 func UpdatePost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	r.Body = http.MaxBytesReader(w, r.Body, services.MaxRequestBodyBytes)
+	// Same 1 MiB route ceiling as CreatePost; see the note there.
 	var in services.UpdatePostInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)

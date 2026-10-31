@@ -1,6 +1,6 @@
 package services
 
-// Spec 29: permanent links (slug).
+// Permanent links (slug).
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"Hello World":            "hello-world",
-		"  Go 的  并发模型  ":        "go-的-并发模型",
+		"Hello World":               "hello-world",
+		"  Go 的  并发模型  ":            "go-的-并发模型",
 		"Post #1: Getting Started!": "post-1-getting-started",
-		"":                       "",
-		"!!!":                    "",
-		"a_b.c":                  "a-b-c",
-		"UPPER 123":              "upper-123",
+		"":                          "",
+		"!!!":                       "",
+		"a_b.c":                     "a-b-c",
+		"UPPER 123":                 "upper-123",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {

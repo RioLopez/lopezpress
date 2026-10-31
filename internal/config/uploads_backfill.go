@@ -28,7 +28,7 @@ import (
 const maxBackfillFileBytes = 32 << 20 // 32 MB
 
 // backfillUploads gives every file already present in the upload directory a
-// metadata row (spec 36 §3).
+// metadata row.
 //
 // Why at startup and not as a schema migration: the manual migrations run
 // BEFORE AutoMigrate (a rebuilt table must exist first), so at migration time
