@@ -10,17 +10,17 @@ export type AdminTexts = {
     categoryPlaceholder: string
     add: string
     rename: string
-    // Spec 25: taxonomies get a local filter box + clickable counts.
+ // Taxonomies get a local filter box + clickable counts.
     filterPlaceholder: string
     noMatch: string
     viewPosts: string
-    // Spec 27: two-level categories + preset tree
+ // Two-level categories + preset tree
     parentCategory: string
     topLevel: string
     applyPreset: string
     presetApplied: string
     presetHint: string
-    // Spec 26: admin post management + batch actions
+ // Admin post management + batch actions
     // NOTE: `status` / `selectAll` already exist in this section (user
     // management) and are reused; only the post-specific strings live here.
     postsTitle: string
@@ -49,14 +49,13 @@ export type AdminTexts = {
     emptyCat: string
     emptyTag: string
     notAdmin: string
-    // post status badges (spec 22 + 24): rendered as `admin.statusLabel.<value>`
+ // post status badges: rendered as `admin.statusLabel.<value>`
     statusLabel: {
       published: string
       private: string
       pending: string
       rejected: string
       banned: string
-      draft: string
     }
     // user management
     usersTitle: string
@@ -195,18 +194,21 @@ export type AdminTexts = {
     sendBackTitle: string
     sendBackHint: string
     sendBackDone: string
-    // Spec 30: ban a post from the admin list (root only)
+ // Ban a post from the admin list (root only)
     banPost: string
     banPostConfirm: string
     deleteBanned: string
     deleteBannedConfirm: string
   },
-  // Image library (spec 36): the site-wide asset view. Admins see every
+ // Image library: the site-wide asset view. Admins see every
   // upload, who owns it, and what still references it.
   media: {
     title: string
     sub: string
     upload: string
+    batchAdded: string
+    batchReused: string
+    batchFailed: string
     statusLive: string
     statusDeleted: string
     statusAll: string
@@ -290,11 +292,10 @@ export const adminZh: AdminTexts = {
     notAdmin: '此页面仅限管理员访问。',
     statusLabel: {
       published: '已发布',
-      private: '仅自己可见',
+      private: '私密',
       pending: '待审核',
       rejected: '已打回',
       banned: '已封禁',
-      draft: '草稿',
     },
     usersTitle: '用户管理',
     usersSub: '查看并启用/禁用所有账号',
@@ -374,7 +375,7 @@ export const adminZh: AdminTexts = {
     resetPwd: '重置密码',
     resetPwdTitle: '重置密码',
     resetPwdConfirm: '确定将「{t}」的密码重置为新密码？',
-    newPwdPlaceholder: '输入新密码（至少 8 位）',
+    newPwdPlaceholder: '输入新密码（至少 8 位，别用常见密码）',
     loginHistory: '登录历史',
     deleteConfirmUser: '确定删除用户「{t}」吗？该操作不可撤销。',
     deleteUser: '删除',
@@ -437,6 +438,9 @@ export const adminZh: AdminTexts = {
     title: '图片库',
     sub: '全站图片资产：谁传的、什么时候、多大、被哪些文章引用。只有管理员能看到。',
     upload: '上传图片',
+    batchAdded: '新增 {n} 张',
+    batchReused: '{n} 张已存在，直接复用',
+    batchFailed: '{n} 张失败',
     statusLive: '在用',
     statusDeleted: '已撤下',
     statusAll: '全部',
@@ -524,7 +528,6 @@ export const adminEn: AdminTexts = {
       pending: 'Pending review',
       rejected: 'Sent back',
       banned: 'Banned',
-      draft: 'Draft',
     },
     usersTitle: 'Manage Users',
     usersSub: 'View and enable/disable all accounts',
@@ -604,7 +607,7 @@ export const adminEn: AdminTexts = {
     resetPwd: 'Reset password',
     resetPwdTitle: 'Reset password',
     resetPwdConfirm: 'Reset the password for "{t}" to the new value?',
-    newPwdPlaceholder: 'New password (at least 8 chars)',
+    newPwdPlaceholder: 'New password (8+ chars, not a common one)',
     loginHistory: 'Login history',
     deleteConfirmUser: 'Delete user "{t}"? This cannot be undone.',
     deleteUser: 'Delete',
@@ -667,6 +670,9 @@ export const adminEn: AdminTexts = {
     title: 'Media library',
     sub: 'Every image on this site: who uploaded it, when, how large, and which articles use it. Admins only.',
     upload: 'Upload image',
+    batchAdded: '{n} added',
+    batchReused: '{n} already existed and were reused',
+    batchFailed: '{n} failed',
     statusLive: 'In use',
     statusDeleted: 'Withdrawn',
     statusAll: 'All',

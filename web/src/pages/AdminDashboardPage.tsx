@@ -6,7 +6,7 @@ import type { DayViews } from '../core/types'
 import { fmtDate } from '../core/format'
 import { useQuery } from '../core/useQuery'
 
-// Spec 33: a 30-bar view chart drawn as inline SVG.
+// A 30-bar view chart drawn as inline SVG.
 //
 // No chart library on purpose: the whole point of this project is one small
 // bundle. 30 rectangles and a max() is the entire feature, and using CSS

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
+import { passwordProblem } from '../core/password'
 import {
   registrationOpen,
   getSiteConfig,
@@ -20,10 +21,10 @@ export function RegisterPage() {
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [busy, setBusy] = useState(false)
-  // Registration gate (spec 16): open registration is off by default for a
+ // Registration gate: open registration is off by default for a
   // single-user install, so the form is hidden until the server confirms it.
   const [open, setOpen] = useState<boolean | null>(null)
-  // Spec 37 (experimental): when the owner has switched on email verification,
+ // (experimental): when the owner has switched on email verification,
   // the address must be proven before the account exists.
   const [needCode, setNeedCode] = useState(false)
   const [code, setCode] = useState('')
@@ -68,8 +69,9 @@ export function RegisterPage() {
       pushToast('error', t('auth.empty'))
       return
     }
-    if (password.length < 8) {
-      pushToast('error', t('auth.passwordTooShort'))
+    const problem = passwordProblem(password)
+    if (problem) {
+      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
       return
     }
     if (needCode && !code.trim()) {

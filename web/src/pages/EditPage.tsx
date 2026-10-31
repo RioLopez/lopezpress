@@ -63,21 +63,32 @@ export function EditPage({ id }: { id: string }) {
       initialTags={post.tags?.map((tg) => tg.name)}
       initialPinned={post.pinned}
       initialCover={post.cover}
-      saveLabel={t('editor.save')}
       publishing={busy}
       onCancel={() => navigate(`/read/${id}`)}
       onSubmit={async (v) => {
         setBusy(true)
         try {
-          await updatePost(id, v)
+          const saved = await updatePost(id, v)
           // The post is now persisted on the server; drop the local draft
           // so the next time we open it we see the saved version, not a
           // stale autosave.
           localStorage.removeItem(`echo.draft.${id}`)
-          pushToast('success', t('editor.saved'))
+          // Rewriting a live article sends it back to the queue, and the
+          // server answers with that status. Telling the author "已保存" would
+          // leave them wondering why the article vanished from the site.
+          pushToast('success', saved.status === 'pending' ? t('editor.requeued') : t('editor.saved'))
           navigate(`/read/${id}`)
         } catch (e) {
-          pushToast('error', errMessage(e, t('editor.saveFailed')))
+          // 409 is not in the shared status→text table because it is not
+          // mechanical: the same status also carries "username already in
+          // use". Here the meaning is unambiguous — the row moved under us
+          // (a reviewer approved or banned it mid-edit) — and the server's
+          // English sentence is the whole explanation, so say it in the
+          // reader's language.
+          pushToast(
+            'error',
+            errStatus(e) === 409 ? t('editor.conflictReload') : errMessage(e, t('editor.saveFailed')),
+          )
           setBusy(false)
         }
       }}

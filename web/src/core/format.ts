@@ -1,4 +1,4 @@
-// Shared date formatters (P2-2 dedup).
+// Shared date formatters.
 //
 // Six pages each carried a private fmtDate before this module existed, and
 // none of them passed a locale — so an English UI still rendered dates in
@@ -23,7 +23,7 @@ export function fmtDay(iso?: string): string {
   return iso ? iso.slice(0, 10) : ''
 }
 
-// Human-readable byte size (spec 36). Shared by the media library and the
+// Human-readable byte size. Shared by the media library and the
 // profile page so the two never disagree on rounding.
 export function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`

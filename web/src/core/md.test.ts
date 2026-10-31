@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { escapeHTML, highlight, extractTOC, isSafeHref, isSafeSrc, isSafeSrcset } from './md'
+import { escapeHTML, highlight, extractTOC, isSafeHref, isSafeSrc, isSafeSrcset, plainText, excerpt } from './md'
 
 describe('escapeHTML', () => {
   it('escapes all five HTML-unsafe characters', () => {
@@ -151,5 +151,74 @@ describe('extractTOC', () => {
       { id: 'intro', text: 'Intro', depth: 2 },
       { id: 'intro-2', text: 'Intro', depth: 2 },
     ])
+  })
+})
+
+// The list card used to render the whole article and slice 120 characters off
+// the result. These cases pin the visible text it is supposed to keep, because
+// a regex pass that quietly drops a paragraph is indistinguishable from a post
+// whose body is short.
+describe('plainText', () => {
+  it('drops heading marks, emphasis and inline code markers', () => {
+    expect(plainText('## 标题\n\n正文有**粗体**和*斜体*还有`代码`')).toBe(
+      '标题 正文有粗体和斜体还有代码',
+    )
+  })
+
+  it('keeps image alt text and link labels but not their URLs', () => {
+    expect(plainText('看图 ![示意图](/uploads/a.jpg) 和 [链接](https://example.com/x)')).toBe(
+      '看图 示意图 和 链接',
+    )
+  })
+
+  it('removes fenced code blocks entirely', () => {
+    expect(plainText('前\n\n```go\nfunc main() {}\n```\n\n后')).toBe('前 后')
+  })
+
+  it('removes an unterminated fence instead of leaking the rest', () => {
+    expect(plainText('前\n```\n未闭合的代码')).toBe('前 未闭合的代码')
+  })
+
+  it('drops table separator rows and keeps cell text apart', () => {
+    expect(plainText('| 名称 | 值 |\n| --- | --- |\n| 甲 | 1 |')).toBe('名称 值 甲 1')
+  })
+
+  it('drops list bullets and lets a rule be a rule', () => {
+    expect(plainText('- 第一项\n- 第二项\n\n- - -\n\n结尾')).toBe('第一项 第二项 结尾')
+  })
+
+  it('strips tags but keeps their text, and leaves a bare less-than alone', () => {
+    expect(plainText('a < b 且 <span class="x">文字</span>')).toBe('a < b 且 文字')
+  })
+
+  it('decodes entities once, never recursively', () => {
+    expect(plainText('&amp;lt; 与 &amp;')).toBe('&lt; 与 &')
+  })
+
+  it('leaves snake_case identifiers intact', () => {
+    expect(plainText('use snake_case_name here')).toBe('use snake_case_name here')
+  })
+})
+
+describe('excerpt', () => {
+  it('returns empty for empty input', () => {
+    expect(excerpt('')).toBe('')
+    expect(excerpt(null)).toBe('')
+    expect(excerpt(undefined)).toBe('')
+  })
+
+  it('keeps short text as-is, without an ellipsis', () => {
+    expect(excerpt('短文本', 120)).toBe('短文本')
+  })
+
+  it('cuts by code point so an emoji is never sliced in half', () => {
+    const out = excerpt('😀'.repeat(200), 10)
+    expect(out).toBe('😀'.repeat(10) + '…')
+    expect(out).not.toContain('\ufffd')
+  })
+
+  it('appends an ellipsis only when it actually truncated', () => {
+    expect(excerpt('a'.repeat(200), 10)).toBe('aaaaaaaaaa…')
+    expect(excerpt('a'.repeat(10), 10)).toBe('aaaaaaaaaa')
   })
 })

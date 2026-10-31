@@ -12,7 +12,7 @@ import { UserMenu, LoginRegisterEntry } from './UserMenu'
 
 // Content-area shell: top bar (brand + nav + utilities) + main + footer.
 // Admin pages use the separate AdminLayout; this one is for public/content
-// routes only (spec 06).
+// routes only.
 export function Layout({ children }: { children: ComponentChildren }) {
   const { user } = useAuth()
   const { t, locale, setLocale } = useI18n()

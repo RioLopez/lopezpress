@@ -17,7 +17,7 @@ interface NavItem {
   rootOnly?: boolean
 }
 
-// Left vertical sidebar nav (spec 06, regrouped in spec 26). Eleven flat items
+// Left vertical sidebar nav. Eleven flat items
 // were hard to scan; they now follow the Halo-style split of CONTENT / USERS /
 // SYSTEM. The group titles come from i18n so the structure survives translation.
 const NAV: NavItem[] = [

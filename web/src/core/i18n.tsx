@@ -1,7 +1,7 @@
 // i18n entry point. The 536-key dictionary is split per domain under
 // `locales/` (see ARCH_REVIEW F6); this file only composes them and exposes
 // the `useI18n()` hook. `t()` warns on a missing key in dev and falls back to
-// English in prod instead of echoing the raw key (the P0-3 failure mode).
+// English in prod instead of echoing the raw key.
 
 import { createContext } from 'preact'
 import { useContext, useEffect, useState } from 'preact/hooks'
@@ -13,9 +13,23 @@ import { ReaderTexts, readerZh, readerEn } from './locales/reader'
 import { EditorTexts, editorZh, editorEn } from './locales/editor'
 import { AdminTexts, adminZh, adminEn } from './locales/admin'
 import { SiteTexts, siteZh, siteEn } from './locales/site'
+import { FeedTexts, feedZh, feedEn } from './locales/feed'
 import { CommonTexts, commonZh, commonEn } from './locales/common'
+import { setErrorTranslator } from './http'
 
 export type Locale = 'zh' | 'en'
+
+// Status codes whose cause is mechanical: the server's English text ("file too
+// large", "internal error") tells the reader nothing they can act on, so the
+// UI supplies its own line in the active language. Deliberately narrow — a 400
+// from the password policy must keep its server text, because that text names
+// the rule that failed.
+const ERROR_TEXT_KEYS: Record<number, string> = {
+  413: 'common.tooLarge',
+  429: 'common.tooManyRequests',
+  500: 'common.serverError',
+  503: 'common.unavailable',
+}
 
 export type Texts = NavTexts &
   AuthTexts &
@@ -24,6 +38,7 @@ export type Texts = NavTexts &
   EditorTexts &
   AdminTexts &
   SiteTexts &
+  FeedTexts &
   CommonTexts
 
 const zh: Texts = {
@@ -34,6 +49,7 @@ const zh: Texts = {
   ...editorZh,
   ...adminZh,
   ...siteZh,
+  ...feedZh,
   ...commonZh,
 }
 
@@ -45,6 +61,7 @@ const en: Texts = {
   ...editorEn,
   ...adminEn,
   ...siteEn,
+  ...feedEn,
   ...commonEn,
 }
 
@@ -80,6 +97,16 @@ export function I18nProvider({ children }: { children: ComponentChildren }) {
 
   useEffect(() => {
     document.documentElement.lang = locale
+  }, [locale])
+
+  // Teach errMessage() the active language, so a toast raised from any of the
+  // ~60 call sites reads in the same language as the page around it.
+  useEffect(() => {
+    setErrorTranslator((status) => {
+      const key = ERROR_TEXT_KEYS[status]
+      return key ? lookup(dicts[locale], key) : undefined
+    })
+    return () => setErrorTranslator(null)
   }, [locale])
 
   const apply = (l: Locale) => {

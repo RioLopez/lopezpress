@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 
-// Classic numbered pager (spec 24).
+// Classic numbered pager.
 //
 // Window rule: total <= 7 lists everything; otherwise first and last page are
 // always visible, the current page keeps ±2 neighbours, and gaps collapse to

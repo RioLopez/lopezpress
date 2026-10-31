@@ -12,7 +12,7 @@ import { useQuery } from '../core/useQuery'
 import { isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 
-// Spec 26: the admin post list that the site never had. Before this page,
+// The admin post list that the site never had. Before this page,
 // posts were managed from the public home page — reading and administering in
 // the same surface. Bulk actions delegate to the server's single-item rules,
 // so a partial permission failure comes back as `skipped`, not as a 500.
@@ -21,7 +21,7 @@ import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 // public reading list, so it must not follow site_config.page_size.
 const ADMIN_PAGE_SIZE = 20
 
-const STATUSES: PostStatus[] = ['published', 'private', 'pending', 'rejected', 'banned', 'draft']
+const STATUSES: PostStatus[] = ['published', 'private', 'pending', 'rejected', 'banned']
 
 export function AdminPostsPage() {
   const { user } = useAuth()
@@ -111,7 +111,7 @@ export function AdminPostsPage() {
     }
   }
 
-  // Spec 30: banning used to be backend-only (POST /api/admin/ban/{id} had no
+ // Banning used to be backend-only (POST /api/admin/ban/{id} had no
   // UI), so the banned vault could only ever shrink. Root-only, and the button
   // is hidden for posts already in the vault.
   const banOne = async (id: string) => {
@@ -125,7 +125,7 @@ export function AdminPostsPage() {
     }
   }
 
-  // Spec 32: bulk markdown import (admin/root). Files are posted as multipart;
+ // Bulk markdown import (admin/root). Files are posted as multipart;
   // the server reports per-file skipped reasons.
   const onImport = async (files: FileList | null) => {
     if (!files || files.length === 0) return

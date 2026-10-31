@@ -4,7 +4,7 @@
 // All calls are same-origin in dev (vite proxy) and prod (Nginx).
 
 import { request, upload, download } from './http'
-export { ApiError, setTokenGetter, setOnUnauthorized, errMessage, errStatus } from './http'
+export { ApiError, setTokenGetter, setOnUnauthorized, setOnPasswordChangeRequired, errMessage, errStatus } from './http'
 
 import type {
   AuthResult,
@@ -41,7 +41,7 @@ import type {
 // --- auth ---
 // Registering issues a JWT, so the new account is signed in straight away.
 // `code` is only required while the site has email verification switched on
-// (spec 37, experimental); the server ignores it otherwise.
+// (experimental); the server ignores it otherwise.
 export const register = (b: {
   username: string
   email: string
@@ -81,14 +81,15 @@ export const login = (b: {
   password: string
   captcha_id?: string
   captcha_code?: string
-  captcha_x?: number
 }) => request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify(b) })
 
 // Fetch a fresh login challenge. Always answers — even with the feature
 // switched off — so the form can tell "not required" from "failed to load".
-// The server decides the kind from this client's failure history; nothing in
-// the request can ask for the easier one.
-export const getCaptcha = () => request<CaptchaIssued>('/api/auth/captcha')
+//
+// No 429 auto-retry: a challenge is single-use, so a retry draws a brand new
+// picture and spends another slot of the per-IP issue budget — the exact
+// resource that just ran out. The form turns a 429 into a countdown instead.
+export const getCaptcha = () => request<CaptchaIssued>('/api/auth/captcha', undefined, { retry429: false })
 
 export const me = () => request<UserPublic>('/api/auth/me')
 
@@ -115,7 +116,7 @@ export const changePassword = (b: { current_password: string; new_password: stri
 export const getAuthor = (username: string) =>
   request<AuthorView>(`/api/authors/${encodeURIComponent(username)}`)
 
-// Personal-center metrics: the caller's post count + total views (spec 20).
+// Personal-center metrics: the caller's post count + total views.
 export const myStats = () => request<UserStats>('/api/me/stats')
 
 // Self-service login history for the security center: the caller's own recent
@@ -134,8 +135,17 @@ export const getPost = (id: string) => request<Post>(`/api/posts/${id}`)
 export const createPost = (b: CreatePostInput) =>
   request<Post>('/api/posts', { method: 'POST', body: JSON.stringify(b) })
 
+// `category_id: undefined` in the editor means "this post has no category",
+// and the update endpoint needs that as an explicit 0: an absent key means
+// "leave the category alone", which is exactly what 不分类 must not do. Create
+// is the other way round — there nil already means "none" — so the translation
+// lives here, in the one function that speaks the write contract, rather than
+// in the editor, which should not know about either encoding.
 export const updatePost = (id: string, b: UpdatePostInput) =>
-  request<Post>(`/api/posts/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+  request<Post>(`/api/posts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...b, category_id: b.category_id ?? 0 }),
+  })
 
 export const deletePost = (id: string) =>
   request<void>(`/api/posts/${id}`, { method: 'DELETE' })
@@ -155,7 +165,7 @@ export const listPostsPaged = (q: ListPostsQuery = {}) => {
   if (q.category) params.set('category', q.category)
   if (q.tag) params.set('tag', q.tag)
   if (q.author) params.set('author', q.author)
-  // Personal-center sort (spec 20): sort=created_at|views, order=asc|desc.
+ // Personal-center sort: sort=created_at|views, order=asc|desc.
   if (q.sort) params.set('sort', q.sort)
   if (q.order) params.set('order', q.order)
   const qs = params.toString()
@@ -169,7 +179,7 @@ export const listTags = () => request<Tag[]>('/api/tags')
 export const getRecentPosts = () => request<Post[]>('/api/posts/recent')
 export const listArchive = () => request<Post[]>('/api/posts/archive')
 
-// Spec 28: paginated archive. The UI uses this — the unpaginated form above
+// Paginated archive. The UI uses this — the unpaginated form above
 // loads every published post on every visit.
 export const listArchivePaged = (q: { page?: number; size?: number } = {}) => {
   const p = new URLSearchParams()
@@ -189,7 +199,7 @@ export const createCategory = (b: { name: string; parent_id?: number | null }) =
 export const updateCategory = (id: number, b: { name: string; parent_id?: number | null }) =>
   request<Category>(`/api/categories/${id}`, { method: 'PUT', body: JSON.stringify(b) })
 
-// Spec 27: apply the shipped category tree. Idempotent — safe to click twice.
+// Apply the shipped category tree. Idempotent — safe to click twice.
 export const applyPresetCategories = () =>
   request<{ created: number; reparented: number }>('/api/admin/categories/preset', { method: 'POST' })
 
@@ -202,26 +212,26 @@ export const listTagsWithCount = () =>
 export const deleteTag = (id: number) =>
   request<void>(`/api/tags/${id}`, { method: 'DELETE' })
 
-// Spec 25: rename a tag in place. Associations survive because post_tags is
+// Rename a tag in place. Associations survive because post_tags is
 // keyed by tag id; delete+create would silently drop them.
 export const updateTag = (id: number, name: string) =>
   request<Tag>(`/api/tags/${id}`, { method: 'PUT', body: JSON.stringify({ name }) })
 
 // --- prev/next nav + public read ---
-// Spec 34: daily snapshot state + on-demand run.
+// Daily snapshot state + on-demand run.
 export const getAutoBackupStatus = () =>
   request<{ enabled: boolean; keep: number; last_at: string; files: number }>('/api/admin/backup/auto')
 
 export const runAutoBackup = () =>
   request<{ file: string }>('/api/admin/backup/auto', { method: 'POST' })
 
-// Spec 35: related posts.
+// Related posts.
 export const getRelatedPosts = (id: string) => request<Post[]>(`/api/posts/${id}/related`)
 
 export const getPostPrevNext = (id: string) =>
   request<PostNav>(`/api/posts/${id}/nav`)
 
-// Spec 23: report one read of a post. The server de-duplicates per visitor per
+// Report one read of a post. The server de-duplicates per visitor per
 // day, ignores the author and crawlers, and returns the current count so the
 // UI can show the post-trip value. Fire-and-forget: a failed report must never
 // break reading the article, so errors are swallowed into `null`.
@@ -230,14 +240,14 @@ export type ViewReport = { counted: boolean; view_count: number; reason?: string
 export const reportView = (id: string) =>
   request<ViewReport>(`/api/posts/${id}/view`, { method: 'POST' }).catch(() => null)
 
-// Spec 31: revision history.
+// Revision history.
 export const listRevisions = (id: string) =>
   request<Revision[]>(`/api/posts/${id}/revisions`)
 
 export const restoreRevision = (id: string, revId: number) =>
   request<Post>(`/api/posts/${id}/revisions/${revId}/restore`, { method: 'POST' })
 
-// Spec 32: markdown import via multipart (the shared request helper would set
+// Markdown import via multipart (the shared request helper would set
 // Content-Type: application/json and break the multipart boundary).
 export const importMarkdown = (fd: FormData) =>
   upload<{ created: number; skipped: { name: string; reason: string }[] }>(
@@ -248,15 +258,15 @@ export const importMarkdown = (fd: FormData) =>
 export const getPostPublic = (id: string) =>
   request<Post>(`/api/posts/${id}/public`)
 
-// Spec 29: resolve a permanent link.
+// Resolve a permanent link.
 export const getPostBySlug = (slug: string) =>
   request<Post>(`/api/permalinks/${encodeURIComponent(slug)}`)
 
-// Spec 30: pull a post into the banned vault (root only).
+// Pull a post into the banned vault (root only).
 export const banPost = (id: string) =>
   request<Post>(`/api/admin/ban/${id}`, { method: 'POST' })
 
-// Spec 26: one bulk action over many posts. The server routes every id
+// One bulk action over many posts. The server routes every id
 // through the single-item service method, so partial permission failures come
 // back as `skipped` instead of failing the whole batch.
 export interface BatchResult {
@@ -303,7 +313,7 @@ export const deleteUser = (id: string) =>
 export const listUserLogins = (id: string, limit = 50) =>
   request<LoginLog[]>(`/api/users/${id}/logins?limit=${limit}`)
 
-// --- content review / ban workflow (spec 24) ---
+// --- content review / ban workflow ---
 // Pending queue: posts awaiting a review decision. Root sees every pending
 // post; an admin only sees pending posts authored by plain users.
 export const listPending = () => request<Post[]>('/api/admin/pending')
@@ -332,7 +342,7 @@ export const sendBackBanned = (id: string, note: string) =>
 export const deleteBanned = (id: string) =>
   request<void>(`/api/admin/banned/${id}`, { method: 'DELETE' })
 
-// --- site config (spec 05) ---
+// --- site config ---
 // Public read-only subset (brand/title/footer). No secrets.
 export const getSiteConfig = () =>
   request<SiteConfigPublic>('/api/site-config')
@@ -351,11 +361,11 @@ export const updateSiteConfig = (cfg: Partial<SiteConfigFull>) =>
 export const sendTestMail = () =>
   request<{ sent: boolean }>('/api/admin/mail/test', { method: 'POST' })
 
-// --- registration gate (spec 16) ---
+// --- registration gate ---
 export const registrationOpen = () =>
   request<{ open: boolean }>('/api/auth/register/open')
 
-// --- admin: dashboard (spec 06) ---
+// --- admin: dashboard ---
 export const getDashboard = () =>
   request<DashboardData>('/api/admin/dashboard')
 
@@ -383,7 +393,7 @@ export async function batchSetUserDisabled(
 export const exportBackup = () =>
   request<BackupResult>('/api/backup', { method: 'POST' })
 
-// Root-only: list the VACUUM INTO snapshots available for restore (P2-14).
+// Root-only: list the VACUUM INTO snapshots available for restore.
 export const listSnapshots = () =>
   request<SnapshotInfo[]>('/api/backup/snapshots')
 
@@ -474,7 +484,7 @@ export const uploadImage = (file: File, kind: 'post' | 'avatar' | 'site' = 'post
   return upload<UploadResult>('/api/upload', form)
 }
 
-// --- image library (admin: site-wide assets, spec 36) ---
+// --- image library (admin: site-wide assets) ---
 export const listUploads = (opts?: {
   owner?: string
   kind?: string
@@ -516,7 +526,7 @@ export const deleteMyUpload = (name: string) =>
   request<UploadDeleteResult>(`/api/me/uploads/${encodeURIComponent(name)}`, { method: 'DELETE' })
 
 // --- SM.MS image hosting ---
-// Spec #7: the SM.MS token is now held server-side (.env SM_MS_TOKEN or the
+// The SM.MS token is now held server-side (.env SM_MS_TOKEN or the
 // site-config img_host_token). The browser uploads through /api/upload, which
 // the backend proxies to SM.MS with the secret — the token never reaches the
 // client. `uploadImage` above is the single safe path.

@@ -5,7 +5,7 @@ import { getAuthor, errStatus } from '../core/api'
 import { useNav } from '../core/router'
 import { useQuery } from '../core/useQuery'
 
-// Public author profile (spec 15): display name, bio, avatar, and a list of
+// Public author profile: display name, bio, avatar, and a list of
 // the author's published posts. Reachable at /u/:username.
 export function AuthorPage({ username }: { username: string }) {
   const { t, locale } = useI18n()

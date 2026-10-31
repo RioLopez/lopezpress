@@ -16,7 +16,7 @@ import { fmtBytes, fmtDate } from '../core/format'
 import { AvatarCropper } from '../ui/AvatarCropper'
 import type { UploadPage } from '../core/types'
 
-// "My images" (spec 36). Deliberately not called a library and deliberately
+// "My images". Deliberately not called a library and deliberately
 // scoped to the caller: the site is not an image host for its members. What an
 // author gets is the ability to withdraw a picture they uploaded — a soft
 // delete, because breaking an article that already embeds it would punish the
@@ -87,8 +87,8 @@ function MyUploads() {
   )
 }
 
-// Profile editor (spec 15). Replaces the old SM.MS-token settings page: the
-// image-host token now lives server-side in site config (spec 05).
+// Profile editor. Replaces the old SM.MS-token settings page: the
+// image-host token now lives server-side in site config.
 export function SettingsPage() {
   const { user, refresh } = useAuth()
   const { t } = useI18n()
@@ -100,9 +100,9 @@ export function SettingsPage() {
   const [avatar, setAvatar] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
-  // The picked file, held only while the cropper is open (spec 36 §7).
+  // The picked file, held only while the cropper is open.
   const [cropFile, setCropFile] = useState<File | null>(null)
-  // Spec 37 (experimental): with verification on, the address is no longer a
+ // (experimental): with verification on, the address is no longer a
   // field you edit — it moves through a code mailed to the NEW address, so the
   // form shows the current one and a "change" panel instead.
   const [needVerify, setNeedVerify] = useState(false)
@@ -164,7 +164,7 @@ export function SettingsPage() {
     }
   }
 
-  // Spec 37: the two halves of the verified email change. The code goes to the
+ // The two halves of the verified email change. The code goes to the
   // NEW address, so receiving it is itself the proof of ownership.
   const sendEmailCode = async () => {
     if (!newEmail.trim()) {

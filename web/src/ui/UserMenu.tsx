@@ -20,7 +20,7 @@ function useMediaQuery(q: string): boolean {
   return matches
 }
 
-// Top-right user menu (spec 20).
+// Top-right user menu.
 //
 // PC (pointer fine / width >= 760): hover with a 300 ms close delay so the
 // pointer can travel into the popover; click goes to /me; keyboard opens
@@ -223,7 +223,7 @@ export function UserMenu() {
   )
 }
 
-// Renders the login/register entry when signed out (spec 20 §5).
+// Renders the login/register entry when signed out.
 export function LoginRegisterEntry({ children }: { children?: ComponentChildren }) {
   const { t } = useI18n()
   const [, navigate] = useNav()

@@ -219,7 +219,7 @@ export function AdminSitePage() {
             />
             <p class="settings-hint">
               {t('site.tokenHint')}
-              {/* Spec #7: the preferred location is the server's .env
+              {/* The preferred location is the server's .env
                   (SM_MS_TOKEN); this DB field is a legacy fallback that the
                   server still honours for backwards compatibility. */}
             </p>
@@ -227,7 +227,7 @@ export function AdminSitePage() {
         )}
       </section>
 
-      {/* Spec 36: the disk-protection numbers. They live next to the image
+      {/* The disk-protection numbers. They live next to the image
           host setting because they answer the same question — how much image
           data this instance is willing to hold. A zero/blank value is treated
           by the server as "keep the stored one", so a half-filled form can
@@ -302,7 +302,7 @@ export function AdminSitePage() {
         <p class="settings-hint">{t('site.externalAvatarHint')}</p>
       </section>
 
-      {/* Spec 37: email verification, labelled as experimental in the UI
+      {/* Email verification, labelled as experimental in the UI
           because that is what it is — it needs working SMTP, and switching it
           on changes what the sign-up form asks for. Root-only, the same tier
           as allow_register and the SMTP credentials it depends on. */}
@@ -370,7 +370,7 @@ export function AdminSitePage() {
         <p class="settings-hint">{t('site.publicReadHint')}</p>
       </section>
 
-      {/* Spec 34: root-only backup policy. Hidden from plain admins because the
+      {/* Root-only backup policy. Hidden from plain admins because the
           server ignores their value anyway — showing a switch that does not
           work is worse than not showing it. */}
       {isRootUser && (

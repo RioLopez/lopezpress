@@ -23,7 +23,6 @@ export function CreatePage() {
 
   return (
     <PostEditor
-      saveLabel={t('editor.publish')}
       publishing={busy}
       onCancel={() => navigate('/')}
       onSubmit={async (v) => {

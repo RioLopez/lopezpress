@@ -1,6 +1,6 @@
 import { useI18n } from '../../core/i18n'
 
-// Posts per page for the personal-center list sections (spec 20). This is a
+// Posts per page for the personal-center list sections. This is a
 // personal workspace, not the public list, so it does not follow
 // site_config.page_size.
 export const PAGE_SIZE = 10

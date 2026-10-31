@@ -11,13 +11,13 @@ export type ReaderTexts = {
     del: string
     empty: string
     emptyLoggedOut: string
-    // Spec 28: filtered result differs from "no posts at all".
+ // Filtered result differs from "no posts at all".
     noResults: string
     clearFilters: string
     deleteConfirm: string
     prevPage: string
     nextPage: string
-    // Spec 24: classic pager labels.
+ // Classic pager labels.
     pagination: string
     firstPage: string
     lastPage: string
@@ -34,7 +34,7 @@ export type ReaderTexts = {
     loadingMore: string
     noMore: string
     loadMore: string
-    // Spec 22: visibility labels for the content-management list. "private"
+ // Visibility labels for the content-management list. "private"
     // is a first-class badge.
     private: string
     visibility: string
@@ -79,7 +79,7 @@ export type ReaderTexts = {
     tocTitle: string
     related: string
     home: string
-    // Spec 29: permanent link
+ // Permanent link
     permanentLink: string
     linkCopied: string
     tocOpen: string

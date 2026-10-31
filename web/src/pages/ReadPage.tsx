@@ -38,7 +38,7 @@ export function ReadPage({ id }: { id: string }) {
   // Scroll-spy: id of the heading currently crossing the top of the viewport.
   const [activeHeading, setActiveHeading] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
-  // Spec 35: related posts. Loaded after the article so the body never waits
+ // Related posts. Loaded after the article so the body never waits
   // for it; an empty list simply hides the block.
   const [related, setRelated] = useState<Post[]>([])
   // Back-to-top: shows once the page scrolled past this many px.
@@ -133,10 +133,10 @@ export function ReadPage({ id }: { id: string }) {
         setPost(p)
         setRelated([])
         getPostPrevNext(id).then(setNav).catch(() => {})
-        // Spec 35: fired in parallel with the rest; the article body is
+ // Fired in parallel with the rest; the article body is
         // already on screen by the time this resolves.
         getRelatedPosts(id).then(setRelated).catch(() => setRelated([]))
-        // Spec 23: counting is an explicit report now — the GET above no
+ // Counting is an explicit report now — the GET above no
         // longer touches view_count. Only published posts are countable
         // (the endpoint 404s for anything else, which reportView swallows).
         if (p.status === 'published') {
@@ -319,7 +319,7 @@ export function ReadPage({ id }: { id: string }) {
               {t('read.reset')}
             </button>
           </div>
-          {/* Spec 29: the shareable form of this article. Hidden when the row
+          {/* The shareable form of this article. Hidden when the row
               predates slugs, so we never copy a dead link. */}
           {post.slug && (
             <button

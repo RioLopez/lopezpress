@@ -3,7 +3,7 @@ import type { Category } from './types'
 // Category tree helpers.
 //
 // The API returns categories flat (id / name / parent_id) and the site allows
-// exactly two levels (spec 27). Three separate places need the same view of
+// exactly two levels. Three separate places need the same view of
 // that tree — the sidebar, the list filter's <select>, and the article card's
 // breadcrumb — so the ordering logic lives here once instead of being
 // re-derived (and slowly drifting apart) in each component.

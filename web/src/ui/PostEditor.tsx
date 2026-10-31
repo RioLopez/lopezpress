@@ -1,25 +1,25 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
-import { renderMD, wordCount } from '../core/md'
-import { listCategories, listTags, uploadImage } from '../core/api'
+import { wordCount } from '../core/md'
+import { errMessage, listCategories, listTags, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { isAdmin, isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 import { normalizeTagInput, suggestTags } from '../core/tags'
 import type { EditorValues, PostStatus, Category, Tag } from '../core/types'
+import { VditorEditor, type EditorMode } from './VditorEditor'
 
-type EditorMode = 'split' | 'ir' | 'source'
 const DRAFT_TTL_DAYS = 30
 const DRAFT_TTL_MS = DRAFT_TTL_DAYS * 24 * 60 * 60 * 1000
 const AUTOSAVE_MS = 2500
 
 const draftKey = (id?: string) => `echo.draft${id ? '.' + id : ''}`
 
-// Spec 22: a post has only two visibilities. The editor's `status` state and
+// A post has only two visibilities. The editor's `status` state and
 // any persisted browser draft are constrained to this union — draft and
 // scheduled no longer exist.
-// Spec 24: only root may publish directly; every other role's post enters the
+// Only root may publish directly; every other role's post enters the
 // pending review queue server-side no matter which visibility is chosen here.
 type Visibility = PostStatus
 
@@ -64,19 +64,10 @@ function pruneOldDrafts() {
   }
 }
 
-// Toolbar: wrap / insert markdown at the caret. Reused for split + source.
-const TOOLBAR: { label: string; prefix: string; suffix: string; key: string }[] = [
-  { label: 'H1', prefix: '\n# ', suffix: '\n', key: 'editor.h1' },
-  { label: 'H2', prefix: '\n## ', suffix: '\n', key: 'editor.h2' },
-  { label: 'H3', prefix: '\n### ', suffix: '\n', key: 'editor.h3' },
-  { label: '**B**', prefix: '**', suffix: '**', key: 'editor.bold' },
-  { label: '*I*', prefix: '*', suffix: '*', key: 'editor.italic' },
-  { label: '`c`', prefix: '`', suffix: '`', key: 'editor.code' },
-  { label: '> ', prefix: '\n> ', suffix: '\n', key: 'editor.blockquote' },
-  { label: '- ', prefix: '\n- ', suffix: '\n', key: 'editor.list' },
-  { label: '[]', prefix: '[', suffix: '](url)', key: 'editor.link' },
-  { label: '![]', prefix: '![', suffix: '](url)', key: 'editor.image' },
-]
+// Formatting commands are Vditor's toolbar now. The hand-rolled button list
+// that used to live here inserted markdown at a textarea's caret, which meant
+// it also had to own caret restoration, selection handling and IME quirks -
+// all of it replaced by the editor's own `toolbar` option.
 
 export interface PostEditorProps {
   id?: string
@@ -88,7 +79,6 @@ export interface PostEditorProps {
   initialTags?: string[]
   initialPinned?: boolean
   initialCover?: string
-  saveLabel: string
   publishing?: boolean
   onCancel: () => void
   onSubmit: (v: EditorValues) => void
@@ -104,15 +94,14 @@ export function PostEditor({
   initialTags,
   initialPinned,
   initialCover = '',
-  saveLabel,
   publishing = false,
   onCancel,
   onSubmit,
 }: PostEditorProps) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { pushToast } = useApp()
   const { user } = useAuth()
-  // Spec 24: only root publishes straight to "published"; everyone else's
+ // Only root publishes straight to "published"; everyone else's
   // post enters the review queue server-side.
   const isRootUser = isRoot(user?.role)
   // Pinning floats a post to the top of every public list for every reader,
@@ -120,7 +109,7 @@ export function PostEditor({
   // and the control is hidden here to match (no button that 403s).
   const canPin = isAdmin(user?.role)
   const [title, setTitle] = useState(initialTitle)
-  // Spec 22: default to public ("published") when no initial status supplied.
+ // Default to public ("published") when no initial status supplied.
   // Any legacy draft/scheduled value is coerced back to public so a stale
   // record can never produce a hidden or scheduled post.
   const [status, setStatus] = useState<PostStatus>(
@@ -147,12 +136,7 @@ export function PostEditor({
   const [tagOpen, setTagOpen] = useState(false)
   const [tagActive, setTagActive] = useState(0)
   const [coverBusy, setCoverBusy] = useState(false)
-  const [splitPct, setSplitPct] = useState(50)
-  const [dragging, setDragging] = useState(false)
 
-  const editorHost = useRef<HTMLDivElement>(null)
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  const previewRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef(initialBody)
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -209,120 +193,20 @@ export function PostEditor({
     [scheduleAutosave],
   )
 
-  const insertAtCursor = (prefix: string, suffix = '') => {
-    const ta = taRef.current
-    if (!ta) return
-    const start = ta.selectionStart
-    const end = ta.selectionEnd
-    const selected = bodyRef.current.slice(start, end)
-    const replacement = prefix + selected + suffix
-    const next = bodyRef.current.slice(0, start) + replacement + bodyRef.current.slice(end)
-    setBodyValue(next)
-    requestAnimationFrame(() => {
-      ta.focus()
-      if (selected) {
-        const from = start + prefix.length
-        ta.setSelectionRange(from, from + selected.length)
-      } else {
-        const pos = start + prefix.length
-        ta.setSelectionRange(pos, pos)
-      }
-    })
-  }
-
-  const insertImageMarkdown = (url: string) => insertAtCursor(`![image](${url})`)
-
-  // Paste / drop image upload (split + source modes).
-  const handleFiles = async (files: FileList | File[]) => {
-    const imgs = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    for (const f of imgs) {
-      try {
-        const r = await uploadImage(f)
-        // Spec 36: tell the author when the library already had these exact
-        // bytes. Nothing new was stored, and saying so avoids "why is my
-        // gallery full of the same picture".
-        if (r.deduped) pushToast('info', t('imgUpload.deduped'))
-        insertImageMarkdown(r.url)
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  const onPaste = (e: ClipboardEvent) => {
-    if (mode === 'ir') return
-    const items = e.clipboardData?.items
-    if (!items) return
-    const hasImage = Array.from(items).some((it) => it.type.startsWith('image/'))
-    if (!hasImage) return
-    e.preventDefault()
-    const files: File[] = []
-    for (const it of Array.from(items)) {
-      if (it.type.startsWith('image/')) {
-        const f = it.getAsFile()
-        if (f) files.push(f)
-      }
-    }
-    handleFiles(files)
-  }
-
-  const onDrop = (e: DragEvent) => {
-    if (mode === 'ir') return
-    if (e.dataTransfer?.files?.length) {
-      e.preventDefault()
-      handleFiles(e.dataTransfer.files)
-    }
-    setDragging(false)
-  }
-
-  // Split: two-way scroll sync.
-  const onTaScroll = () => {
-    const ta = taRef.current
-    const pv = previewRef.current
-    if (!ta || !pv) return
-    const ratio = ta.scrollTop / (ta.scrollHeight - ta.clientHeight || 1)
-    pv.scrollTop = ratio * (pv.scrollHeight - pv.clientHeight)
-  }
-  const onPreviewScroll = () => {
-    const ta = taRef.current
-    const pv = previewRef.current
-    if (!ta || !pv) return
-    const ratio = pv.scrollTop / (pv.scrollHeight - pv.clientHeight || 1)
-    ta.scrollTop = ratio * (ta.scrollHeight - ta.clientHeight)
-  }
-
-  // Resizable divider (split mode).
-  useEffect(() => {
-    if (!dragging) return
-    const onMove = (e: MouseEvent) => {
-      const host = editorHost.current
-      if (!host) return
-      const rect = host.getBoundingClientRect()
-      const pct = ((e.clientX - rect.left) / rect.width) * 100
-      setSplitPct(Math.min(80, Math.max(20, pct)))
-    }
-    const onUp = () => setDragging(false)
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [dragging])
-
-  // Inline formatting shortcuts; yield to IME composition.
-  const onKeyDown = (e: KeyboardEvent) => {
-    if ((e as any).isComposing) return
-    if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return
-    const k = e.key.toLowerCase()
-    if (k === 'b') {
-      e.preventDefault()
-      insertAtCursor('**', '**')
-    } else if (k === 'i') {
-      e.preventDefault()
-      insertAtCursor('*', '*')
-    }
-  }
+  // Image ingestion for the editor. Vditor hands over the pasted or dropped
+  // files and inserts whatever markdown this returns, so the upload endpoint
+  // and the dedupe message stay in one place.
+  const uploadForEditor = useCallback(
+    async (file: File) => {
+      const r = await uploadImage(file)
+      // Tell the author when the library already had these exact bytes.
+      // Nothing new was stored, and saying so avoids "why is my gallery full
+      // of the same picture".
+      if (r.deduped) pushToast('info', t('imgUpload.deduped'))
+      return { url: r.url, name: r.name }
+    },
+    [pushToast, t],
+  )
 
   // Document-level shortcuts: Ctrl/Cmd+S = save (browser draft when creating,
   // explicit save when editing), Ctrl/Cmd+Enter = submit with current visibility.
@@ -465,8 +349,11 @@ export function PostEditor({
     try {
       const r = await uploadImage(file)
       setCover(r.url)
-    } catch {
-      /* ignore */
+    } catch (e) {
+      // Swallowing this left the button flashing "上传中…" and then nothing at
+      // all — no cover, no explanation, and no way to tell a rejected file
+      // from a server problem.
+      pushToast('error', errMessage(e, t('imgUpload.failed')))
     } finally {
       setCoverBusy(false)
     }
@@ -486,18 +373,41 @@ export function PostEditor({
       body: bodyRef.current,
       status: effectiveStatus,
       category_id: category !== '' ? Number(category) : undefined,
-      tags: tags.length ? tags : undefined,
+      // The tag set is always sent, empty included: the API reads an absent
+      // `tags` as "leave them alone" and `[]` as "remove every tag", so
+      // `tags.length ? tags : undefined` made deleting the last tag a no-op.
+      tags,
       pinned,
-      cover: cover || undefined,
+      // Same rule for the cover: "" is the instruction to remove it.
+      cover,
     })
   }
 
   const wc = wordCount(body)
   const readMin = wc ? Math.max(1, Math.round(wc / 300)) : 0
-  // New post -> "发布" (publish); existing post -> "更新" (update). No
-  // "save draft" variant: drafts were removed in spec 22.
-  const saveBtnLabel = status === 'rejected' ? t('editor.resubmit') : id ? t('editor.publishUpdate') : t('editor.publish')
-  const showToolbar = mode !== 'ir'
+  // The button has to say what will actually happen. For a non-root author,
+  // "发布" was a lie: the post goes to the review queue, not to readers. And a
+  // private save is not a publish at all. Root is the reviewer, so for root
+  // both words stay as they are.
+  //
+  // A caller-supplied label used to override all of this through
+  // `saveLabel || saveBtnLabel` — and since both call sites always passed one,
+  // every branch below was dead code: a non-root author saw "发布" on a button
+  // that only filed the article for review.
+  const wasPublished = initialStatus === 'published'
+  // A pending post has already asked for readers, so the public radio is the
+  // one that describes it. Neither radio matched `status === 'pending'`, which
+  // left the pair unselected on the one screen where the author needs to see
+  // what state the article is in.
+  const wantsPublic = status === 'published' || status === 'pending'
+  const saveBtnLabel = status === 'rejected'
+    ? t('editor.resubmit')
+    : isRootUser
+      ? (id ? t('editor.publishUpdate') : t('editor.publish'))
+      : status === 'private'
+        ? t('editor.savePrivate')
+        : wasPublished ? t('editor.publishUpdateRequeue') : t('editor.submitReview')
+  const busyLabel = status === 'private' ? t('editor.saving') : t('editor.publishing')
 
   return (
     <div class="post-editor">
@@ -522,11 +432,7 @@ export function PostEditor({
           disabled={publishing}
           onClick={() => doSubmit()}
         >
-          {publishing
-            ? t('editor.publishing')
-            : status === 'rejected'
-              ? t('editor.resubmit')
-              : saveLabel || saveBtnLabel}
+          {publishing ? busyLabel : saveBtnLabel}
         </button>
       </div>
 
@@ -541,22 +447,10 @@ export function PostEditor({
         }}
       />
 
-      {/* Row 3: editor toolbar (formatting, left) + mode switch (right). */}
+      {/* Mode switch only. Vditor renders its own formatting toolbar inside
+          the editing area, and a second one up here would be a duplicate
+          source of truth for the same commands. */}
       <div class="pe-toolbar">
-        {showToolbar && (
-          <div class="pe-tools">
-            {TOOLBAR.map((b) => (
-              <button
-                key={b.label}
-                class="tool-btn"
-                title={t(b.key)}
-                onClick={() => insertAtCursor(b.prefix, b.suffix)}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
-        )}
         <div class="pe-modes" role="group" aria-label="editor mode">
           <button class={`pe-mode ${mode === 'split' ? 'pe-mode--active' : ''}`} onClick={() => setMode('split')}>
             {t('editor.modeSplit')}
@@ -571,62 +465,16 @@ export function PostEditor({
       </div>
 
       <div class="pe-grid">
-        <div
-          class={`pe-editor ${dragging ? 'pe-dragging' : ''}`}
-          ref={editorHost}
-          onDragOver={(e) => {
-            if (mode === 'ir') return
-            e.preventDefault()
-            setDragging(true)
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-        >
-          {mode === 'split' && (
-            <div class="pe-split" style={`grid-template-columns: ${splitPct}% 1fr`}>
-              <textarea
-                ref={taRef}
-                class="pe-ta"
-                value={body}
-                placeholder={t('editor.bodyPlaceholder')}
-                onInput={(e) => setBodyValue((e.target as HTMLTextAreaElement).value)}
-                onScroll={onTaScroll}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-              />
-              <div class="pe-preview" ref={previewRef} onScroll={onPreviewScroll}>
-                {body ? (
-                  <div class="md-body" dangerouslySetInnerHTML={{ __html: renderMD(body) }} />
-                ) : (
-                  <p class="muted">{t('post.emptyBody')}</p>
-                )}
-              </div>
-              <div class="pe-divider" style={`left:${splitPct}%`} onMouseDown={() => setDragging(true)} title={t('editor.dragDivider')} />
-            </div>
-          )}
-
-          {mode === 'source' && (
-            <textarea
-              ref={taRef}
-              class="pe-ta pe-ta--full"
-              value={body}
-              placeholder={t('editor.bodyPlaceholder')}
-              onInput={(e) => setBodyValue((e.target as HTMLTextAreaElement).value)}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-            />
-          )}
-
-          {mode === 'ir' && (
-            <div class="pe-ir">
-              {body ? (
-                <div class="md-body" dangerouslySetInnerHTML={{ __html: renderMD(body) }} />
-              ) : (
-                <p class="muted">{t('post.emptyBody')}</p>
-              )}
-              <p class="pe-pinned-hint">{t('editor.modeIR')}：实时预览（只读）。编辑请切到「分屏预览」或「纯源码」。</p>
-            </div>
-          )}
+        <div class="pe-editor">
+          <VditorEditor
+            value={body}
+            onChange={setBodyValue}
+            mode={mode}
+            lang={locale === 'zh' ? 'zh_CN' : 'en_US'}
+            placeholder={t('editor.bodyPlaceholder')}
+            onUploadImage={uploadForEditor}
+            onUploadError={(m) => pushToast('error', m)}
+          />
 
           <div class="pe-statline">
             <span>{t('editor.stats', { n: String(wc) })}</span>
@@ -744,11 +592,11 @@ export function PostEditor({
               </div>
             ) : (
               <div class="pe-visibility" role="radiogroup" aria-label={t('editor.visibility')}>
-                <label class={`pe-visibility-opt ${status === 'published' ? 'is-active' : ''}`}>
+                <label class={`pe-visibility-opt ${wantsPublic ? 'is-active' : ''}`}>
                   <input
                     type="radio"
                     name="pe-visibility"
-                    checked={status === 'published'}
+                    checked={wantsPublic}
                     onChange={() => setStatus('published')}
                   />
                   <span class="pe-visibility-dot pe-visibility-dot--public"></span>
@@ -769,11 +617,20 @@ export function PostEditor({
             <p class="pe-pinned-hint">
               {status === 'private' ? t('editor.visibilityPrivateHint') : t('editor.visibilityPublicHint')}
             </p>
-            {/* Spec 24: non-root posts always queue for review, so surface
-                that up front instead of letting the author wonder why the
-                post never went public. */}
-            {!isRootUser && (
-              <p class="pe-pinned-hint pe-review-hint">{t('editor.visibilityReviewHint')}</p>
+            {/* A non-root post that goes public queues for review, so
+                say so. It must only appear for the public choice — showing it
+                next to 私密 contradicted the line directly above ("只有你自己
+                能看到"), and for a while the server agreed with the wrong one.
+                A live post says something stronger than a new one: editing it
+                re-opens the review, so the article leaves the public site until
+                it passes again. Saying only "提交后进入审核队列" here would be
+                true and useless — the author already cleared that queue once. */}
+            {!isRootUser && status !== 'private' && (
+              <p class="pe-pinned-hint pe-review-hint">
+                {status === 'pending'
+                  ? t('editor.pendingHint')
+                  : wasPublished ? t('editor.rereviewHint') : t('editor.visibilityReviewHint')}
+              </p>
             )}
           </div>
 

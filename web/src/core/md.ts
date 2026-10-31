@@ -93,6 +93,85 @@ export function stripHTML(html: string): string {
   return doc.body.textContent || ''
 }
 
+// --- card excerpts --------------------------------------------------------
+
+// Named entities that markdown authors actually type. Decoding is a single
+// pass and deliberately not recursive: "&amp;lt;" means the literal text
+// "&lt;", so a second pass would be a bug, not a convenience.
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'",
+}
+
+// plainText flattens a markdown source into the text a list card needs,
+// without parsing it.
+//
+// The list page used to call stripHTML(renderMD(body)) once per card — a full
+// markdown parse, plus a DOMParser document, plus a querySelectorAll('*')
+// walk over every attribute — ten times on a full page, and then discarded
+// everything past the first 120 characters. A regex pass yields the same
+// card-visible text for a fraction of the cost and never touches the DOM.
+//
+// The results follow renderMD's output rather than the raw source: image alt
+// text survives and the URL does not (the RSS excerpt makes the same call),
+// link text survives and the target does not, inline code keeps its content,
+// fenced code blocks and table rules disappear.
+export function plainText(src: string | null | undefined): string {
+  if (!src) return ''
+  let s = String(src)
+
+  // Fenced blocks first: their contents can contain anything, including lines
+  // that look like markdown, and none of it belongs on a card.
+  s = s.replace(/^[ \t]*(```+|~~~+)[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm, ' ')
+  // An unterminated fence leaves its opening line behind; drop that too.
+  s = s.replace(/^[ \t]*(?:```+|~~~+)[^\n]*$/gm, ' ')
+
+  // Comments, then tag-shaped text only. Requiring a letter after "<" keeps
+  // "a < b" in a sentence while <span>...</span> still contributes its text.
+  s = s.replace(/<!--[\s\S]*?-->/g, ' ')
+  s = s.replace(/<\/?[a-zA-Z][^>]*>/g, '')
+
+  // Images keep their alt text; links keep their label.
+  s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+  s = s.replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
+
+  // Table separator rows carry no text at all, and horizontal rules must be
+  // consumed before bullets get a chance to read "- - -" as a list item.
+  s = s.replace(/^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)+\|?[ \t]*$/gm, ' ')
+  s = s.replace(/^[ \t]{0,3}(?:[-*_][ \t]*){3,}$/gm, ' ')
+  s = s.replace(/^[ \t]{0,3}(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)/gm, '')
+
+  // Emphasis markers. Backticks mean nothing outside code and asterisks mean
+  // nothing outside emphasis. Underscores are left alone when they sit inside
+  // a word: snake_case identifiers are far more common here than _emphasis_.
+  s = s.replace(/`+/g, '')
+  s = s.replace(/\*\*|__|~~/g, '')
+  s = s.replace(/\*/g, '')
+  s = s.replace(/(^|[\s(（])_([^_\n]+)_(?=$|[\s)）,.!?，。！？])/g, '$1$2')
+
+  // Pipes become spaces rather than gluing adjacent cells into one word.
+  s = s.replace(/\|/g, ' ')
+
+  // Entities decode after tags are gone. Decoding first would turn &lt;b&gt;
+  // into a tag that the line above would then delete.
+  s = s.replace(/&(amp|lt|gt|quot|apos|nbsp|#39);/g, (m, name) => NAMED_ENTITIES[name] ?? m)
+
+  s = s.replace(/[ \t\u00a0]+/g, ' ')
+  s = s.replace(/\s*\n\s*/g, ' ')
+  return s.replace(/^[\s.,;:!?，。；：！？、\-–—]+|[\s.,;:!?，。；：！？、\-–—]+$/g, '')
+}
+
+// excerpt is plainText capped to `max` characters plus an ellipsis. The cut is
+// by code point rather than UTF-16 unit, so an emoji is never sliced in half
+// and rendered as a replacement box.
+export function excerpt(src: string | null | undefined, max = 120): string {
+  const text = plainText(src)
+  if (!text) return ''
+  const chars = Array.from(text)
+  if (chars.length <= max) return text
+  return chars.slice(0, max).join('').trimEnd() + '…'
+}
+
 // Escape the 5 HTML-unsafe characters so a string can be embedded as text.
 export function escapeHTML(s: string): string {
   return s

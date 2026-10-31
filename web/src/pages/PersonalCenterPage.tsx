@@ -5,7 +5,7 @@ import { MyHomepage } from './personal/MyHomepage'
 import { ContentManage } from './personal/ContentManage'
 import { SecurityCenter } from './personal/SecurityCenter'
 
-// Personal center (spec 20). Current user's own page with a left sidebar
+// Personal center. Current user's own page with a left sidebar
 // (PC) / top tabs (mobile, reserved) and three sections: My Homepage,
 // Content, Security. Each section lives in pages/personal/ to keep this
 // shell small; PC-first, mobile degrades via CSS.

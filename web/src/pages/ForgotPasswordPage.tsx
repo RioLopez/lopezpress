@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
+import { passwordProblem } from '../core/password'
 import { getSiteConfig, requestEmailCode, resetPasswordWithCode, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
-// Self-service password reset (spec 37, experimental).
+// Self-service password reset (experimental).
 //
 // Two steps on one page rather than two routes: the code is short-lived and
 // the user is already looking at the form they typed their address into.
@@ -56,8 +57,9 @@ export function ForgotPasswordPage() {
       pushToast('error', t('auth.empty'))
       return
     }
-    if (password.length < 8) {
-      pushToast('error', t('auth.passwordTooShort'))
+    const problem = passwordProblem(password)
+    if (problem) {
+      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
       return
     }
     setBusy(true)

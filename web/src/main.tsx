@@ -16,6 +16,7 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { ListPage } from './pages/ListPage'
 import { ArchivePage } from './pages/ArchivePage'
+import { SubscribePage } from './pages/SubscribePage'
 import { CreatePage } from './pages/CreatePage'
 import { EditPage } from './pages/EditPage'
 import { ReadPage } from './pages/ReadPage'
@@ -44,7 +45,7 @@ function Guarded({ children }: { children: any }) {
   return children as any
 }
 
-// Spec 27: reader-facing routes (list / archive / article) are readable
+// Reader-facing routes (list / archive / article) are readable
 // anonymously ONLY when the admin enabled site_config.public_read. Authoring
 // routes keep using Guarded — a signed-out visitor can never reach them.
 // The API enforces the same switch (anonymous reads 401 when locked), so this
@@ -57,7 +58,7 @@ function Readable({ children }: { children: any }) {
 }
 
 // Admin pages: require a JWT *and* a role in the allow-list, then render
-// inside the left-vertical sidebar shell (spec 06). Root is the super-admin;
+// inside the left-vertical sidebar shell. Root is the super-admin;
 // admins manage day-to-day. The allow-list lives HERE (the routing layer) —
 // pages must not re-check roles (ARCH_REVIEW F3), which is what caused the
 // duplicated `user?.role !== 'admin' && ...` guards across admin pages.
@@ -105,6 +106,14 @@ function AppView() {
         path="/archive"
         component={() => <Readable><ArchivePage /></Readable>}
       />
+      {/* The footer's "RSS" link lands here, not on /feed: a feed is an XML
+          document for a reader to poll, and dropping raw XML into a tab read
+          as a broken page. This is the human entry point; /feed stays public
+          and unchanged for actual readers. */}
+      <Route
+        path="/subscribe"
+        component={() => <Readable><SubscribePage /></Readable>}
+      />
       <Route
         path="/create"
         component={() => <Guarded><CreatePage /></Guarded>}
@@ -121,7 +130,7 @@ function AppView() {
           <Readable><ReadPage id={p.params.id} /></Readable>
         )}
       />
-      {/* Spec 29: permanent links. /read/{uuid} stays valid forever, so both
+      {/* Permanent links. /read/{uuid} stays valid forever, so both
           shapes address the same post. */}
       <Route
         path="/p/:slug"
@@ -133,7 +142,7 @@ function AppView() {
         path="/settings"
         component={() => <Guarded><SettingsPage /></Guarded>}
       />
-      {/* Personal center (spec 20): my homepage / content / security. */}
+      {/* Personal center: my homepage / content / security. */}
       <Route
         path="/me"
         component={() => <Guarded><PersonalCenterPage /></Guarded>}
@@ -185,12 +194,12 @@ function AppView() {
         path="/admin/audit"
         component={() => <AdminGuarded><AdminAuditPage /></AdminGuarded>}
       />
-      {/* Content review workflow (spec 24): pending queue for admin/root. */}
+      {/* Content review workflow: pending queue for admin/root. */}
       <Route
         path="/admin/review"
         component={() => <AdminGuarded><AdminReviewPage /></AdminGuarded>}
       />
-      {/* Ban vault (spec 24): root-only list of banned posts. */}
+      {/* Ban vault: root-only list of banned posts. */}
       <Route
         path="/admin/banned"
         component={() => <AdminGuarded roles={['root']}><AdminBanVaultPage /></AdminGuarded>}
@@ -204,14 +213,14 @@ function AppView() {
         path="/register"
         component={() => <GuestOnly><RegisterPage /></GuestOnly>}
       />
-      {/* Self-service password reset (spec 37, experimental). GuestOnly: a
+      {/* Self-service password reset (experimental). GuestOnly: a
           signed-in user changes the password from the settings page instead,
           where the current one is required. */}
       <Route
         path="/forgot-password"
         component={() => <GuestOnly><ForgotPasswordPage /></GuestOnly>}
       />
-      {/* Forced first-login password change (first-boot admin, spec #2).
+      {/* Forced first-login password change (first-boot admin).
           Guarded but NOT GuestOnly: the user must be signed in, and if the
           flag is already cleared the page just hands off to "/" cleanly. */}
       <Route

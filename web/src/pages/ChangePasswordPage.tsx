@@ -1,5 +1,5 @@
 // ChangePasswordPage: forced first-login password change for the first-boot
-// admin (spec #2). Rendered at /change-password. The user can only leave this
+// admin. Rendered at /change-password. The user can only leave this
 // screen by successfully changing their password; they are not allowed to
 // navigate away or cancel.
 
@@ -7,11 +7,12 @@ import { useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
+import { passwordProblem } from '../core/password'
 import { changePassword, errMessage } from '../core/api'
 import { useNav } from '../core/router'
 
 export function ChangePasswordPage() {
-  const { user, adoptToken } = useAuth()
+  const { user, loading, adoptToken } = useAuth()
   const { pushToast } = useApp()
   const { t } = useI18n()
   const [, navigate] = useNav()
@@ -20,11 +21,18 @@ export function ChangePasswordPage() {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // `hasToken` (the route guard) reads localStorage, so it lets this page
+  // render before /api/auth/me has answered. Deciding anything about the flag
+  // during that round-trip showed the "nothing to change" verdict first and
+  // the real form a moment later; when /me used to omit the flag, the wrong
+  // verdict was also the final one and the user got stuck behind 403s.
+  if (loading || !user) return null
+
   // If the user is no longer flagged for a forced change, let them through.
-  if (!user?.must_change_password) {
+  if (!user.must_change_password) {
     return (
       <div class="auth-card">
-        <h1>{t('auth.welcomeBack')}{user?.username}</h1>
+        <h1>{t('auth.welcomeBack')}{user.username}</h1>
         <p class="muted">{t('password.alreadySet')}</p>
         <button class="btn btn-primary btn-block" onClick={() => navigate('/')}>
           {t('password.continue')}
@@ -42,8 +50,9 @@ export function ChangePasswordPage() {
       pushToast('error', t('password.mismatch'))
       return
     }
-    if (next.length < 8) {
-      pushToast('error', t('password.tooShort'))
+    const problem = passwordProblem(next)
+    if (problem) {
+      pushToast('error', t(problem === 'long' ? 'password.tooLong' : 'password.tooShort'))
       return
     }
     setBusy(true)

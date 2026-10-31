@@ -4,7 +4,7 @@ import { useI18n } from '../core/i18n'
 import { listRevisions, restoreRevision, errMessage } from '../core/api'
 import type { Revision } from '../core/types'
 
-// Spec 31: collapsed history panel on the edit page. Shows the pre-edit
+// Collapsed history panel on the edit page. Shows the pre-edit
 // snapshots newest-first; restoring one navigates to the read view so the user
 // sees exactly what came back (the editor already holds unsaved state).
 export function RevisionList({ postId, onRestored }: { postId: string; onRestored: () => void }) {

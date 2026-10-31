@@ -7,7 +7,7 @@ import type { TagWithCount } from '../core/types'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
 
-// Spec 25: rename in place, filter locally, and make the count a link into the
+// Rename in place, filter locally, and make the count a link into the
 // public list's ?tag= filter. The filter is client-side on purpose — a blog has
 // tens of tags, not thousands, so a backend search endpoint would be dead
 // weight on a 1 GB VPS.

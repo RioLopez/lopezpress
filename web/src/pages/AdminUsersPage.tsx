@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
+import { passwordProblem } from '../core/password'
 import { listUsers, setUserDisabled, updateUser, createUser, resetPassword, deleteUser, listUserLogins, batchSetUserDisabled, errMessage } from '../core/api'
 import type { LoginLog, UserWithDisabled } from '../core/types'
 import { fmtDate } from '../core/format'
@@ -351,8 +352,9 @@ function CreateUserModal({
       pushToast('error', t('auth.empty'))
       return
     }
-    if (password.length < 8) {
-      pushToast('error', t('auth.passwordTooShort'))
+    const problem = passwordProblem(password)
+    if (problem) {
+      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
       return
     }
     setBusy(true)
@@ -423,8 +425,9 @@ function ResetPasswordModal({
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    if (password.length < 8) {
-      pushToast('error', t('auth.passwordTooShort'))
+    const problem = passwordProblem(password)
+    if (problem) {
+      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
       return
     }
     if (!(await confirmDialog(t('admin.resetPwdConfirm', { t: user.username })))) return

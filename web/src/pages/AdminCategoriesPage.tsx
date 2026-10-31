@@ -7,7 +7,7 @@ import type { CategoryWithCount } from '../core/types'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
 
-// Spec 27: categories are a TWO-level tree (parent -> child, never deeper).
+// Categories are a TWO-level tree (parent -> child, never deeper).
 // The table renders parents first, then their children indented underneath,
 // so the structure is legible without a drag-and-drop tree widget.
 

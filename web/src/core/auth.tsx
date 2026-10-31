@@ -5,7 +5,7 @@ import { createContext } from 'preact'
 import { useContext, useEffect, useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import { me as getMe, login as apiLogin, logout as apiLogout, register as apiRegister } from './api'
-import { setTokenGetter, setOnUnauthorized } from './api'
+import { setTokenGetter, setOnUnauthorized, setOnPasswordChangeRequired } from './api'
 import type { AuthResult, UserPublic } from './types'
 
 const TOKEN_KEY = 'echo.token'
@@ -26,10 +26,10 @@ interface AuthContextValue {
   login: (
     email: string,
     password: string,
-    captcha?: { id?: string; code?: string; x?: number },
+    captcha?: { id?: string; code?: string },
   ) => Promise<UserPublic>
   // code is only used while the site has email verification switched on
-  // (spec 37, experimental); pass undefined otherwise.
+ // (experimental); pass undefined otherwise.
   register: (u: string, e: string, p: string, code?: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
@@ -57,6 +57,13 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
       setUser(null)
       if (!location.pathname.startsWith('/login')) location.assign('/login')
     })
+    // Opposite outcome: the session is still valid, it just cannot do anything
+    // until the password is changed. Mark the flag locally so the form renders,
+    // then land on it.
+    setOnPasswordChangeRequired(() => {
+      setUser((u) => (u ? { ...u, must_change_password: true } : u))
+      if (!location.pathname.startsWith('/change-password')) location.assign('/change-password')
+    })
     const t = localStorage.getItem(TOKEN_KEY)
     if (!t) {
       setLoading(false)
@@ -74,14 +81,13 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
   const doLogin = async (
     email: string,
     password: string,
-    captcha?: { id?: string; code?: string; x?: number },
+    captcha?: { id?: string; code?: string },
   ): Promise<UserPublic> => {
     const res: AuthResult = await apiLogin({
       email,
       password,
       captcha_id: captcha?.id,
       captcha_code: captcha?.code,
-      captcha_x: captcha?.x,
     })
     localStorage.setItem(TOKEN_KEY, res.token)
     setUser(res.user)
@@ -89,7 +95,7 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
   }
 
   const doRegister = async (u: string, e: string, p: string, code?: string): Promise<void> => {
-    // The register endpoint issues a JWT itself (spec 04 AC-2.2), so the new
+ // The register endpoint issues a JWT itself, so the new
     // account is signed in immediately without a second login round trip.
     const res: AuthResult = await apiRegister({ username: u, email: e, password: p, code })
     localStorage.setItem(TOKEN_KEY, res.token)
