@@ -1,4 +1,4 @@
-"""Minimal SMTP sink for the smoke test (spec 37).
+"""Minimal SMTP sink for the smoke test.
 
 Answers just enough of RFC 5321 for services/smtpSend to complete a plain
 (non-TLS, non-AUTH) delivery, and writes every message to <outdir>/mailNNN.eml.
