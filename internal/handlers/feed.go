@@ -12,25 +12,25 @@ import (
 // --- RSS 2.0 feed (GET /feed, public) ---
 
 type rssFeed struct {
-	XMLName xml.Name    `xml:"rss"`
-	Version string       `xml:"version,attr"`
-	Channel rssChannel   `xml:"channel"`
+	XMLName xml.Name   `xml:"rss"`
+	Version string     `xml:"version,attr"`
+	Channel rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
-	Title        string    `xml:"title"`
-	Link         string    `xml:"link"`
-	Description  string    `xml:"description"`
-	LastBuildDate string   `xml:"lastBuildDate"`
-	Items        []rssItem `xml:"item"`
+	Title         string    `xml:"title"`
+	Link          string    `xml:"link"`
+	Description   string    `xml:"description"`
+	LastBuildDate string    `xml:"lastBuildDate"`
+	Items         []rssItem `xml:"item"`
 }
 
 type rssItem struct {
-	Title       string   `xml:"title"`
-	Link        string   `xml:"link"`
-	Description string   `xml:"description"`
-	GUID        rssGUID  `xml:"guid"`
-	PubDate     string   `xml:"pubDate"`
+	Title       string  `xml:"title"`
+	Link        string  `xml:"link"`
+	Description string  `xml:"description"`
+	GUID        rssGUID `xml:"guid"`
+	PubDate     string  `xml:"pubDate"`
 }
 
 // rssGUID marks the item link as a permanent identifier.
@@ -89,11 +89,11 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 	feed := rssFeed{
 		Version: "2.0",
 		Channel: rssChannel{
-			Title:        title,
-			Link:         base,
-			Description:  desc,
+			Title:         title,
+			Link:          base,
+			Description:   desc,
 			LastBuildDate: time.Now().UTC().Format(time.RFC1123Z),
-			Items:        make([]rssItem, 0, len(posts)),
+			Items:         make([]rssItem, 0, len(posts)),
 		},
 	}
 	for _, p := range posts {
@@ -153,12 +153,25 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// feedBaseURL returns the canonical site base URL. An explicitly configured
-// site_url wins; otherwise it is derived from the request (honouring
-// X-Forwarded-Proto behind a reverse proxy).
+// feedBaseURL returns the canonical site base URL as a bare origin
+// (scheme://host[:port]) — no path, query, or trailing slash.
+//
+// An explicitly configured site_url wins, but only its origin survives: every
+// link in the feed and sitemap is built by appending to this string, so a
+// stored path is not a cosmetic problem, it rewrites every URL. Production once
+// held ".../admin" and both files spent their whole life advertising
+// ".../admin/p/<slug>" — 404s that also handed crawlers the admin path.
+// Truncating here rather than trusting the stored value means links are correct
+// even before the settings form is re-saved.
+//
+// With no usable site_url the base is derived from the request, honouring
+// X-Forwarded-Proto behind the reverse proxy.
 func feedBaseURL(r *http.Request, siteURL string) string {
 	if u := strings.TrimSpace(siteURL); u != "" {
-		return strings.TrimRight(u, "/")
+		if parsed, err := url.Parse(u); err == nil && parsed.Host != "" &&
+			(parsed.Scheme == "http" || parsed.Scheme == "https") {
+			return parsed.Scheme + "://" + parsed.Host
+		}
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -175,8 +188,15 @@ func feedBaseURL(r *http.Request, siteURL string) string {
 // dropped, and the result is truncated to n runes.
 var reMDLink = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 
+// An image "![alt](url)" contains the bracketed form "[alt](url)" that
+// reMDLink matches, so stripping links first leaves the leading "!" behind and
+// a photo-heavy post's excerpt reads "!个人简历 !机房 …". Strip the whole image
+// first (keeping only its alt text as the snippet) so no bare "!" ever ships.
+var reMDImage = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
+
 func feedExcerpt(md string, n int) string {
-	s := reMDLink.ReplaceAllString(md, "$1")
+	s := reMDImage.ReplaceAllString(md, "$1")
+	s = reMDLink.ReplaceAllString(s, "$1")
 	s = strings.Map(func(r rune) rune {
 		switch r {
 		case '#', '*', '_', '`', '>', '~':
@@ -210,7 +230,7 @@ func writeXML(w http.ResponseWriter, contentType string, v any) {
 	w.Write(out)
 }
 
-// permalink prefers the slug form (spec 29) and falls back to the UUID route
+// permalink prefers the slug form and falls back to the UUID route
 // for rows created before slugs existed. One helper so RSS and sitemap can
 // never advertise two different shapes of the same URL.
 //
@@ -228,7 +248,7 @@ func permalink(base, slug, id string) string {
 	return base + "/read/" + id
 }
 
-// Robots serves /robots.txt (spec 28).
+// Robots serves /robots.txt.
 //
 // A blog without a robots.txt is not broken, but the file is also the only
 // place to declare the sitemap and to keep /admin + /api out of crawlers. It

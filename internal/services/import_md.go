@@ -11,7 +11,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// Markdown import (spec 32).
+// Markdown import.
 //
 // The single biggest reason a buyer walks away: their existing posts live in
 // another system and retyping them is not an option. This is the smallest
@@ -22,7 +22,7 @@ import (
 // Import limits: small enough to stay inside one request on a 1 vCPU box.
 const (
 	maxMarkdownFiles = 200
-	maxImportBytes = 2 << 20 // 2 MB per file
+	maxImportBytes   = 2 << 20 // 2 MB per file
 )
 
 // MarkdownSkip records a file that was not imported, with the reason.
@@ -33,7 +33,6 @@ type frontmatter struct {
 	Date     time.Time
 	Category string
 	Tags     []string
-	Draft    bool
 }
 
 // parseFrontmatter splits `---` ... `---` off the top and reads flat
@@ -82,8 +81,6 @@ func parseFrontmatter(raw string) (frontmatter, string) {
 			fm.Category = strings.TrimSpace(strings.Split(val, ",")[0])
 		case "tags", "tag":
 			fm.Tags = parseTagList(val)
-		case "draft":
-			fm.Draft = val == "true" || val == "yes" || val == "1"
 		}
 	}
 	return fm, strings.TrimLeft(body, "\n")
@@ -184,14 +181,11 @@ func (s *Service) ImportMarkdown(ctx context.Context, actor models.User, files [
 		}
 
 		// Status follows the same rule as manual creation: only root publishes
-		// directly, everyone else lands in the review queue. A `draft: true`
-		// file becomes private (this build has no draft state).
+		// directly, everyone else lands in the review queue. This build has no
+		// draft state, so a "draft: true" front matter is simply ignored.
 		status := models.PostPending
 		if actor.Role == models.RoleRoot {
 			status = models.PostPublished
-		}
-		if fm.Draft {
-			status = models.PostPrivate
 		}
 
 		post := models.Post{

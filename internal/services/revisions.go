@@ -8,7 +8,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// Revision history (spec 31).
+// Revision history.
 //
 // Every UpdatePost first snapshots the CURRENT row, so what you get back is
 // "the state before this save". Rolling back is therefore just another update:

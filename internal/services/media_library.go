@@ -10,7 +10,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- image library: quotas, stats, listing (spec 36) ------------------------
+// --- image library: quotas, stats, listing ------------------------
 //
 // Deletion and the reference ledger live in media_refs.go.
 

@@ -9,7 +9,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// allowedPageSizes is the closed set an admin may choose from (spec 24).
+// allowedPageSizes is the closed set an admin may choose from.
 var allowedPageSizes = []int{5, 10, 20, 30}
 
 // DefaultPageSize is used when the site config is missing/illegal.
@@ -74,7 +74,7 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 		q.Page = 1
 	}
 	if q.PageSize < 1 {
-		// Spec 24: the server — not the client — decides the page size, so
+		// The server — not the client — decides the page size, so
 		// that ?page=N means the same thing for every visitor and stays
 		// shareable. Explicit sizes (admin tables, personal center) still win.
 		q.PageSize = s.ListPageSize(ctx)
@@ -85,21 +85,21 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 
 	applyFilters := func(db *gorm.DB) *gorm.DB {
 		query := db.WithContext(ctx).Model(&models.Post{})
-		// Author-only states: nobody but the author sees these, whatever the
-		// caller's role (see canSeePost). Kept in one slice so the list filter
-		// and the single-post guard cannot drift apart.
-		authorOnly := []string{models.PostPrivate, models.PostDraft}
+		// Each branch below must be the SQL spelling of canSeePost, or the
+		// list will show a post that the detail endpoint then 404s. The one
+		// asymmetry that still exists is deliberate and about *authorship*,
+		// not visibility: a signed-in member sees their own unpublished work
+		// in their personal center without being an operator.
 		switch {
 		case user.Role == models.RoleRoot:
-			// root: the moderation view — every post including the banned
-			// vault, EXCEPT other people's author-only posts.
-			query = query.Where("posts.status NOT IN ? OR posts.author_id = ?", authorOnly, user.ID)
+			// root: the moderation view — every post, including the banned
+			// vault and every author's private posts. No status filter at all.
+			// (Banned rows are root-only, and root is who this branch is for.)
 		case user.Role == models.RoleAdmin:
-			// admin: everything except the banned vault (root-only) and other
-			// people's author-only posts.
-			query = query.Where(
-				"(posts.status NOT IN ? AND posts.status <> ?) OR posts.author_id = ?",
-				authorOnly, models.PostBanned, user.ID)
+			// admin: everything except the banned vault (root-only). Private
+			// posts are included: an admin reads them to handle reports, but
+			// cannot rewrite their words (see UpdatePost's R5-05 guard).
+			query = query.Where("posts.status <> ?", models.PostBanned)
 		case user.ID != "":
 			// Signed-in member (user): public posts PLUS their own
 			// restricted posts (private / pending / rejected). They never see
@@ -136,7 +136,7 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 				Where("posts.title LIKE ? ESCAPE '\\' OR posts.body LIKE ? ESCAPE '\\' OR author.username LIKE ? ESCAPE '\\'", like, like, like)
 		}
 		if q.Category != "" {
-			// Spec 27: selecting a parent also returns its children's posts,
+			// Selecting a parent also returns its children's posts,
 			// otherwise a parent node looks empty while its content sits one
 			// level down.
 			//
@@ -215,5 +215,9 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 	// list an anonymous visitor hits, so it must never carry them.
 	models.SanitizePostAuthors(posts)
 	models.SanitizePostReviews(posts)
+	// Cards are a few hundred pixels wide; handing them the full-size cover is
+	// the largest image waste on the busiest page, since a listing renders ten
+	// at once.
+	s.attachCoverThumbs(ctx, posts)
 	return PostPage{Items: posts, Total: total, Page: q.Page, PageSize: q.PageSize}, nil
 }

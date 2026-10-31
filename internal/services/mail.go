@@ -35,7 +35,7 @@ const (
 	// reviewer. Sent on review outcomes; not throttled (one-shot events).
 	MailReviewResult MailKind = "review_result"
 	// MailEmailChanged goes to the *previous* address after a verified email
-	// change (spec 37). It is the only warning the old inbox will ever get,
+	// change. It is the only warning the old inbox will ever get,
 	// which is exactly why it is sent before anything else can go wrong.
 	MailEmailChanged MailKind = "email_changed"
 )
@@ -178,7 +178,7 @@ func (s *Service) SendTestMail(ctx context.Context, actor models.User) error {
 	body := "This is a test message from the Echo admin panel.\n" +
 		"If you received it, your SMTP settings are correct.\n"
 	if err := smtpSend(ctx, sm, from, actor.Email, subject, body); err != nil {
-		return newErr(http.StatusBadGateway, "smtp send failed: "+err.Error())
+		return newErr(http.StatusBadGateway, "smtp send failed")
 	}
 	s.audit(ctx, actor, "send_test_mail", "mail:"+actor.Email, "")
 	return nil

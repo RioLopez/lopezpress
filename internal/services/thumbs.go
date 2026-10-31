@@ -21,7 +21,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- thumbnail pipeline (spec 36 §6) ---------------------------------------
+// --- thumbnail pipeline ---------------------------------------
 //
 // The queue exists because of a resource constraint, not a correctness one: a
 // 1C / 1.5 GB VPS that decodes eight 12-megapixel JPEGs at once is a VPS that
@@ -123,7 +123,7 @@ func (s *Service) runThumbWorker(ctx context.Context) {
 
 // resumePendingThumbs re-queues rows left unfinished by a previous process.
 //
-// The `thumb_status = ''` branch covers rows written before the worker existed
+// The `thumb_status = ”` branch covers rows written before the worker existed
 // (the column is empty for them); once a row is ready/skip/failed it never
 // matches again, so the steady-state cost of this query is one indexed scan
 // that returns nothing. announce is false for the periodic sweep, which must
@@ -291,4 +291,40 @@ func (s *Service) removeThumb(ctx context.Context, name string) {
 		return
 	}
 	_ = s.DeleteLocalUpload(ctx, name)
+}
+
+// attachCoverThumbs fills CoverThumb on posts whose cover is a local image that
+// already has a generated thumbnail. Best-effort and read-only: a cover that is
+// an external URL, or whose thumbnail the worker has not produced yet, simply
+// leaves CoverThumb empty and the client falls back to the original.
+//
+// One query for the whole page rather than one per post: listings are the most
+// read endpoint on the site, and a per-card lookup would add ten round trips to
+// a single page view on a 1 vCPU box.
+func (s *Service) attachCoverThumbs(ctx context.Context, posts []models.Post) {
+	names := make([]string, 0, len(posts))
+	for i := range posts {
+		if n := uploadNameFromURL(posts[i].Cover); n != "" {
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	var rows []models.UploadFile
+	if err := s.db.WithContext(ctx).Select("name, thumb_name, thumb_status").
+		Where("name IN ?", names).Find(&rows).Error; err != nil {
+		return
+	}
+	thumbs := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if r.ThumbStatus == ThumbStatusReady && r.ThumbName != "" {
+			thumbs[r.Name] = "/uploads/" + r.ThumbName
+		}
+	}
+	for i := range posts {
+		if n := uploadNameFromURL(posts[i].Cover); n != "" {
+			posts[i].CoverThumb = thumbs[n]
+		}
+	}
 }

@@ -1,6 +1,6 @@
 package models
 
-// PresetCategory is one node of the shipped category tree (spec 27). It lives
+// PresetCategory is one node of the shipped category tree. It lives
 // in models — not in services or config — because BOTH the fresh-database
 // seeder (internal/config) and the "apply preset" endpoint (internal/services)
 // need it, and duplicating the tree in two places would guarantee drift.

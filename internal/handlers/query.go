@@ -80,7 +80,7 @@ type postListParams struct {
 }
 
 // parsePostListParams reads the public list's query string. page and size must
-// be integers when supplied (P2-7: a typo must not silently degrade to the
+// be integers when supplied (a typo must not silently degrade to the
 // bare-array branch), while category stays free-form because it accepts a
 // category name as well as a numeric id.
 func parsePostListParams(q url.Values) (postListParams, error) {

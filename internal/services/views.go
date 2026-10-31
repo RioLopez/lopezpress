@@ -8,13 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"lopezpress/internal/models"
 )
 
-// ViewResult is the body of POST /api/posts/{id}/view (spec 23).
+// ViewResult is the body of POST /api/posts/{id}/view.
 //
 // Counted=false comes with a Reason ("duplicate" / "author" / "bot") so the
 // viewRetentionDays is how long de-duplication rows are kept. They exist only
@@ -62,66 +59,53 @@ func (s *Service) visitorHash(ip, ua string) string {
 }
 
 // ReportView records one read of a post, de-duplicated per visitor per UTC
-// day (spec 23).
+// day.
 //
 // Returns 404 (not 403) for posts the caller may not read and for any
 // non-published status, matching the public read path so the endpoint never
 // leaks the existence of private/pending/rejected/banned content.
 //
-// The counter is incremented only when the INSERT actually created a row:
-// the unique index on (post_id, visitor_hash, day) is the de-duplication
-// mechanism, not application logic.
+// The counting itself is buffered in memory and written in batches; see
+// views_flush.go for why and for what a crash costs.
 func (s *Service) ReportView(ctx context.Context, user models.User, postID string, meta ViewMeta) (ViewResult, error) {
-	var post models.Post
-	if err := s.db.WithContext(ctx).Where("id = ?", postID).First(&post).Error; err != nil {
-		return ViewResult{}, newErr(http.StatusNotFound, "post not found")
+	post, err := s.countablePost(ctx, postID)
+	if err != nil {
+		return ViewResult{}, err
 	}
-	if post.Status != models.PostPublished {
-		return ViewResult{}, newErr(http.StatusNotFound, "post not found")
-	}
-
-	res := ViewResult{ViewCount: post.ViewCount}
 
 	// The author reading their own post is not traffic.
 	if user.ID != "" && user.ID == post.AuthorID {
-		res.Reason = "author"
-		return res, nil
+		return ViewResult{ViewCount: post.ViewCount, Reason: "author"}, nil
 	}
 	if isBotUA(meta.UA) {
-		res.Reason = "bot"
-		return res, nil
+		return ViewResult{ViewCount: post.ViewCount, Reason: "bot"}, nil
 	}
 
 	now := meta.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
-	day := now.UTC().Format("2006-01-02")
-
-	rec := models.PostView{
-		PostID:      post.ID,
-		VisitorHash: s.visitorHash(meta.IP, meta.UA),
-		Day:         day,
-	}
-	ins := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rec)
-	if ins.Error != nil {
-		return ViewResult{}, newErr(http.StatusInternalServerError, "failed to record view")
-	}
-	if ins.RowsAffected == 0 {
-		// Same visitor, same post, same day: already counted.
+	counted, total := s.countView(ctx, post, s.visitorHash(meta.IP, meta.UA), now)
+	res := ViewResult{ViewCount: total}
+	if !counted {
 		res.Reason = "duplicate"
 		return res, nil
 	}
-
-	if err := s.db.WithContext(ctx).Model(&models.Post{}).Where("id = ?", post.ID).
-		UpdateColumn("view_count", gorm.Expr("view_count + 1")).Error; err != nil {
-		return ViewResult{}, newErr(http.StatusInternalServerError, "failed to update view count")
-	}
 	res.Counted = true
-	res.ViewCount = post.ViewCount + 1
-
 	s.pruneViews(ctx, now)
 	return res, nil
+}
+
+// countablePost loads a post only if a view of it can be counted.
+func (s *Service) countablePost(ctx context.Context, postID string) (models.Post, error) {
+	var post models.Post
+	if err := s.db.WithContext(ctx).Where("id = ?", postID).First(&post).Error; err != nil {
+		return models.Post{}, newErr(http.StatusNotFound, "post not found")
+	}
+	if post.Status != models.PostPublished {
+		return models.Post{}, newErr(http.StatusNotFound, "post not found")
+	}
+	return post, nil
 }
 
 // pruneViews deletes de-duplication rows past the retention window. It runs at

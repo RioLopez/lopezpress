@@ -50,13 +50,20 @@ func (s *Service) GetRecentPosts(ctx context.Context) ([]models.Post, error) {
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	// This endpoint is authOptional, so an anonymous visitor can read it. The
+	// reviewer's account id and the approval timestamp are moderation metadata
+	// that no client here renders; every other public read path strips them, and
+	// this one was the gap. SanitizeAuthor is a no-op today (no Author preload)
+	// but stays for the day a card needs the byline.
+	models.SanitizePostAuthors(posts)
+	models.SanitizePostReviews(posts)
 	return posts, nil
 }
 
 // --- category CRUD ---
 
 // CreateCategory creates a new category. Returns 409 on duplicate name.
-// An optional parent_id makes it a child (spec 27: two levels only).
+// An optional parent_id makes it a child (two levels only).
 func (s *Service) CreateCategory(ctx context.Context, in CreateCategoryInput) (models.Category, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -127,7 +134,7 @@ func (s *Service) UpdateCategory(ctx context.Context, id int64, in UpdateCategor
 	return cat, nil
 }
 
-// validateCategoryParent enforces the two-level rule (spec 27):
+// validateCategoryParent enforces the two-level rule:
 //   - the parent must exist;
 //   - a category cannot be its own parent;
 //   - the parent must not itself have a parent (no grandchildren);
@@ -190,7 +197,7 @@ func (s *Service) DeleteCategory(ctx context.Context, id int64) error {
 
 // categoryWithDescendants returns id plus every direct child id. Used so that
 // filtering the public list by a PARENT category also returns its children's
-// posts (spec 27 AC-2.5) — otherwise a parent node would look empty even
+// posts — otherwise a parent node would look empty even
 // while all its content sits one level down.
 // categoryFilterIDs resolves a ?category= reference to the id set a list
 // query should match. The reference is either a name (the readable form the
@@ -247,12 +254,25 @@ func (s *Service) categoryWithDescendants(ctx context.Context, id int64) []int64
 // root-only vault) are excluded so the admin counts match what authors can
 // actually see. The filter lives in the JOIN ON clause (not WHERE) so that
 // categories with zero matching posts still return a row with count 0.
+// ListCategoriesWithCount returns every category with the number of posts a
+// reader would actually find behind it.
+//
+// The count is published-only. It used to exclude nothing but banned and
+// soft-deleted, which made it a count of "posts that exist" — a number nobody
+// browsing the site can verify. Once private posts became a real state an
+// author can choose, the gap turned into a visible bug: a category badge
+// saying 5 that opens onto 2 articles, because the other 3 are somebody's
+// drafts and submissions. "How many can I read here" is the only question this
+// number answers for a reader, so that is what it counts.
+//
+// Reviewers who want the moderation totals have the pending queue and the
+// dashboard; neither reads this.
 func (s *Service) ListCategoriesWithCount(ctx context.Context) ([]CategoryWithCount, error) {
 	var results []CategoryWithCount
 	err := s.db.WithContext(ctx).
 		Table("categories").
 		Select("categories.id, categories.name, categories.parent_id, COUNT(posts.id) as count").
-		Joins("LEFT JOIN posts ON posts.category_id = categories.id AND posts.deleted_at IS NULL AND posts.status <> ?", models.PostBanned).
+		Joins("LEFT JOIN posts ON posts.category_id = categories.id AND posts.deleted_at IS NULL AND posts.status = ?", models.PostPublished).
 		Group("categories.id").
 		Order("categories.name ASC").
 		Scan(&results).Error
@@ -263,88 +283,4 @@ func (s *Service) ListCategoriesWithCount(ctx context.Context) ([]CategoryWithCo
 		results = []CategoryWithCount{}
 	}
 	return results, nil
-}
-
-// --- tag management ---
-
-// ListTagsWithCount returns all tags with post counts.
-//
-// Mirrors ListCategoriesWithCount: the count excludes soft-deleted posts and
-// banned posts. The join to posts carries the filter so tag rows whose only
-// posts are trashed/banned still return a row with count 0, and we COUNT the
-// (nullable) posts.id so banned posts — which yield a NULL posts.id on the
-// filtered join — are not tallied via their lingering post_tags rows.
-func (s *Service) ListTagsWithCount(ctx context.Context) ([]TagWithCount, error) {
-	var results []TagWithCount
-	err := s.db.WithContext(ctx).
-		Table("tags").
-		Select("tags.id, tags.name, COUNT(posts.id) as count").
-		Joins("LEFT JOIN post_tags ON post_tags.tag_id = tags.id").
-		Joins("LEFT JOIN posts ON posts.id = post_tags.post_id AND posts.deleted_at IS NULL AND posts.status <> ?", models.PostBanned).
-		Group("tags.id").
-		Order("tags.name ASC").
-		Scan(&results).Error
-	if err != nil {
-		return nil, newErr(http.StatusInternalServerError, "failed to load tags with counts")
-	}
-	if results == nil {
-		results = []TagWithCount{}
-	}
-	return results, nil
-}
-
-// DeleteTag removes a tag and all its associations.
-func (s *Service) DeleteTag(ctx context.Context, id int64) error {
-	var tag models.Tag
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&tag).Error; err != nil {
-		return newErr(http.StatusNotFound, "tag not found")
-	}
-	// Remove join records.
-	if err := s.db.WithContext(ctx).Where("tag_id = ?", id).Delete(&models.PostTag{}).Error; err != nil {
-		return newErr(http.StatusInternalServerError, "failed to remove tag associations")
-	}
-	if err := s.db.WithContext(ctx).Delete(&tag).Error; err != nil {
-		return newErr(http.StatusInternalServerError, "failed to delete tag")
-	}
-	s.audit(ctx, models.User{}, "delete_tag", "tag:"+strconv.FormatInt(tag.ID, 10), "name="+tag.Name)
-	return nil
-}
-
-// UpdateTag renames a tag (spec 25). Returns 404 when not found and 409 on a
-// duplicate name.
-//
-// Only tags.name changes: the post_tags join rows are keyed by tag id, so
-// every association survives the rename. This is the whole point — before
-// this endpoint the only way to fix a typo'd tag was delete + re-create, which
-// silently dropped the tag from every post that carried it.
-func (s *Service) UpdateTag(ctx context.Context, id int64, in UpdateTagInput) (models.Tag, error) {
-	name := normalizeTagName(in.Name)
-	if name == "" {
-		return models.Tag{}, newErr(http.StatusBadRequest, "tag name is required")
-	}
-	if err := ValidateTaxonomyName(name, MaxTagNameLen); err != nil {
-		// Rune-based, like every other name check. The previous byte-based test
-		// was accidentally stricter for non-ASCII names: a 30-character Chinese
-		// tag is 90 bytes and was refused here while being accepted by
-		// CreatePost, so the same name behaved differently depending on which
-		// endpoint touched it.
-		return models.Tag{}, err
-	}
-	var tag models.Tag
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&tag).Error; err != nil {
-		return models.Tag{}, newErr(http.StatusNotFound, "tag not found")
-	}
-	// Duplicate check excludes self so a pure case change ("go" -> "Go") is
-	// allowed, while a rename that would collide with a *different* tag
-	// differing only in case is still rejected.
-	var dup models.Tag
-	if s.db.WithContext(ctx).Where("name COLLATE NOCASE = ? AND id != ?", name, id).First(&dup).RowsAffected == 1 {
-		return models.Tag{}, newErr(http.StatusConflict, "a tag with this name already exists")
-	}
-	tag.Name = name
-	if err := s.db.WithContext(ctx).Save(&tag).Error; err != nil {
-		return models.Tag{}, newErr(http.StatusInternalServerError, "failed to update tag")
-	}
-	s.audit(ctx, models.User{}, "update_tag", "tag:"+strconv.FormatInt(tag.ID, 10), "name="+tag.Name)
-	return tag, nil
 }

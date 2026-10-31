@@ -8,7 +8,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- anonymous read switch (spec 27) ---
+// --- anonymous read switch ---
 
 // AllowAnonymous reports whether visitors without a token may read the site.
 //
@@ -46,12 +46,12 @@ func (s *Service) invalidatePublicRead() {
 	s.publicReadMu.Unlock()
 }
 
-// --- preset category tree (spec 27) ---
+// --- preset category tree ---
 
 // ApplyPresetCategories materialises models.PresetCategories into the
 // database, idempotently.
 //
-// Rules (spec 27 §5):
+// Rules:
 //   - missing parent/child → created;
 //   - existing child with no parent → adopted (parent set, nothing recreated);
 //   - existing child that already has a parent → left alone (respect manual

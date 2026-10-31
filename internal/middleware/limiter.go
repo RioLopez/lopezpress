@@ -3,11 +3,14 @@ package middleware
 import (
 	"container/list"
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 
 	"lopezpress/internal/clientip"
@@ -15,10 +18,18 @@ import (
 
 // Limiter is a token-bucket rate limiter keyed by "identity".
 //
-// Identity resolution (per ARCHITECTURE.md §6):
-//   - authenticated requests -> the user ID (highest priority)
+// Identity resolution:
+//   - authenticated requests -> the user ID
 //   - unauthenticated requests -> the client IP (fallback), which honours
 //     X-Forwarded-For when the server sits behind a reverse proxy.
+//
+// The user ID comes from the bearer token, verified here, NOT from the request
+// context: this middleware is installed outside the mux (see router.Build), so
+// the JWT auth middleware has not run yet and the context never carries a user.
+// It used to read only the context, which meant the advertised "per-identity"
+// bucket was silently per-IP — an office behind one NAT shared a single
+// allowance and collected 429s from each other, while a token holder rotating
+// addresses was not throttled as an account at all.
 //
 // Each distinct identity gets its own *rate.Limiter with the configured
 // RPS and burst. When an identity exceeds its allowance the request is
@@ -26,14 +37,15 @@ import (
 //
 // NOTE: the in-memory per-identity buckets are suitable for a single
 // instance. For a multi-instance deployment replace the map with a
-// shared counter (e.g. Redis) — see ARCHITECTURE.md §7.
+// shared counter (e.g. Redis).
 type Limiter struct {
-	mu         sync.Mutex
-	buckets    map[string]*list.Element // key -> element wrapping *bucket
-	lru        *list.List               // front = most-recently-used, back = LRU
-	rps        float64
-	burst      int
-	maxBuckets int
+	mu          sync.Mutex
+	buckets     map[string]*list.Element // key -> element wrapping *bucket
+	lru         *list.List               // front = most-recently-used, back = LRU
+	rps         float64
+	burst       int
+	maxBuckets  int
+	tokenSecret string // set once at startup; read-only afterwards
 }
 
 // LimiterConfig carries the knobs for NewLimiter.
@@ -87,9 +99,8 @@ func NewLimiter(cfg LimiterConfig) *Limiter {
 }
 
 // Middleware returns a standard-library middleware that enforces the
-// per-identity token bucket. The user id (when the JWT auth handler has
-// stored it on the context via WithUserID) keys the bucket; otherwise the
-// client IP is used.
+// per-identity token bucket. A verified bearer token keys the bucket by user;
+// everything else falls back to the client IP.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity := l.resolveIdentity(r)
@@ -150,16 +161,68 @@ func (l *Limiter) limiterFor(key string) *rate.Limiter {
 // resolveIdentity returns the rate-limit key: the user ID when the JWT
 // auth handler has stored it on the context (via WithUserID), otherwise
 // the client IP.
+// SetTokenSecret supplies the HS256 key used to identify authenticated
+// callers. Call it once at startup, before the handler is served.
+//
+// Without it every request is bucketed by IP: the limiter cannot see a user,
+// and a shared address beats one account's allowance into exhaustion.
+func (l *Limiter) SetTokenSecret(secret string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tokenSecret = secret
+}
+
+// tokenSubject verifies a bearer token and returns its subject (user id), or
+// "" when the header is absent, malformed, or signed with anything else.
+//
+// This is verification only — no database, no token_version check, no
+// authorization decision. It runs before any handler precisely because the
+// limiter must reject cheap requests before they become expensive ones; a
+// revoked token that still verifies simply gets bucketed under its own subject
+// and is refused a moment later by the auth middleware.
+func (l *Limiter) tokenSubject(r *http.Request) string {
+	l.mu.Lock()
+	secret := l.tokenSecret
+	l.mu.Unlock()
+	if secret == "" {
+		return ""
+	}
+	header := r.Header.Get("Authorization")
+	if header == "" {
+		return ""
+	}
+	raw := strings.TrimPrefix(header, "Bearer ")
+	t, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
+		if t.Method.Alg() != "HS256" {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(secret), nil
+	}, jwt.WithValidMethods([]string{"HS256"}))
+	if err != nil || !t.Valid {
+		return ""
+	}
+	claims, _ := t.Claims.(jwt.MapClaims)
+	sub, _ := claims["sub"].(string)
+	return sub
+}
+
 func (l *Limiter) resolveIdentity(r *http.Request) string {
+	// Context first: if the limiter is ever moved inside the auth chain this
+	// already works, and it saves the verification pass.
 	if uid := UserIDFrom(r.Context()); uid != "" {
+		return uid
+	}
+	if uid := l.tokenSubject(r); uid != "" {
 		return uid
 	}
 	return clientIP(r)
 }
 
-// WithUserID returns a context with the user ID set, so the limiter (and
-// anything downstream) can key buckets by user. The JWT auth handler calls
-// it to wrap the request context before invoking the next handler.
+// WithUserID returns a context with the user ID set. The JWT auth handler
+// stores it so downstream code can identify the caller without re-parsing.
+//
+// The general limiter does NOT depend on this: it runs outside the mux, before
+// auth, so the value is not there yet when it looks (see tokenSubject).
 func WithUserID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, UserIDContextKey, id)
 }
@@ -175,7 +238,6 @@ func UserIDFrom(ctx context.Context) string {
 // clientIP extracts the originating client IP. The trust rules (only honour
 // X-Forwarded-For from a configured proxy) live in internal/clientip so that
 // the limiter, the login limiter and the handlers can never drift apart
-// (spec 23 / P2-6).
 func clientIP(r *http.Request) string {
 	return clientip.Client(r)
 }

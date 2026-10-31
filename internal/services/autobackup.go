@@ -13,7 +13,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// Auto-backup (spec 34).
+// Auto-backup.
 //
 // The rule that shaped this file: a personal blog on a 1 vCPU box should not
 // need cron, systemd timers, or an external agent to keep its data safe. One

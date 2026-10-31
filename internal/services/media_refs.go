@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -14,7 +13,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- image library: deletion and the reference ledger (spec 36) -------------
+// --- image library: deletion and the reference ledger -------------
 //
 // Deletion policy (decided in round 77):
 //   - An author may withdraw their own image. That is a SOFT delete: the row
@@ -187,14 +186,37 @@ func extractUploadNames(body string) []string {
 	return out
 }
 
-// syncPostUploadRefsTx reconciles one post's body references inside the
+// extractUploadRefNames is the complete set of library images one article
+// depends on: everything its body embeds plus its cover.
+//
+// The cover belongs here, not in a separate "cover" edge kind. Both answer the
+// same question — "does deleting this file break an article?" — and giving them
+// different kinds would make one article count twice, so the gallery would warn
+// "deleting this breaks 2 articles" about a single post.
+func extractUploadRefNames(body, cover string) []string {
+	names := extractUploadNames(body)
+	name := uploadNameFromURL(cover)
+	if name == "" {
+		return names
+	}
+	for _, n := range names {
+		if n == name {
+			return names
+		}
+	}
+	// One extra slot over the body cap: the cover is a single URL, so this
+	// stays bounded even when the body already hit maxUploadRefsPerPost.
+	return append(names, name)
+}
+
+// syncPostUploadRefsTx reconciles one post's image references inside the
 // caller's transaction, so an article and its ledger never disagree.
 //
 // It is a diff, not a rebuild: only the edges that appeared or disappeared are
 // written. Saving the same body twice touches nothing, which matters because
 // every save runs this.
-func syncPostUploadRefsTx(tx *gorm.DB, postID, userID, body string) error {
-	names := extractUploadNames(body)
+func syncPostUploadRefsTx(tx *gorm.DB, postID, userID, body, cover string) error {
+	names := extractUploadRefNames(body, cover)
 
 	newIDs := make(map[string]bool, len(names))
 	if len(names) > 0 {
@@ -262,54 +284,6 @@ func releasePostUploadRefsTx(tx *gorm.DB, postID string) error {
 		return err
 	}
 	return recountUploadRefsTx(tx, ids)
-}
-
-// setAvatarUploadRefTx points the user's avatar edge at avatarURL (empty
-// clears it). Only URLs that resolve to a library row are tracked; an external
-// avatar has nothing on disk to protect.
-func setAvatarUploadRefTx(tx *gorm.DB, userID, avatarURL string) error {
-	var oldIDs []string
-	if err := tx.Model(&models.UploadRef{}).
-		Where("kind = ? AND user_id = ?", "avatar", userID).Pluck("upload_id", &oldIDs).Error; err != nil {
-		return err
-	}
-	name := uploadNameFromURL(avatarURL)
-
-	var newID string
-	if name != "" {
-		var row models.UploadFile
-		if err := tx.Select("id").Where("name = ?", name).First(&row).Error; err == nil {
-			newID = row.ID
-		}
-	}
-	if len(oldIDs) == 1 && newID == oldIDs[0] {
-		return nil // already correct, nothing to write
-	}
-	if err := tx.Where("kind = ? AND user_id = ?", "avatar", userID).Delete(&models.UploadRef{}).Error; err != nil {
-		return err
-	}
-	if newID != "" {
-		ref := models.UploadRef{UploadID: newID, Kind: "avatar", UserID: userID}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
-			return err
-		}
-	}
-	return recountUploadRefsTx(tx, append(oldIDs, newID))
-}
-
-// uploadNameFromURL extracts the file name from an /uploads/<name> URL and
-// returns "" for anything else (external URLs, empty strings).
-func uploadNameFromURL(raw string) string {
-	raw = strings.TrimSpace(raw)
-	const prefix = "/uploads/"
-	if !strings.HasPrefix(raw, prefix) {
-		return ""
-	}
-	name := raw[len(prefix):]
-	if name == "" || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
-		return ""
-	}
-	return name
 }
 
 // recountUploadRefsTx refreshes the cached ref_count of the given uploads from

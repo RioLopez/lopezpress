@@ -1,17 +1,18 @@
 package services
 
 // The two "merge a submitted config into the stored row" policies live here so
-// site_config.go stays about validation + persistence. Each spec that adds
-// numeric settings (36 storage quotas, 37 code timings) contributes one, and
+// site_config.go stays about validation + persistence. Each feature group that
+// adds numeric settings (storage quotas, code timings) contributes one, and
 // they share the same absent-means-inherit rule.
 
 import "lopezpress/internal/models"
 
-// applyStoragePolicy folds the spec-36 byte quotas into existing.
+// applyStoragePolicy folds the byte quotas into existing.
 //
 // These are the only settings where "absent" and "zero" are the same thing in
-// JSON, and where zero means "no limit". A settings form that predates spec 36
-// (or any API client sending a partial body) would therefore silently switch
+// JSON, and where zero means "no limit". A settings form that predates the
+// image library (or any API client sending a partial body) would therefore
+// silently switch
 // the disk protection off on save. So a non-positive value inherits the stored
 // one, and whatever survives is clamped to a range that cannot brick the site:
 // an upload ceiling below 64 KB would reject real avatars, and a site quota
@@ -38,7 +39,7 @@ func applyStoragePolicy(existing *models.SiteConfig, in models.SiteConfig) {
 	existing.AllowExternalAvatar = in.AllowExternalAvatar
 }
 
-// applyEmailVerifyPolicy folds the spec-37 timings into existing, applying the
+// applyEmailVerifyPolicy folds the code timings into existing, applying the
 // same "absent means inherit" rule as the quotas: a settings form that predates
 // this feature would otherwise rewrite a tuned TTL to zero on every save.
 func applyEmailVerifyPolicy(existing *models.SiteConfig, in models.SiteConfig) {

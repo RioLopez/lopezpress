@@ -1,22 +1,32 @@
 package handlers
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
 	"lopezpress/internal/services"
 )
 
-// ImportMarkdown bulk-creates posts from uploaded .md files (spec 32).
+// ImportMarkdown bulk-creates posts from uploaded .md files.
 // POST /api/admin/import/markdown (auth, admin/root, multipart/form-data)
 //
 // Partial success is the contract: per-file results come back in `skipped`,
 // so one broken file never blocks an import of 200.
 func ImportMarkdown(w http.ResponseWriter, r *http.Request) {
-	// Cap the whole request before touching disk/memory: 200 files × 2 MB.
-	const maxBody = 24 << 20
-	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	// The overall cap (24 MiB = 200 files × 2 MB) is the route's
+	// maxMarkdownImportLimit, applied by the router before this handler runs.
+	// Only the non-file form field budget is decided here.
+	//
+	// An over-limit body surfaces as a parse error, so name the cause instead of
+	// answering "malformed multipart": the router's reader is what failed, and
+	// the operator's fix (fewer/smaller files) is not "fix your form".
 	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "import too large (max 24 MB total)")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "failed to parse upload (max 24 MB total)")
 		return
 	}

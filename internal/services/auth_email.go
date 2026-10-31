@@ -11,7 +11,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- the three business flows built on email codes (spec 37) ---
+// --- the three business flows built on email codes ---
 //
 // Mechanics (mint / mail / verify / attempt counting) live in email_codes.go.
 // This file holds the rules: which purpose a flow may use, what it does to the
@@ -63,8 +63,14 @@ func (s *Service) ResetPasswordByCode(ctx context.Context, in PasswordResetInput
 	if !isValidEmail(email) {
 		return newErr(http.StatusBadRequest, "invalid email")
 	}
-	if len(in.Password) < 8 {
-		return newErr(http.StatusBadRequest, "password must be at least 8 characters")
+	// Policy check before the code is consumed: a weak password must not burn a
+	// verification code the user has to wait another minute to replace. The
+	// account-specific half of the policy (username/email) is skipped here
+	// because the account is only resolved after the code proves ownership, and
+	// failing after it would have the same cost. The generic rule — length,
+	// upper bound, blocklist — covers the practical cases.
+	if err := ValidatePassword(in.Password); err != nil {
+		return err
 	}
 	// Code first: it is the only proof of ownership in this flow.
 	if err := s.verifyEmailCode(ctx, email, models.EmailPurposeReset, in.Code); err != nil {

@@ -75,11 +75,11 @@ func validateImportPayload(in ImportData) error {
 
 // ImportBackup restores the database from an exported backup. When dryRun is
 // true it only validates + reports the counts without touching the database.
-// When applied, it first takes an automatic VACUUM INTO snapshot (spec #6,
-// keep 3 most recent), runs the destructive replace inside a transaction, and
+// When applied, it first takes an automatic VACUUM INTO snapshot (keeping the
+// 3 most recent), runs the destructive replace inside a transaction, and
 // returns the applied stats plus the snapshot file name.
 //
-// Root-only (as-built audit Q7): the payload is attacker-controllable JSON
+// Root-only: the payload is attacker-controllable JSON
 // that can carry arbitrary user rows — including role "root" and foreign
 // password hashes. Letting a plain admin import one would be a complete
 // root-takeover path around the "root is never created via API" invariant,
@@ -89,7 +89,7 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	if !IsRoot(actor) {
 		return ImportResult{}, newErr(http.StatusForbidden, "only the root can import a backup")
 	}
-	// Spec #6: validate schema compatibility before doing anything.
+	// Validate schema compatibility before doing anything.
 	if err := validateImportPayload(in); err != nil {
 		return ImportResult{}, err
 	}
@@ -131,7 +131,7 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	// and file-level, so it is safe to run outside the import transaction).
 	snapshotFile, err := s.snapshotBeforeImport(ctx)
 	if err != nil {
-		return ImportResult{}, newErr(http.StatusInternalServerError, "failed to create pre-import snapshot: "+err.Error())
+		return ImportResult{}, newErr(http.StatusInternalServerError, "failed to create pre-import snapshot")
 	}
 
 	// The live token ceiling must be read BEFORE the transaction rewrites the
@@ -139,20 +139,11 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	liveMax := s.maxTokenVersion(ctx)
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clear existing rows. Unscoped ensures soft-deleted rows go too.
-		if err := tx.Unscoped().Where("1 = 1").Delete(&models.PostTag{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Unscoped().Where("1 = 1").Delete(&models.Post{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("1 = 1").Delete(&models.PostRevision{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("1 = 1").Delete(&models.Tag{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("1 = 1").Delete(&models.Category{}).Error; err != nil {
+		// Clear the content tables through the shared list. The import goes
+		// further than a snapshot restore: an exported dump carries the image
+		// library's rows and the site configuration with it, so those are
+		// replaced too (see clearContentTablesTx for why the two lists differ).
+		if err := clearContentTablesTx(tx); err != nil {
 			return err
 		}
 		if err := tx.Unscoped().Where("1 = 1").Delete(&models.UploadFile{}).Error; err != nil {

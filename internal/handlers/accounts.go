@@ -13,7 +13,7 @@ import (
 // is what makes "every write path is audited" a property of the code rather
 // than a checklist item a new endpoint can forget.
 
-// --- site config (spec 05) ---
+// --- site config ---
 
 // GetSiteConfig returns the PUBLIC subset of the site config (no token, no
 // allow_register flag). Used by the frontend to render the brand, title and
@@ -26,22 +26,22 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"site_name":    cfg.SiteName,
-		"site_title":   cfg.SiteTitle,
-		"site_logo":    cfg.SiteLogo,
-		"site_favicon": cfg.SiteFavicon,
-		"site_url":     cfg.SiteURL,
+		"site_name":        cfg.SiteName,
+		"site_title":       cfg.SiteTitle,
+		"site_logo":        cfg.SiteLogo,
+		"site_favicon":     cfg.SiteFavicon,
+		"site_url":         cfg.SiteURL,
 		"site_description": cfg.SiteDescription,
-		"footer_text":  cfg.FooterText,
-		"icp_no":       cfg.IcpNo,
-		"friend_links": cfg.FriendLinks,
-		// Spec 24: the public list needs the server-decided page size so it
+		"footer_text":      cfg.FooterText,
+		"icp_no":           cfg.IcpNo,
+		"friend_links":     cfg.FriendLinks,
+		// The public list needs the server-decided page size so it
 		// can render ?page=N without ever sending `size` itself.
 		"page_size": cfg.PageSize,
-		// Spec 27: the SPA's route guard needs to know whether anonymous
+		// The SPA's route guard needs to know whether anonymous
 		// reading is allowed before it can decide to bounce to /login.
 		"public_read": cfg.PublicRead,
-		// Spec 37: the sign-up and "forgot password" forms need to know
+		// The sign-up and "forgot password" forms need to know
 		// whether to show the code field at all. The switch is not a secret —
 		// it is visible in the UI the moment it is on.
 		"email_verify_enabled": cfg.EmailVerifyEnabled,
@@ -102,47 +102,14 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Switches are booleans, and "the client did not send this field" decodes
 	// to the same false as "the client switched it off". With a form that predates
-	// spec 36, saving the site settings would therefore silently disable image
+	// the image library, saving the site settings would silently disable image
 	// deletion for authors and the avatar picker. The raw map is the only place
 	// where the difference is still visible, so absent keys inherit.
 	if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
-		if _, ok := in["allow_user_delete_upload"]; !ok {
-			cfg.AllowUserDeleteUpload = cur.AllowUserDeleteUpload
-		}
-		if _, ok := in["allow_user_change_avatar"]; !ok {
-			cfg.AllowUserChangeAvatar = cur.AllowUserChangeAvatar
-		}
-		if _, ok := in["allow_external_avatar"]; !ok {
-			cfg.AllowExternalAvatar = cur.AllowExternalAvatar
-		}
-		// Spec 37: the verification switch defaults to "off", so an absent key
-		// would silently disable a feature the operator just turned on.
-		if _, ok := in["email_verify_enabled"]; !ok {
-			cfg.EmailVerifyEnabled = cur.EmailVerifyEnabled
-		}
-		if _, ok := in["email_code_ttl_min"]; !ok {
-			cfg.EmailCodeTTLMin = cur.EmailCodeTTLMin
-		}
-		if _, ok := in["email_code_cooldown"]; !ok {
-			cfg.EmailCodeCooldown = cur.EmailCodeCooldown
-		}
-		// R6-08: three more fields whose zero value is a SETTING rather than
-		// "nothing". A client that sends only {"site_name":...} — a script, a
-		// third-party integration, an older front end — used to get
-		// public_read flipped off (the site went dark for every anonymous
-		// reader), auto_backup switched off, and backup_keep reset to the
-		// default. No 400, no warning: a partial save silently changed the
-		// site's availability. Absent means "unchanged", exactly as it does for
-		// the allow_* switches above.
-		if _, ok := in["public_read"]; !ok {
-			cfg.PublicRead = cur.PublicRead
-		}
-		if _, ok := in["auto_backup"]; !ok {
-			cfg.AutoBackup = cur.AutoBackup
-		}
-		if _, ok := in["backup_keep"]; !ok {
-			cfg.BackupKeep = cur.BackupKeep
-		}
+		// Absent keys inherit the stored value (see inheritAbsentSiteConfig):
+		// several fields decode to a meaningful "off"/"cleared" zero, so a
+		// partial PUT must not reset them.
+		inheritAbsentSiteConfig(in, cur, &cfg)
 	}
 	// Root-only settings: the daily-backup policy, the registration gate and
 	// the mail/image-host credentials. A non-root admin saving the settings
@@ -167,7 +134,7 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 			cfg.SmtpUser = cur.SmtpUser
 			cfg.SmtpPass = cur.SmtpPass
 			cfg.ImgHostToken = cur.ImgHostToken
-			// Spec 37: whether anonymous visitors can make this server send
+			// Whether anonymous visitors can make this server send
 			// mail is an abuse surface, not a presentation choice — same tier
 			// as allow_register and the SMTP credentials it depends on.
 			cfg.EmailVerifyEnabled = cur.EmailVerifyEnabled
@@ -197,7 +164,7 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- registration gate (spec 16) ---
+// --- registration gate ---
 
 // RegistrationOpen reports whether public registration is enabled.
 // GET /api/auth/register/open (public)
@@ -225,7 +192,7 @@ func SendTestMail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
 }
 
-// --- user management (admin, spec 09) ---
+// --- user management (admin) ---
 
 // CreateUser provisions a new account on behalf of an admin.
 // POST /api/users (auth, admin)
@@ -302,7 +269,7 @@ func ListUserLogins(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
-// --- profile / author (spec 15) ---
+// --- profile / author ---
 
 // UpdateMe edits the caller's own profile.
 // PUT /api/auth/me (auth)
@@ -318,10 +285,7 @@ func UpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, services.UserPublic{
-		ID: u.ID, Username: u.Username, Email: u.Email, Role: u.Role,
-		DisplayName: u.DisplayName, Bio: u.Bio, Avatar: u.Avatar, CreatedAt: u.CreatedAt,
-	})
+	writeJSON(w, http.StatusOK, services.PublicUser(u))
 }
 
 // GetAuthor returns a public author profile + published posts.
@@ -336,7 +300,7 @@ func GetAuthor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
-// --- dashboard (spec 06) ---
+// --- dashboard ---
 
 // GetDashboard aggregates admin dashboard widgets.
 // GET /api/admin/dashboard (auth, admin)

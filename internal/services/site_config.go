@@ -13,7 +13,7 @@ import (
 	"lopezpress/internal/models"
 )
 
-// --- site config (spec 05) ---
+// --- site config ---
 
 // GetSiteConfig returns the single-row site config (id=1), creating the
 // default row if it does not yet exist. The admin flag is accepted for API
@@ -42,6 +42,11 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	if err := validateSiteConfig(in); err != nil {
 		return models.SiteConfig{}, err
 	}
+	// Canonicalise to a bare origin AFTER validation: validateSiteConfig takes
+	// the struct by value, so it can only reject a bad shape, not repair it.
+	// Storing "https://example.com/" instead of "https://example.com" would make
+	// every feed link "https://example.com//p/slug".
+	in.SiteURL = canonicalSiteURL(in.SiteURL)
 
 	var existing models.SiteConfig
 	if err := s.db.WithContext(ctx).Where("id = ?", 1).First(&existing).Error; err != nil {
@@ -63,20 +68,28 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	existing.SmtpPort = in.SmtpPort
 	existing.SmtpUser = in.SmtpUser
 	existing.SmtpPass = in.SmtpPass
-	// Spec 24: page size is a closed set (5/10/20/30). Clamping here — rather
+	// Page size is a closed set (5/10/20/30). Clamping here — rather
 	// than rejecting — keeps an API client that sends 25 from bricking the
 	// save while still guaranteeing the public list never queries a huge page.
 	existing.PageSize = ClampPageSize(in.PageSize)
-	// Spec 34: 1..90 days of retention. A zero/negative value would mean
+	// 1..90 Days of retention. A zero/negative value would mean
 	// "delete every snapshot", which is never what an operator means.
 	existing.AutoBackup = in.AutoBackup
 	existing.BackupKeep = ClampBackupKeep(in.BackupKeep)
-	// Spec 27: anonymous-read switch.
+	// Anonymous-read switch.
 	existing.PublicRead = in.PublicRead
 	applyStoragePolicy(&existing, in)
 	applyEmailVerifyPolicy(&existing, in)
 	existing.UpdatedAt = time.Now()
-	if err := s.db.WithContext(ctx).Save(&existing).Error; err != nil {
+	// The row and the image ledger move together: a logo saved without its edge is
+	// an orphan the gallery offers to delete. See saveSiteBrandingTx.
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&existing).Error; err != nil {
+			return err
+		}
+		return saveSiteBrandingTx(tx, existing)
+	})
+	if err != nil {
 		return models.SiteConfig{}, newErr(http.StatusInternalServerError, "failed to save site config")
 	}
 	// The gate caches this flag; a toggle must take effect on the next
@@ -84,6 +97,16 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	s.invalidatePublicRead()
 	s.audit(ctx, models.User{}, "update_site_config", "site_config", "")
 	return existing, nil
+}
+
+// saveSiteBrandingTx records the two branding slots as ledger edges. Split out
+// of UpdateSiteConfig only to keep that function inside the size gate; each slot
+// is an independent edge and either may be empty (clearing it releases the edge).
+func saveSiteBrandingTx(tx *gorm.DB, cfg models.SiteConfig) error {
+	if err := setSlotUploadRefTx(tx, siteRefLogo, "", cfg.SiteLogo); err != nil {
+		return err
+	}
+	return setSlotUploadRefTx(tx, siteRefFavicon, "", cfg.SiteFavicon)
 }
 
 // clampInt64 keeps n inside [lo, hi]. Used for the storage-policy numbers,
@@ -137,24 +160,24 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		mode = "local"
 	}
 	return models.SiteConfig{
-		SiteName:      cfgStr(m, "site_name"),
-		SiteTitle:     cfgStr(m, "site_title"),
-		SiteLogo:      cfgStr(m, "site_logo"),
-		SiteFavicon:   cfgStr(m, "site_favicon"),
-		SiteURL:       cfgStr(m, "site_url"),
+		SiteName:        cfgStr(m, "site_name"),
+		SiteTitle:       cfgStr(m, "site_title"),
+		SiteLogo:        cfgStr(m, "site_logo"),
+		SiteFavicon:     cfgStr(m, "site_favicon"),
+		SiteURL:         cfgStr(m, "site_url"),
 		SiteDescription: cfgStr(m, "site_description"),
-		FooterText:    cfgStr(m, "footer_text"),
-		IcpNo:         cfgStr(m, "icp_no"),
-		FriendLinks:   cfgStr(m, "friend_links"),
-		ImgHostMode:   mode,
-		ImgHostToken:  cfgStr(m, "img_host_token"),
-		AllowRegister: cfgBool(m, "allow_register"),
-		// Spec 24: absent/invalid page_size -> 0, which UpdateSiteConfig
+		FooterText:      cfgStr(m, "footer_text"),
+		IcpNo:           cfgStr(m, "icp_no"),
+		FriendLinks:     cfgStr(m, "friend_links"),
+		ImgHostMode:     mode,
+		ImgHostToken:    cfgStr(m, "img_host_token"),
+		AllowRegister:   cfgBool(m, "allow_register"),
+		// Absent/invalid page_size -> 0, which UpdateSiteConfig
 		// clamps back to the default.
 		PageSize:   cfgInt(m, "page_size"),
 		AutoBackup: cfgBool(m, "auto_backup"),
 		BackupKeep: cfgInt(m, "backup_keep"),
-		// Spec 27: absent -> false. The admin form always sends the current
+		// Absent -> false. The admin form always sends the current
 		// value, so a missing field means a hand-built payload; false is the
 		// safe (locked-down) reading in that case.
 		PublicRead: cfgBool(m, "public_read"),
@@ -162,7 +185,7 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		SmtpPort:   cfgInt(m, "smtp_port"),
 		SmtpUser:   cfgStr(m, "smtp_user"),
 		SmtpPass:   cfgStr(m, "smtp_pass"),
-		// Spec 36: byte quotas. They need their own getter because the fields
+		// Byte quotas. They need their own getter because the fields
 		// are int64 — reusing getInt would truncate a 500 MB quota on a 32-bit
 		// build and, worse, made the whole policy unreachable (the field was
 		// simply never decoded).
@@ -173,7 +196,7 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		AllowUserDeleteUpload: cfgBool(m, "allow_user_delete_upload"),
 		AllowUserChangeAvatar: cfgBool(m, "allow_user_change_avatar"),
 		AllowExternalAvatar:   cfgBool(m, "allow_external_avatar"),
-		// Spec 37: email verification. The flag itself is a bool that defaults
+		// Email verification. The flag itself is a bool that defaults
 		// to false (= the feature is off), which is also what "the client did
 		// not send it" decodes to — deliberately the safe direction here.
 		EmailVerifyEnabled: cfgBool(m, "email_verify_enabled"),
@@ -184,7 +207,7 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 
 // cfgStr/cfgBool/cfgInt/cfgInt64 read one optional key of a decoded JSON body.
 // Split out of SiteConfigFromMap so that function stays a single readable
-// literal list — it drifted twice before (smtp_pass, then the spec-36 quotas)
+// literal list — it drifted twice before (smtp_pass, then the quota fields)
 // precisely because adding a field meant editing three places in one long body.
 func cfgStr(m map[string]any, k string) string {
 	if s, ok := m[k].(string); ok {
@@ -269,7 +292,7 @@ func (s *Service) ListActions(ctx context.Context, actorID string, limit int) ([
 	return out, nil
 }
 
-// --- user management (admin, spec 09) ---
+// --- user management (admin) ---
 
 // CreateUserInput is the decoded payload for POST /api/users.
 
@@ -302,12 +325,10 @@ func validateSiteConfig(in models.SiteConfig) error {
 		return newErr(http.StatusBadRequest,
 			"email verification needs an SMTP host; configure the mail server first")
 	}
-	// SiteURL, when set, must be an absolute http(s) URL so feed/sitemap
-	// can build correct absolute links.
-	if u := strings.TrimSpace(in.SiteURL); u != "" {
-		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return newErr(http.StatusBadRequest, "site url must start with http:// or https://")
-		}
+	// SiteURL must be a bare origin — see validateSiteURL for why a path here
+	// rewrites every link in the feed and sitemap.
+	if err := validateSiteURL(in.SiteURL); err != nil {
+		return err
 	}
 	// Validate friend_links: well-formed JSON array, and every url must be an
 	// absolute http(s) link. The footer renders these into <a href> verbatim,
@@ -315,6 +336,13 @@ func validateSiteConfig(in models.SiteConfig) error {
 	if err := validateFriendLinks(in.FriendLinks); err != nil {
 		return err
 	}
+	// Branding slots render into <img src>/<link href>; reject any foreign
+	// scheme (javascript:, data:, …) but keep local paths and http(s) URLs.
+	if err := validateBrandingURL(in.SiteLogo, "site logo"); err != nil {
+		return err
+	}
+	if err := validateBrandingURL(in.SiteFavicon, "site favicon"); err != nil {
+		return err
+	}
 	return nil
 }
-

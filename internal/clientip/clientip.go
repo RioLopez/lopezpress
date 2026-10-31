@@ -1,5 +1,4 @@
 // Package clientip resolves the originating client IP of an HTTP request
-// (spec 23 / TODO P2-6).
 //
 // The naive approach — "always trust X-Forwarded-For" — lets any client forge
 // its IP by sending the header itself, which defeats every IP-based decision

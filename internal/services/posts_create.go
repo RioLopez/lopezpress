@@ -38,10 +38,10 @@ func createPostTx(ctx context.Context, tx *gorm.DB, s *Service, post models.Post
 			return err
 		}
 	}
-	// Spec 36: record which library images this body uses, in the same
-	// transaction as the post itself. The ledger is what lets an admin see
+	// Record which library images this article uses (body and cover), in the
+	// same transaction as the post itself. The ledger is what lets an admin see
 	// "deleting this image breaks 3 articles" before acting.
-	if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body); err != nil {
+	if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body, post.Cover); err != nil {
 		return err
 	}
 	*out = post

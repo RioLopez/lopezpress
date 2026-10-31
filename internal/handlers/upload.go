@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"lopezpress/internal/services"
@@ -13,18 +15,39 @@ import (
 // policy says. It exists so a misconfigured quota cannot turn a single request
 // into a memory exhaustion event on a 1 GB VPS: the bytes are read into memory
 // before the service can inspect them.
-const hardUploadCeiling = 32 << 20 // 32 MB
+//
+// 20 MiB is not a round number picked for looks — it is the top of the range
+// applyStoragePolicy clamps upload_max_image to, and it sits below the route's
+// maxUploadBodyLimit (24 MiB). Both bounds matter and they are different:
+//
+//   - Below the clamp, so this constant can never be the thing that silently
+//     overrides an operator's configured limit.
+//   - Below the route ceiling, because the router runs first and whichever cap
+//     is SMALLER wins. A 32 MiB ceiling here would be dead code AND a lie: the
+//     documented "largest accepted image" would be 32 MiB while no request over
+//     24 MiB could ever reach the handler. security_check.py (S9) flags exactly
+//     this direction; a runtime value like this one it cannot evaluate, which is
+//     why the reasoning has to be written down instead.
+const hardUploadCeiling = 20 << 20 // 20 MB
 
 // UploadImage handles POST /api/upload. The client sends a multipart/form-data
 // body with a "file" field and an optional "kind" field ("post" by default,
 // "avatar" for the avatar picker). On success the response carries the public
-// URL plus the geometry and a `deduped` flag (spec 36).
+// URL plus the geometry and a `deduped` flag.
 //
 // Requires a valid JWT (wrapped by withAuth in the router).
 //
 // All request parsing happens here. The service takes plain bytes, so it never
 // sees *http.Request (review finding A1).
 func UploadImage(w http.ResponseWriter, r *http.Request) {
+	// Rate limit first: a refused request should cost nothing, and parsing a
+	// multipart body is exactly the work this is meant to protect.
+	if wait, ok := svc.AllowUpload(userFromContext(r).ID); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "too many uploads in a row; wait a few seconds and try again")
+		return
+	}
+
 	limit := maxUploadBytes(r)
 	// Cap the request body before parsing, so an oversized upload is rejected
 	// instead of buffered into memory.
@@ -111,6 +134,36 @@ func ServeUploads(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r) // identical to the old behaviour: hide existence
 		return
 	}
+	// An upload URL identifies one immutable object, which is the precondition
+	// a long max-age demands. The stored name is 22 random characters chosen
+	// when the row is created, and it is never reused: identical bytes resolve
+	// to the same name through the sha256 dedup, and any change in bytes creates
+	// a new name rather than overwriting the old one. Nothing ever rewrites a
+	// file in place, so a given URL's content cannot drift.
+	//
+	// Without this header the browser had only Last-Modified to work with and
+	// revalidated every image on every visit. On the reading page images are the
+	// largest byte cost, and a conditional request per image is a full round
+	// trip per image even when the body is a 304. On a 1C box this is the
+	// cheapest saving available: one header, zero behaviour change.
+	//
+	// 30 days, NOT `immutable`, and the difference is deliberate:
+	//   - `immutable` forbids revalidation entirely, so a bad image an admin
+	//     hard-deletes — the one action the deletion policy exists for — would
+	//     keep displaying in every browser that already saw it, for the whole
+	//     max-age. Moderation would be a no-op for existing readers.
+	//   - 30 days still covers essentially all revisits (the same person rarely
+	//     opens the same article twice a month later), and the cost when the
+	//     window does expire is one 304, which carries no body.
+	//
+	// The stat is not redundant with ServeFile's own. A name that resolves but
+	// no longer exists (the row was hard-deleted) is answered with 404, and a
+	// 404 carrying a month-long max-age would be cached just as long — a file
+	// restored from backup would stay invisible to that browser. Only a real
+	// regular file earns the cache header.
+	if fi, statErr := os.Stat(path); statErr == nil && fi.Mode().IsRegular() {
+		w.Header().Set("Cache-Control", "public, max-age=2592000")
+	}
 	http.ServeFile(w, r, path)
 }
 
@@ -119,10 +172,11 @@ func ServeUploads(w http.ResponseWriter, r *http.Request) {
 //
 // This endpoint used to be open to every authenticated user, which made the
 // blog a free image host: any member could enumerate every image on the site
-// and hot-link it. The library is a site-owner asset view (spec 36 §1).
+// and hot-link it. The library is a site-owner asset view.
 //
 // Query: ?owner=<user-id> ?kind=<post|avatar|site> ?status=<live|deleted|all>
-//        ?page=N ?size=N
+//
+//	?page=N ?size=N
 func ListUploads(w http.ResponseWriter, r *http.Request) {
 	q, ok := parseUploadListQuery(w, r)
 	if !ok {

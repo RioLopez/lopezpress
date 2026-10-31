@@ -30,7 +30,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		services.LoginInput
 		CaptchaID   string `json:"captcha_id"`
 		CaptchaCode string `json:"captcha_code"`
-		CaptchaX    int    `json:"captcha_x"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeInvalidBody(w)
@@ -39,7 +38,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	if captchaOn() {
 		st := captcha.Default()
-		if err := checkCaptcha(st, in.CaptchaID, in.CaptchaCode, in.CaptchaX); err != nil {
+		if err := checkCaptcha(st, ip, in.CaptchaID, in.CaptchaCode); err != nil {
 			rejectCaptcha(w, st, ip, captchaReason(err))
 			return
 		}
@@ -48,17 +47,17 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	meta := services.LoginMeta{IP: ip, UA: r.UserAgent()}
 	res, err := svc.Login(r.Context(), in.LoginInput, meta)
 	if err != nil {
-		// A wrong password is what escalates this client's next challenge to a
-		// slide. Note it is recorded here, not by the middleware: the login
-		// limiter counts 401s for the account lockout, and doubling up would
-		// let one wrong password cost the account two strikes.
+		// A wrong password tightens this client's picture allowance. Note it is
+		// recorded here, not by the middleware: the login limiter counts 401s
+		// for the account lockout, and doubling up would let one wrong password
+		// cost the account two strikes.
 		captcha.Default().NoteFailure(ip)
 		writeServiceError(w, err)
 		return
 	}
 
 	// Getting in clears the streak: a human who eventually types the right
-	// password should not keep solving puzzles because of yesterday's typos.
+	// password should not keep paying for yesterday's typos.
 	captcha.Default().NoteSuccess(ip)
 	writeJSON(w, http.StatusOK, res)
 }

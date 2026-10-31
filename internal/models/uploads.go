@@ -6,11 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// UploadFile is the metadata row for one image stored in the upload directory
-// (spec 36). Before this table existed the image "library" was a directory
-// listing: no owner, no size accounting, no hash, no way to tell whose bytes
-// were on disk. Everything the quota system, the dedup path and the admin
-// gallery need comes from here.
+// UploadFile is the metadata row for one image stored in the upload directory.
+// Before this table existed the image "library" was a directory listing: no
+// owner, no size accounting, no hash, no way to tell whose bytes were on disk.
+// Everything the quota system, the dedup path and the admin gallery need comes
+// from here.
 //
 // DeletedAt is a plain *time.Time, NOT gorm.DeletedAt, on purpose: a soft-
 // deleted upload must keep being served. Articles that already reference it
@@ -30,15 +30,15 @@ type UploadFile struct {
 	// say this, but AutoMigrate cannot express one. Rotating the key is the
 	// portable equivalent. Historical rows use "legacy:<name>" so they never
 	// participate in de-duplication at all.
-	LiveKey      string     `gorm:"uniqueIndex;size:80;not null" json:"-"`
-	OwnerID      string     `gorm:"size:36;index" json:"owner_id"`
-	Size         int64      `json:"size"`
-	Width        int        `json:"width"`
-	Height       int        `json:"height"`
-	Mime         string     `gorm:"size:64" json:"mime"`
-	Sha256       string     `gorm:"size:64;index" json:"sha256"`
-	OriginalName string     `gorm:"size:255" json:"original_name"`
-	IP           string     `gorm:"size:64" json:"ip"`
+	LiveKey      string `gorm:"uniqueIndex;size:80;not null" json:"-"`
+	OwnerID      string `gorm:"size:36;index" json:"owner_id"`
+	Size         int64  `json:"size"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	Mime         string `gorm:"size:64" json:"mime"`
+	Sha256       string `gorm:"size:64;index" json:"sha256"`
+	OriginalName string `gorm:"size:255" json:"original_name"`
+	IP           string `gorm:"size:64" json:"ip"`
 	// Kind is the upload purpose: "post" (inline article image, the default),
 	// "avatar", or "site" (logo / favicon). It drives the per-file size cap.
 	Kind     string `gorm:"size:16;default:'post'" json:"kind"`
@@ -47,7 +47,7 @@ type UploadFile struct {
 	// was introduced. They are counted against the site quota but belong to
 	// nobody, so they never appear in a user's own upload list.
 	Legacy bool `gorm:"default:false" json:"legacy"`
-	// Thumbnail pipeline state, owned by the background queue (spec 36 §6).
+	// Thumbnail pipeline state, owned by the background queue.
 	// "" = never queued, "pending" = waiting, "ready" = ThumbName exists,
 	// "failed" = gave up (the list falls back to the original).
 	ThumbName   string `gorm:"size:160" json:"thumb_name"`
@@ -62,7 +62,7 @@ type UploadFile struct {
 
 // BeforeCreate assigns the opaque public identifier (22-char base62, generated
 // from crypto/rand). The id is also the file name stem, so the URL carries no
-// upload time, no user and no original name — see spec 36 §6.
+// upload time, no user and no original name.
 func (u *UploadFile) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == "" {
 		id, err := NewOpaqueID()

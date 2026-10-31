@@ -2,6 +2,7 @@ package captcha
 
 import (
 	crand "crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"math/big"
 )
@@ -41,43 +42,31 @@ func randomString(n int) (string, error) {
 	return string(out), nil
 }
 
-// randomInt returns a uniform value in [0, n).
-func randomInt(n int) (int, error) {
-	if n <= 0 {
-		return 0, nil
-	}
-	v, err := crand.Int(crand.Reader, big.NewInt(int64(n)))
-	if err != nil {
-		return 0, err
-	}
-	return int(v.Int64()), nil
-}
-
 // equalFoldASCII compares ignoring ASCII case only. Unicode folding would let
 // two different characters compare equal, which is not what a four-character
 // ASCII code means.
+//
+// The comparison runs over a normalised copy rather than returning at the first
+// differing byte. A short-circuit leaks how many leading characters were right,
+// which turns one guess into five; the copy is four bytes on a path that
+// happens at most a few times per minute.
 func equalFoldASCII(a, b string) bool {
-	if len(a) != len(b) {
+	if len(a) == 0 || len(a) != len(b) {
 		return false
 	}
+	va := make([]byte, len(a))
+	vb := make([]byte, len(b))
 	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if ca >= 'a' && ca <= 'z' {
-			ca -= 'a' - 'A'
-		}
-		if cb >= 'a' && cb <= 'z' {
-			cb -= 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
+		va[i] = upperASCII(a[i])
+		vb[i] = upperASCII(b[i])
 	}
-	return true
+	return subtle.ConstantTimeCompare(va, vb) == 1
 }
 
-func abs(v int) int {
-	if v < 0 {
-		return -v
+// upperASCII folds one byte to upper case, leaving everything else alone.
+func upperASCII(c byte) byte {
+	if c >= 'a' && c <= 'z' {
+		return c - ('a' - 'A')
 	}
-	return v
+	return c
 }

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -32,16 +31,17 @@ const (
 // Post status names. The visibility axis expanded from public/private to a
 // review workflow (spec: content moderation + banned vault):
 //   - Published: public, visible to everyone (default outcome of approval).
-//   - Private: author ONLY. Not admins, not root — "仅自己可见" means exactly
-//     that, and unpublished content needs no moderation.
+//   - Private: not public, but not hidden from the operators either: the
+//     author and admin/root can read it. It needs no moderation (it reaches no
+//     reader), yet an operator must be able to open it to handle a report.
 //   - Pending: in the review queue. Visible to the author and to admin/root.
 //   - Rejected: sent back to the author for revision, with a reviewer note.
 //     Visible to the author + admin/root; carries ReviewNote.
 //   - Banned: hard-moderated by root. Visible to root ONLY (banned vault);
 //     hidden from the author and other admins.
 //   - Draft: LEGACY, retired in round 22 (the editor no longer produces it).
-//     Kept only so stray old rows stay readable by their author and invisible
-//     to everyone else; treat it exactly like Private.
+//     Kept only so stray old rows stay readable to the same people as
+//     Private — treat it exactly like Private.
 const (
 	PostPublished = "published"
 	PostPrivate   = "private"
@@ -91,48 +91,11 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// bcryptMaxConcurrency bounds how many bcrypt operations may run at once.
-//
-// bcrypt is deliberately expensive — that is the point of using it — but the
-// asymmetry is that an attacker spends one cheap request while the server burns
-// ~60 ms of CPU hashing (DefaultCost = 10). On a 1-core box a handful of
-// concurrent login or register attempts saturate the CPU for seconds (R4-05
-// measured ~1.4 s for 20 concurrent attempts). The semaphore caps the
-// parallelism without weakening the hash or adding latency for the honest
-// single login, which is the only case that matters.
-const bcryptMaxConcurrency = 2
-
-var bcryptSemaphore = make(chan struct{}, bcryptMaxConcurrency)
-
-// acquireBcrypt blocks until a bcrypt slot is free and returns its release.
-func acquireBcrypt() func() {
-	bcryptSemaphore <- struct{}{}
-	return func() { <-bcryptSemaphore }
-}
-
-// HashPassword returns the bcrypt hash of the given plain password.
-func HashPassword(plain string) (string, error) {
-	release := acquireBcrypt()
-	defer release()
-	b, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-// VerifyPassword reports whether plain matches the stored hash.
-func VerifyPassword(plain, hash string) bool {
-	release := acquireBcrypt()
-	defer release()
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
-}
-
 // Post represents a single content article.
 type Post struct {
-	ID         string `gorm:"primaryKey;size:36" json:"id"`
-	Title      string `gorm:"size:200;not null" json:"title"`
-	// Slug is the human-readable permanent link segment (spec 29). Empty means
+	ID    string `gorm:"primaryKey;size:36" json:"id"`
+	Title string `gorm:"size:200;not null" json:"title"`
+	// Slug is the human-readable permanent link segment. Empty means
 	// "no slug yet" (rows created before the field existed); those keep working
 	// through the UUID route.
 	Slug       string `gorm:"size:160;index" json:"slug"`
@@ -144,12 +107,17 @@ type Post struct {
 	// tag `foreignKey:ID` made GORM resolve the relation backwards, which
 	// migrated `categories` with a text primary key plus an FK pointing at
 	// posts.id, leaving every category id NULL. Do not revert to that form.
-	Category  *Category `gorm:"foreignKey:CategoryID;references:ID" json:"category,omitempty"`
-	Author    *User     `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
-	Tags      []Tag     `gorm:"many2many:post_tags" json:"tags"`
-	Pinned    bool      `gorm:"default:false" json:"pinned"`
-	Cover     string    `gorm:"size:512" json:"cover,omitempty"`
-	ViewCount int64     `gorm:"default:0" json:"view_count"`
+	Category *Category `gorm:"foreignKey:CategoryID;references:ID" json:"category,omitempty"`
+	Author   *User     `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
+	Tags     []Tag     `gorm:"many2many:post_tags" json:"tags"`
+	Pinned   bool      `gorm:"default:false" json:"pinned"`
+	Cover    string    `gorm:"size:512" json:"cover,omitempty"`
+	// CoverThumb is a request-scoped convenience: the thumbnail URL of Cover
+	// when the cover is a local image that already has one. It is not a column
+	// (gorm:"-") — computing it per request keeps it from going stale when the
+	// worker finishes a thumbnail or a file is purged.
+	CoverThumb string `gorm:"-" json:"cover_thumb,omitempty"`
+	ViewCount  int64  `gorm:"default:0" json:"view_count"`
 	// Review metadata (spec: content moderation + banned vault). ReviewNote
 	// is the reviewer's free-text comment, set when a post is rejected
 	// (sent back for revision) or re-approved. ReviewedBy / ReviewedAt track
@@ -231,7 +199,7 @@ func SanitizePostReviews(posts []Post) {
 	}
 }
 
-// PostRevision is one saved-before-edit snapshot of a post (spec 31).
+// PostRevision is one saved-before-edit snapshot of a post.
 // Only the fields that are painful to lose are kept: title, body, status and
 // who changed it. Tags/category/cover are cheap to re-set and are not
 // versioned. At most maxRevisionsPerPost rows survive per post.
@@ -245,10 +213,10 @@ type PostRevision struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Category is a named grouping for posts. It supports ONE level of nesting
-// (spec 27): a category may have a ParentID, but a parent may not itself have
-// one. Two levels are all a personal blog needs; deeper trees make the
-// sidebar, breadcrumbs and filters unwind into unreadable indentation.
+// Category is a named grouping for posts. It supports ONE level of nesting:
+// a category may have a ParentID, but a parent may not itself have one.
+// Two levels are all a personal blog needs; deeper trees make the sidebar,
+// breadcrumbs and filters unwind into unreadable indentation.
 type Category struct {
 	ID        int64     `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"uniqueIndex;size:64;not null" json:"name"`
@@ -269,7 +237,7 @@ type PostTag struct {
 	TagID  int64  `gorm:"primaryKey" json:"tag_id"`
 }
 
-// PostView is one de-duplicated read of a post (spec 23).
+// PostView is one de-duplicated read of a post.
 //
 // The unique index (post_id, visitor_hash, day) IS the de-duplication
 // mechanism: the write path relies on INSERT ... ON CONFLICT DO NOTHING and
@@ -289,7 +257,7 @@ type PostView struct {
 
 // LoginLog records every login attempt (success or failure) for security
 // auditing. A successful attempt carries user_id; a failed attempt carries the
-// attempted identifier (username/email) with a nullable user_id. See spec 14.
+// attempted identifier (username/email) with a nullable user_id.
 type LoginLog struct {
 	ID         int64     `gorm:"primaryKey" json:"id"`
 	UserID     string    `gorm:"index" json:"user_id"`
@@ -320,7 +288,7 @@ type ActionLog struct {
 
 // SchemaMigration tracks which one-shot manual migrations have been applied.
 // AutoMigrate does not drop columns, so any column removal (e.g. the
-// deprecated posts.scheduled_at, spec #8) is handled by a hand-written
+// deprecated posts.scheduled_at) is handled by a hand-written
 // migration gated by a row in this table.
 type SchemaMigration struct {
 	Version   string    `gorm:"primaryKey;size:64" json:"version"`

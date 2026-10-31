@@ -91,27 +91,37 @@ func CORS(origins string) Middleware {
 	return func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			var corsOrigin string
-			switch {
-			case origin == "":
-				corsOrigin = "*"
-			case allowed[origin]:
-				corsOrigin = origin // known origin: echo back
-			case wildcard:
-				corsOrigin = "*" // open dev mode: allow anything
-		default:
-			// Unknown origin under a restricted allow-list: do NOT echo it
-			// back (that would defeat the allow-list). Leave the header unset
-			// so the browser rejects the cross-origin response.
-			corsOrigin = ""
-		}
-		if corsOrigin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", corsOrigin)
-		}
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
-			if !wildcard {
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			// No Origin means same-origin or not a browser (curl, a crawler).
+			// Those need no CORS headers, and sending them anyway was the bug:
+			// the old code answered `Access-Control-Allow-Origin: *` on every
+			// anonymous request, advertising the API as readable from any site.
+			// CORS is a conversation about a specific foreign origin; with no
+			// Origin there is nobody to answer.
+			if origin != "" {
+				var corsOrigin string
+				switch {
+				case allowed[origin]:
+					corsOrigin = origin // known origin: echo back
+				case wildcard:
+					corsOrigin = "*" // open dev mode: allow anything
+				default:
+					// Unknown origin under a restricted allow-list: do NOT echo
+					// it back (that would defeat the allow-list). Leave the
+					// header unset so the browser rejects the response.
+					corsOrigin = ""
+				}
+				if corsOrigin != "" {
+					w.Header().Set("Access-Control-Allow-Origin", corsOrigin)
+					// The answer now depends on a request header, so any shared
+					// cache must key on it — without Vary a proxy can serve one
+					// origin's response (and its ACAO) to another.
+					w.Header().Add("Vary", "Origin")
+					w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
+					if !wildcard {
+						w.Header().Set("Access-Control-Allow-Credentials", "true")
+					}
+				}
 			}
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)

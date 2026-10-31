@@ -73,4 +73,3 @@ func limitBody(n int64, next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
-

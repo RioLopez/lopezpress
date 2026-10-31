@@ -40,7 +40,7 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
 
-	// State precondition (as-built audit Q1): review only transitions posts that
+	// State precondition: review only transitions posts that
 	// are actually awaiting review. Acting on a published or private post would
 	// suddenly unpublish public content; acting on a banned post would skip the
 	// mandatory send-back-to-author step and republish without the author's fixes.
@@ -138,7 +138,7 @@ func (s *Service) BanPost(ctx context.Context, actor models.User, id string) (mo
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
-	// State precondition (as-built audit Q1): a post already in the banned vault
+	// State precondition: a post already in the banned vault
 	// cannot be re-banned. Banning is a root take-down for any live/pending/
 	// rejected/private post, but re-banning a banned row is a no-op that should
 	// fail fast rather than silently rewrite the reviewer timestamps.
@@ -305,7 +305,14 @@ func (s *Service) DeleteBannedPermanently(ctx context.Context, actor models.User
 		}
 		// Remove the tag join rows so the hard delete leaves no orphan
 		// associations (which would otherwise keep inflating tag counts).
-		return tx.Where("post_id = ?", id).Delete(&models.PostTag{}).Error
+		if err := tx.Where("post_id = ?", id).Delete(&models.PostTag{}).Error; err != nil {
+			return err
+		}
+		// The post is gone for good, so its image edges must go with it. Without
+		// this every body image and the cover of a purged article stay pinned at
+		// ref_count > 0 forever: the gallery reports "still used" for a post that
+		// no longer exists, and the operator can never delete those files.
+		return releasePostUploadRefsTx(tx, id)
 	})
 	if errors.Is(err, errStateChanged) {
 		return newErr(http.StatusConflict, "post is no longer in the banned vault")

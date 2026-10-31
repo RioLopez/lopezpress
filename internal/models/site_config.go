@@ -13,35 +13,35 @@ import "time"
 // Round 19 replaces the old browser-localStorage SM.MS token with the
 // server-held img_host_token below.
 type SiteConfig struct {
-	ID            int64  `gorm:"primaryKey" json:"id"`
-	SiteName      string `gorm:"size:128" json:"site_name"`
-	SiteTitle     string `gorm:"size:128" json:"site_title"`
-	SiteLogo      string `gorm:"size:512" json:"site_logo"`
-	SiteFavicon   string `gorm:"size:512" json:"site_favicon"`
-	SiteURL       string `gorm:"size:512" json:"site_url"`
+	ID          int64  `gorm:"primaryKey" json:"id"`
+	SiteName    string `gorm:"size:128" json:"site_name"`
+	SiteTitle   string `gorm:"size:128" json:"site_title"`
+	SiteLogo    string `gorm:"size:512" json:"site_logo"`
+	SiteFavicon string `gorm:"size:512" json:"site_favicon"`
+	SiteURL     string `gorm:"size:512" json:"site_url"`
 	// SiteDescription is the channel tagline shown in the RSS feed header and
 	// the meta description. Empty -> the feed falls back to the site title.
 	// Kept separate from FooterText: footer is page-bottom copyright/notice
 	// copy, description is the one-line "what is this site" line.
 	SiteDescription string `gorm:"size:512" json:"site_description"`
-	FooterText    string `gorm:"type:text" json:"footer_text"`
-	IcpNo         string `gorm:"size:128" json:"icp_no"`
-	FriendLinks   string `gorm:"type:text" json:"friend_links"`
-	ImgHostMode   string `gorm:"size:16;default:'local'" json:"img_host_mode"`
-	ImgHostToken  string `gorm:"type:text" json:"img_host_token"`
-	AllowRegister bool   `gorm:"default:false" json:"allow_register"`
-	// PageSize is the number of posts per page on the public list page
-	// (spec 24). Admin-configurable (5/10/20/30, default 10). The server —
-	// not the client — decides the page size so that ?page=N means the same
-	// thing for every visitor and stays shareable.
+	FooterText      string `gorm:"type:text" json:"footer_text"`
+	IcpNo           string `gorm:"size:128" json:"icp_no"`
+	FriendLinks     string `gorm:"type:text" json:"friend_links"`
+	ImgHostMode     string `gorm:"size:16;default:'local'" json:"img_host_mode"`
+	ImgHostToken    string `gorm:"type:text" json:"img_host_token"`
+	AllowRegister   bool   `gorm:"default:false" json:"allow_register"`
+	// PageSize is the number of posts per page on the public list page.
+	// Admin-configurable (5/10/20/30, default 10). The server — not the
+	// client — decides the page size so that ?page=N means the same thing for
+	// every visitor and stays shareable.
 	PageSize int `gorm:"default:10" json:"page_size"`
-	// PublicRead decides whether anonymous visitors may read the site
-	// (spec 27). true = public blog; false = everything behind the login.
+	// PublicRead decides whether anonymous visitors may read the site.
+	// true = public blog; false = everything behind the login.
 	// Enforced in BOTH layers: WithOptionalAuth rejects anonymous reads when
 	// it is false, and the SPA bounces to /login. Defaulting to true keeps the
 	// "public blog" positioning; an admin can lock the site down in one click.
 	PublicRead bool `gorm:"default:true" json:"public_read"`
-	// AutoBackup / BackupKeep drive the daily snapshot (spec 34). Off by
+	// AutoBackup / BackupKeep drive the daily snapshot. Off by
 	// default: an unrequested background job writing files is a surprise, and
 	// the operator may keep backups at the filesystem level instead.
 	AutoBackup bool `gorm:"default:false" json:"auto_backup"`
@@ -50,11 +50,11 @@ type SiteConfig struct {
 	// change / new-location login). Empty host disables the feature. The
 	// password is stored in the DB (admin-configurable) — acceptable because
 	// the row is only readable by admins; the public endpoint omits it.
-	SmtpHost  string    `gorm:"size:128" json:"smtp_host"`
-	SmtpPort  int       `json:"smtp_port"`
-	SmtpUser  string    `gorm:"size:128" json:"smtp_user"`
-	SmtpPass  string    `gorm:"type:text" json:"smtp_pass"`
-	// --- image storage policy (spec 36) ---
+	SmtpHost string `gorm:"size:128" json:"smtp_host"`
+	SmtpPort int    `json:"smtp_port"`
+	SmtpUser string `gorm:"size:128" json:"smtp_user"`
+	SmtpPass string `gorm:"type:text" json:"smtp_pass"`
+	// --- image storage policy ---
 	//
 	// Three ceilings, from narrow to wide: one file, one user, the whole site.
 	// Without them a single account can fill the VPS disk, and a full disk on
@@ -73,9 +73,9 @@ type SiteConfig struct {
 	// decides whether a plain https URL is an accepted avatar value or only
 	// something uploaded through this site (an external avatar is a tracking
 	// pixel with a friendly name).
-	AllowUserChangeAvatar bool      `gorm:"default:true" json:"allow_user_change_avatar"`
-	AllowExternalAvatar   bool      `gorm:"default:false" json:"allow_external_avatar"`
-	// --- email verification (spec 37) ---
+	AllowUserChangeAvatar bool `gorm:"default:true" json:"allow_user_change_avatar"`
+	AllowExternalAvatar   bool `gorm:"default:false" json:"allow_external_avatar"`
+	// --- email verification ---
 	//
 	// EMAIL VERIFICATION IS A TEST FEATURE: it is off by default, the admin UI
 	// labels it as experimental, and nothing else in the product depends on it.

@@ -7,7 +7,7 @@ import (
 	"lopezpress/internal/services"
 )
 
-// ApplyPresetCategories materialises the shipped category tree (spec 27).
+// ApplyPresetCategories materialises the shipped category tree.
 // POST /api/admin/categories/preset (auth, admin)
 //
 // Idempotent: existing names are adopted, never recreated, so clicking twice
@@ -121,7 +121,7 @@ func ListTagsWithCount(w http.ResponseWriter, r *http.Request) {
 // PUT /api/tags/{id} (auth, admin)
 //
 // Renaming rather than delete+create keeps every post_tags association, which
-// is why this endpoint exists (spec 25).
+// is why this endpoint exists.
 func UpdateTag(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id", "tag id")
 	if err != nil {
