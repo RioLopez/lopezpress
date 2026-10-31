@@ -19,12 +19,12 @@ import (
 	"lopezpress/internal/middleware"
 	"lopezpress/internal/router"
 	"lopezpress/internal/services"
+	"lopezpress/internal/version"
 )
 
 // main entry point.
 func main() {
-	// Offline recovery flag (spec #22 / TODO P1-17). Parsed before anything
-	// else so a reset run never starts the HTTP server.
+	// Offline recovery; parsed first so it never boots.
 	resetRoot := flag.Bool("reset-root-password", false,
 		"rotate the unique root account's password, print it once to stderr, and exit (offline recovery)")
 	// Container health probe. The image is distroless (no shell, no curl), so the
@@ -34,7 +34,16 @@ func main() {
 	// exists to avoid.
 	healthcheck := flag.Bool("healthcheck", false,
 		"probe this instance's readiness endpoint and exit 0 (ready) or 1 (not ready)")
+	// "Who are you", answered before .env or config validation on purpose:
+	// a binary must be able to identify itself on a box whose config is broken.
+	showVersion := flag.Bool("version", false,
+		"print this binary's version, commit and build time, then exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	loadDotEnv()
 	cfg := config.Load()
@@ -56,7 +65,7 @@ func main() {
 		log.Fatalf("security config invalid: %v", err)
 	}
 
-	// Trusted-proxy list for client-IP resolution (spec 23 / P2-6). Parsed
+	// Trusted-proxy list for client-IP resolution. Parsed
 	// before anything else so a typo in TRUSTED_PROXIES fails at startup
 	// rather than silently degrading every IP-based decision to the proxy's
 	// address.
@@ -67,7 +76,7 @@ func main() {
 	// Login challenge store. Deliberately in-process: a captcha lives for two
 	// minutes, so a restart costs a user one extra picture and nothing else —
 	// not worth a table, and there is no Redis on this box.
-	captcha.Init(captcha.New(2*time.Minute, cfg.CaptchaSlideAfter))
+	captcha.Init(captcha.New(2 * time.Minute))
 
 	if *resetRoot {
 		os.Exit(runResetRootPassword(cfg))
@@ -96,7 +105,7 @@ func main() {
     (Set the ADMIN_INITIAL_PASSWORD env var to pin a known value
      on first boot if you prefer.)
   - Forgotten later? Run: lopezpress -reset-root-password
-    (admin cannot reset root by design; see spec #22)
+    (admin cannot reset root by design)
 ==================================================================
 `
 		fmt.Fprintf(os.Stderr, banner, seededAdminPwd)
@@ -113,12 +122,12 @@ func main() {
 	svc := services.New(db, cfg)
 	handlers.Init(db, cfg, svc)
 
-	// Spec 36 §6: one goroutine produces thumbnails for the image library,
+	// Thumbnail pipeline: one goroutine produces thumbnails for the image library,
 	// one image at a time, out of the request path. It re-queues whatever a
 	// previous run left pending, so a crash mid-queue costs nothing.
 	svc.StartThumbWorker(ctx)
 
-	// Spec 29: posts created before the slug column existed get their
+	// Posts created before the slug column existed get their
 	// permanent link here (idempotent, one indexed query per boot).
 	if n, err := svc.BackfillSlugs(context.Background()); err != nil {
 		log.Printf("WARN slug backfill failed: %v", err)
@@ -126,7 +135,7 @@ func main() {
 		log.Printf("slug backfill: %d post(s) received a permanent link", n)
 	}
 
-	// Spec 34: daily snapshot. Runs on boot and then on a coarse timer; every
+	// Daily snapshot. Runs on boot and then on a coarse timer; every
 	// check costs one os.Stat once today's file exists, so a 30-minute tick is
 	// free compared to the request traffic around it.
 	runAutoBackup := func() {
@@ -145,13 +154,17 @@ func main() {
 		}
 	}()
 
-	// Build the per-identity rate limiter from the loaded config.
+	// Build the per-identity rate limiter from the loaded config. The signing
+	// secret is injected so the limiter can identify a caller from its bearer
+	// token — it runs before the auth middleware, so it cannot read the user
+	// off the request context.
 	limiter := middleware.NewLimiter(middleware.LimiterConfig{
 		RPS:   cfg.RateLimitRPS,
 		Burst: cfg.RateLimitBurst,
 	})
+	limiter.SetTokenSecret(cfg.JWTSecret)
 
-	// Login-specific limiter (spec #3): IP + account dual bucket + 5-failure
+	// Login-specific limiter: IP + account dual bucket + 5-failure
 	// lockout, applied only to /api/auth/login. The janitor reaps stale
 	// lockout entries every minute and stops with the process.
 	loginLimiter := middleware.NewLoginLimiter()
@@ -165,22 +178,21 @@ func main() {
 	h := router.New(cfg, limiter, loginLimiter)
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
+		Addr:    cfg.ListenAddr(),
 		Handler: h,
 	}
 
 	go func() {
-		log.Printf("lopezpress listening on :%s", cfg.Port)
+		log.Printf("lopezpress %s listening on %s", version.Short(), cfg.ListenAddr())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server exited: %v", err)
 		}
 	}()
 
 	// Posts have only two visibilities — public ("published") and
-	// private ("private"). Scheduled publishing and drafts were removed
-	// (spec 22), so there is no background scheduler to run; a post's
-	// visibility is set at publish time and can be toggled in content
-	// management.
+	// private ("private"). Scheduled publishing and drafts were removed,
+	// so there is no background scheduler to run; a post's visibility is
+	// set at publish time and can be toggled in content management.
 	//
 	// Graceful shutdown: the context that cancels the HTTP server is the same
 	// one that stops the thumbnail worker, so the process leaves no orphan
@@ -193,13 +205,17 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("forced shutdown: %v", err)
 	}
+	// View counting is buffered in memory (see services/views_flush.go). A
+	// clean stop writes what is pending, so a restart costs no views at all;
+	// only a crash loses the current flush window.
+	svc.FlushViews(shutdownCtx)
 	log.Println("server stopped")
 }
 
-// runResetRootPassword implements the `-reset-root-password` flag (spec #22).
+// runResetRootPassword implements the `-reset-root-password` flag.
 //
 // It exists because the HTTP API intentionally has no path back into root: an
-// admin may not reset root (P0-1 fix) and root's own password change requires
+// admin may not reset root, and root's own password change requires
 // the current password, so a forgotten root password used to mean "edit the
 // database by hand or lose the site". This makes that operation correct
 // (bcrypt, forced rotation, session revocation) for whoever already has

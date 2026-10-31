@@ -20,10 +20,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-echo "==> 交叉编译 Linux amd64 静态二进制（CGO_ENABLED=0）..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -ldflags="-s -w" -o bin/lopezpress ./cmd/server
-echo "    产物: bin/lopezpress ($(du -h bin/lopezpress | cut -f1))"
+echo "==> 交叉编译 Linux amd64 静态二进制（含版本号）..."
+bash "$SCRIPT_DIR/build.sh"
 
 echo "==> 构建前端 (web/)..."
 ( cd web
@@ -47,6 +45,9 @@ scp "${SSH_ARGS[@]}" \
   "$PROJECT_ROOT/deploy/install-systemd.sh" \
   "$PROJECT_ROOT/deploy/lopezpress.service" \
   "${SSH_TARGET}:${APP_DIR}/"
+# scp 覆盖会把权限位重置成 644，systemd 随即报 203/EXEC（Permission denied），
+# 而外部只看到 nginx 502。在这里当场设位，不要留给后面的脚本补。
+ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "chmod 755 ${APP_DIR}/lopezpress"
 # 前端构建产物
 ( cd "$PROJECT_ROOT/web/dist" && tar cf - . ) | \
   ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "cd ${APP_DIR}/web && tar xf -"

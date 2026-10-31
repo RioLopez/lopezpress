@@ -19,7 +19,19 @@ for f in "$APP_DIR/lopezpress" "$APP_DIR/.env"; do
     exit 1
   fi
 done
-chmod +x "$APP_DIR/lopezpress" 2>/dev/null || true
+# 二进制必须可执行，而且这里不能静默失败。
+#
+# 踩过的坑：scp 覆盖文件会把权限位重置成 644，而 systemd 对此报的是
+#   Failed to locate executable ...: Permission denied
+#   Main process exited, code=exited, status=203/EXEC
+# 这两行只出现在 journalctl 里；从外面看只是 nginx 的 502，很容易被误判成
+# 端口占用或者代码问题，于是在端口和配置上来回折腾。所以显式设位 + 校验，
+# 不通过就直接退出。
+chmod 755 "$APP_DIR/lopezpress"
+if [[ ! -x "$APP_DIR/lopezpress" ]]; then
+  echo "错误：$APP_DIR/lopezpress 不可执行（chmod 755 未生效？）" >&2
+  exit 1
+fi
 
 # 2. 创建系统用户（非交互，nologin）
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -50,4 +62,5 @@ echo
 echo "=== 最近日志 ==="
 journalctl -u "$SERVICE_NAME" -n 20 --no-pager || true
 echo
-echo "完成。健康检查：curl http://localhost:8080/health"
+PORT="$(grep -E '^PORT=' "$APP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2)"
+echo "完成。健康检查：curl http://127.0.0.1:${PORT:-8080}/health"
