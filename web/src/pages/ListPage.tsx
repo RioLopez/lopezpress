@@ -5,7 +5,7 @@ import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPostsPaged, deletePost, listCategories, errMessage, errStatus } from '../core/api'
 import type { Post, PostStatus } from '../core/types'
-import { renderMD, stripHTML, highlight } from '../core/md'
+import { excerpt, highlight } from '../core/md'
 import { Sidebar } from '../ui/Sidebar'
 import { Pagination } from '../ui/Pagination'
 import { useNavSearch } from '../core/router'
@@ -13,7 +13,7 @@ import { useQuery } from '../core/useQuery'
 import { isAdminOnly, isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel, categoryLabel } from '../core/taxonomy'
 
-// Spec 24: classic pagination. The page number lives in the URL (?page=N) and
+// Classic pagination. The page number lives in the URL (?page=N) and
 // the page SIZE is decided by the server from site_config.page_size — the
 // client deliberately never sends `size`, so one link means one thing for
 // everybody and stays shareable.
@@ -73,7 +73,7 @@ export function ListPage() {
         status: status || undefined,
         q: debouncedSearch || undefined,
         page,
-        // No `size`: the server applies site_config.page_size (spec 24).
+ // No `size`: the server applies site_config.page_size.
         category: activeCategory ?? undefined,
         tag: activeTag == null ? undefined : activeTag,
       }),
@@ -96,7 +96,7 @@ export function ListPage() {
   const categoryNodes = useMemo(() => orderCategories(categories), [categories])
 
   // Single navigation helper: every filter change goes through it so the page
-  // number is always reset deliberately (spec 24 AC-3.1) instead of by an
+ // number is always reset deliberately instead of by an
   // effect that would also fire on mount and fight a deep link.
   const go = useCallback(
     (next: { page?: number; category?: string | null; tag?: string | null }) => {
@@ -158,7 +158,7 @@ export function ListPage() {
     p.status !== 'banned' && canModeratePost(p)
   // A deep link may point past the end (post deleted, filters changed). That
   // is not an error state — show the message plus the pager so the reader can
-  // get back (spec 24 AC-1.4).
+ // get back.
   const hasActiveFilter = debouncedSearch !== '' || status !== '' || activeCategory !== null || activeTag !== null
   const outOfRange = !loading && items.length === 0 && totalItems > 0 && page > totalPagesNum
 
@@ -168,7 +168,7 @@ export function ListPage() {
         <div class="list-main">
           <div class="list-header">
             <h1>{t('list.title')}</h1>
-            {/* Spec 27: anonymous readers must never see an authoring entry. */}
+            {/* Anonymous readers must never see an authoring entry. */}
             {user && (
               <button class="btn btn-primary" onClick={() => navigate('/create')}>
                 {t('nav.create')}
@@ -182,7 +182,7 @@ export function ListPage() {
               value={search}
               onInput={(e) => {
                 setSearch((e.target as HTMLInputElement).value)
-                // Spec 24 AC-3.1: a filter change restarts at page 1. Doing it
+ // A filter change restarts at page 1. Doing it
                 // here (not in an effect) keeps a deep link like ?page=3 from
                 // being reset on mount.
                 if (page !== 1) go({ page: 1 })
@@ -220,7 +220,7 @@ export function ListPage() {
           ) : totalItems === 0 ? (
             // A filtered empty result is NOT "you have no posts yet": the old
             // copy told a reader to go write their first post after a search
-            // that simply matched nothing (spec 28).
+ // that simply matched nothing.
             hasActiveFilter ? (
               <div class="empty-state">
                 <p class="empty-text">{t('list.noResults')}</p>
@@ -256,11 +256,11 @@ export function ListPage() {
               <ul class="post-list">
                 {items.map((p) => (
                   <li key={p.id} class="post-item" onClick={() => navigate(`/read/${p.id}`)}>
-                    {/* Spec 28: the cover field existed (editor + model) but
+                    {/* The cover field existed (editor + model) but
                         was never rendered in any list, so choosing a cover
                         had no visible effect. */}
                     {p.cover && (
-                      <img class="post-cover-thumb" src={p.cover} alt="" loading="lazy" />
+                      <img class="post-cover-thumb" src={p.cover_thumb || p.cover} alt="" loading="lazy" />
                     )}
                     <div class="post-item-head">
                       <span class="post-title">
@@ -294,7 +294,7 @@ export function ListPage() {
                       class="post-excerpt"
                       dangerouslySetInnerHTML={{
                         __html: highlight(
-                          stripHTML(renderMD(p.body)).slice(0, 120) || t('post.emptyBody'),
+                          excerpt(p.body, 120) || t('post.emptyBody'),
                           debouncedSearch,
                         ),
                       }}

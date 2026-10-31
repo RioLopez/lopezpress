@@ -8,7 +8,7 @@ import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
 
-// Ban vault (spec 24): the root-only view of every banned post. The author
+// Ban vault: the root-only view of every banned post. The author
 // (and every admin) cannot see these posts anywhere else in the app, so this
 // page is the single place they can be managed. Two actions are available:
 // send the post back to its author with a note, or delete it permanently.

@@ -13,7 +13,7 @@ interface ModalProps {
   wide?: boolean
 }
 
-// Shared modal shell (P2-2 dedup). Five admin dialogs (user form, reset
+// Shared modal shell. Five admin dialogs (user form, reset
 // password, review reject, banned send-back, login history) carried this
 // markup verbatim; the backdrop click closes while the panel click stops
 // propagation so interacting inside never dismisses the dialog.

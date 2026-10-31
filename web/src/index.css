@@ -210,10 +210,9 @@ html, body {
 .pwd-toggle:hover { background: var(--border); color: var(--text); }
 
 /* Login captcha -------------------------------------------------------------
-   Two shapes, one block: the four-character picture sits beside its input, the
-   slide puzzle spans the card. Both keep the site's square, border-only look —
-   a rounded, shadowed widget here would be the one thing on the page that
-   belongs to a different design. */
+   One shape now: the four-character picture beside its input. It keeps the
+   site's square, border-only look — a rounded, shadowed widget here would be
+   the one thing on the page that belongs to a different design. */
 .captcha-block { margin: 0 0 16px; }
 .captcha-block > label {
   display: block; font-size: 13px; color: var(--text-muted);
@@ -227,10 +226,16 @@ html, body {
   transition: border-color .15s;
 }
 .captcha-row input:focus { outline: none; border-color: var(--primary); }
+/* Size matches the server-rendered canvas exactly: 208x50 — a 200px draw
+   surface plus the 4px background margin the server adds on each side so the
+   outer characters do not touch the border. The box must never differ from the
+   canvas, because object-fit then rescales and the outer characters lose their
+   edges — that is what "the picture is cut off" was. Do not shrink this to make
+   room; wrap the row instead (see the media query). */
 .captcha-img {
-  display: block; height: 44px; width: 122px; flex-shrink: 0;
+  display: block; width: 208px; height: 50px; flex-shrink: 0;
   border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface-2); cursor: pointer; object-fit: cover;
+  background: var(--surface-2); cursor: pointer; object-fit: contain;
 }
 .captcha-refresh {
   margin-top: 6px; padding: 0; border: 0; background: none; font-family: inherit;
@@ -238,18 +243,12 @@ html, body {
 }
 .captcha-refresh:hover { text-decoration: underline; }
 .captcha-refresh:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
-.captcha-slide {
-  position: relative; overflow: hidden; line-height: 0;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  touch-action: none; user-select: none; background: var(--surface-2);
+/* Narrow phones: a 180px picture plus a usable input no longer fit on one
+   line, so stack them rather than letting the input collapse to nothing. */
+@media (max-width: 420px) {
+  .captcha-row { flex-wrap: wrap; }
+  .captcha-row input { flex-basis: 100%; }
 }
-.captcha-slide-bg { display: block; width: 100%; }
-.captcha-slide-tile {
-  position: absolute; cursor: grab; touch-action: none;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .25));
-}
-.captcha-slide-tile:active { cursor: grabbing; }
-.captcha-hint { margin: 6px 0 0; font-size: 12px; }
 
 .field { margin-bottom: 14px; }
 .field label {
@@ -557,7 +556,10 @@ html, body {
 .md-body p { margin: .6em 0; }
 .md-body a { color: var(--primary); text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
-.md-body strong { font-weight: 600; }
+/* 700, not 600: at 16px Microsoft YaHei's 600 resolves to the regular face on
+   Windows, which is what made bold read as "not applied". The editor preview
+   carries the same value - see the .vditor-reset rule. */
+.md-body strong { font-weight: 700; }
 .md-body em { font-style: italic; }
 .md-body blockquote {
   border-left: 3px solid var(--border); padding: .4em 1em; margin: 1em 0;
@@ -694,6 +696,43 @@ code.hl { background: var(--hl, #fff3a3); }
 .list-count { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
 
 /* Archive page (年月归档) ------------------------------------------------ */
+/* Subscribe page (/subscribe) — the human entry point for the RSS feed.
+   A plain readable column: the only interactive element is the copy button,
+   so there is nothing here to align against a grid. */
+.subscribe-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.subscribe-title { margin: 0 0 8px; font-size: 20px; }
+.subscribe-intro { margin: 0 0 20px; color: var(--text-muted); line-height: 1.6; }
+.subscribe-label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-muted); }
+.subscribe-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.subscribe-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.subscribe-h2 { margin: 0 0 6px; font-size: 15px; }
+.subscribe-body { margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: var(--text-muted); }
+.subscribe-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--danger);
+}
+.subscribe-raw { font-size: 13px; color: var(--primary); }
+
 .archive-page { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .archive-main { padding: 28px; }
 .archive-groups { display: flex; flex-direction: column; gap: 24px; }
@@ -1570,7 +1609,6 @@ tr.row-selected { transition: background .12s; }
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); padding: 6px 10px;
 }
-.pe-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 .pe-modes { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; margin-left: auto; flex: 0 0 auto; }
 .pe-mode {
   border: none; background: transparent; color: var(--text-muted); cursor: pointer;
@@ -1595,11 +1633,9 @@ tr.row-selected { transition: background .12s; }
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
 }
 .pe-meta { align-self: start; }
-/* Editor body (split / source / ir) + statline share the column height:
-   body flexes, statline is fixed at the bottom. */
-.pe-editor .pe-split,
-.pe-editor .pe-ta--full,
-.pe-editor .pe-ir { flex: 1 1 auto; min-height: 0; }
+/* Editor body + statline share the column height: the editing surface flexes,
+   the statline stays fixed at the bottom. */
+.pe-editor .vd-host { flex: 1 1 auto; min-height: 0; }
 .pe-statline { flex: 0 0 auto; }
 .pe-meta { position: sticky; top: 80px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .pe-meta h3 { margin: 0 0 12px; font-size: 15px; }
@@ -1670,11 +1706,41 @@ tr.row-selected { transition: background .12s; }
 .pe-feedback--err { color: var(--danger); }
 
 /* Vditor integration: match theme, give the editor real height */
-.pe-editor .vditor { border: 1px solid var(--border) !important; border-radius: var(--radius); }
-.pe-editor .vditor-reset { font-size: 15px; line-height: 1.75; }
-.pe-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: 460px; }
-.pe-split > .vditor { border-radius: 0 !important; }
-.pe-split > .vditor:first-child { border-right: 1px solid var(--border) !important; }
+/* Vditor is a direct child of the editor card, and the card already draws the
+   outer border and radius - a second one here would read as a double frame.
+   Height 100% because Vditor measures its own container on mount. */
+.pe-editor .vditor { border: none !important; border-radius: 0 !important; height: 100%; }
+/* The preview has to be a rehearsal of the published page: same font stack,
+   same 16px/1.85, same serif headings as .md-body. It used to be 15px/1.75 on
+   Vditor's own "Helvetica Neue…" stack, so Chinese bold came out one weight
+   weaker than after publishing and the editor looked broken.
+   :not(.vditor-sv) is load-bearing — in sv mode the source pane is
+   `class="vditor-sv vditor-reset"` and inheriting this would cost it its
+   monospace font. */
+.pe-editor .vditor-reset:not(.vditor-sv) {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--text);
+}
+.pe-editor .vditor-reset:not(.vditor-sv) h1,
+.pe-editor .vditor-reset:not(.vditor-sv) h2 {
+  font-family: var(--font-serif);
+  letter-spacing: .01em;
+  font-weight: 700;
+}
+.pe-editor .vditor-reset:not(.vditor-sv) h1 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .3em;
+}
+/* Explicit, and identical to .md-body strong: Vditor leaves <strong> on the UA
+   default, so the two surfaces agreed only by accident. */
+.pe-editor .vditor-reset strong,
+.pe-editor .vditor-reset b { font-weight: 700; }
+/* Vditor's toolbar sits directly below the mode switch; trim its left padding
+   so the two rows do not stack into a band of dead chrome. */
+.pe-editor .vditor-toolbar { padding-left: 4px; }
 .pe-toc-float { position: absolute; top: 8px; right: 8px; z-index: 20; max-width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; max-height: 60vh; overflow: auto; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
 .pe-toc-float a { display: block; color: var(--text); text-decoration: none; padding: 2px 0; }
 .pe-toc-float a:hover { color: var(--primary); }
@@ -1693,8 +1759,6 @@ tr.row-selected { transition: background .12s; }
 @media (max-width: 1023px) {
   .pe-grid { grid-template-columns: 1fr; grid-template-rows: auto auto; }
   .pe-meta { position: static; top: auto; width: 100%; align-self: stretch; }
-  .pe-split { grid-template-columns: 1fr; }
-  .pe-split > .vditor:first-child { border-right: none !important; border-bottom: 1px solid var(--border) !important; }
   .layout.layout--editor .main.main--editor { overflow: auto; }
   .layout.layout--editor .main.main--editor .post-editor .pe-grid { height: auto; min-height: 0; }
 }
@@ -1705,33 +1769,11 @@ tr.row-selected { transition: background .12s; }
   .pe-modes { margin-left: 0; }
 }
 
-/* Pure-source mode: hide Vditor's live preview, keep only the Markdown pane. */
-.pe-editor.pe-source .vditor-preview { display: none !important; }
-.pe-editor.pe-source .vditor-reset { max-width: none; }
-
-/* Custom (dependency-free) editor panes — split / ir / source (spec 21).
-   The editor card (.pe-editor) owns the outer border/radius/overflow:hidden;
-   these inner panes fill the column's remaining height and scroll internally.
-   No per-pane borders/radius — only the inner divider between split columns. */
-.pe-split { position: relative; display: grid; grid-template-columns: 50% 1fr; overflow: hidden; background: var(--surface); }
-.pe-editor.pe-dragging { user-select: none; }
-/* textarea: 100% width/height, no resize (layout controls size), internal scroll. */
-.pe-ta {
-  width: 100%; height: 100%; min-height: 0;
-  border: none; outline: none; resize: none; box-sizing: border-box;
-  padding: 16px; font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
-  font-size: 14px; line-height: 1.7; background: var(--surface); color: var(--text);
-}
-.pe-ta--full {
-  width: 100%; height: 100%; min-height: 0;
-  border: none; outline: none; resize: none; box-sizing: border-box;
-  padding: 16px; font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
-  font-size: 14px; line-height: 1.7; background: var(--surface); color: var(--text);
-}
-.pe-preview { padding: 16px 20px; overflow: auto; height: 100%; border-left: 1px solid var(--border); background: var(--surface-2); }
-.pe-ir { padding: 16px 20px; overflow: auto; height: 100%; background: var(--surface); }
-.pe-divider { position: absolute; top: 0; bottom: 0; width: 6px; transform: translateX(-50%); background: var(--border); cursor: col-resize; z-index: 5; }
-.pe-divider:hover { background: var(--primary); }
+/* Pure-source mode: the preview pane is closed. setPreviewMode('editor') does
+   the real work; this rule covers the first paint, before the instance has
+   finished booting and can apply the layout itself. */
+.vd-host.pe-source .vditor-preview { display: none !important; }
+.vd-host.pe-source .vditor-reset { max-width: none; }
 
 /* =========================================================================
    Modern design system — override layer (2026-10-14)
@@ -1927,7 +1969,11 @@ html { -webkit-text-size-adjust: 100%; }
   --primary: #b8492c;
   --primary-hover: #9d3c22;
   --primary-fg: #ffffff;
-  --font-serif: Georgia, "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  /* Georgia（Windows 内置）的默认数字是旧式/非等高数字，纯数字标题
+     如 "# 12345677890" 会出现 3/4/5/7/9 比 0/1/2 矮且下沉的“高矮不一”。
+     把带等高数字（lining figures）的衬线放到 Georgia 前面即可修复；
+     Times New Roman / Source Serif / Songti 的数字都是等高的。 */
+  --font-serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "Times New Roman", Georgia, "SimSun", serif;
 }
 [data-theme="dark"] {
   --bg: #12110f;

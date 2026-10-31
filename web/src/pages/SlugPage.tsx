@@ -4,7 +4,7 @@ import { useI18n } from '../core/i18n'
 import { ReadPage } from './ReadPage'
 import { NotFoundPage } from './NotFoundPage'
 
-// Spec 29: `/p/{slug}` resolves the permanent link to a post id, then hands
+// `/P/{slug}` resolves the permanent link to a post id, then hands
 // off to the existing ReadPage. Keeping the resolution here means ReadPage
 // stays single-purpose (id-based) and the UUID route keeps working unchanged.
 export function SlugPage({ slug }: { slug: string }) {

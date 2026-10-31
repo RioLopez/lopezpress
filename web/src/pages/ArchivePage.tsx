@@ -7,7 +7,7 @@ import type { Post } from '../core/types'
 import { Pagination } from '../ui/Pagination'
 import { useQuery } from '../core/useQuery'
 
-// Spec 28: the archive is paginated now. Before this it fetched EVERY
+// The archive is paginated now. Before this it fetched EVERY
 // published post in one response (body stripped, but three relations
 // preloaded) — fine for a dozen posts, unusable at a thousand on 1 vCPU.
 

@@ -40,7 +40,7 @@ export function Sidebar({ activeCategory, activeTag, onCategorySelect, onTagSele
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const linkBase = 'sidebar-link'
 
-  // Spec 27: categories are a two-level tree. The flattening lives in
+ // Categories are a two-level tree. The flattening lives in
   // core/taxonomy so the sidebar, the list filter and the card breadcrumbs all
   // agree on the order.
   const ordered = orderCategories(categories)

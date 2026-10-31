@@ -1,7 +1,7 @@
 // DTO types mirroring the Go API's JSON responses.
 
 export type Role = 'user' | 'admin' | 'root'
-// Three-tier model (spec 24): "published" = public (visible to everyone),
+// Three-tier model: "published" = public (visible to everyone),
 // "private" = author + admin + root. The review/ban workflow adds four more:
 // "pending" = awaiting review (author + admin + root), "rejected" = sent back
 // for revisions (author + admin + root, carries a note), "banned" = in the
@@ -29,7 +29,7 @@ export interface UserPublic {
 export interface Category {
   id: number
   name: string
-  // Spec 27: null = top level; a number = this category's parent.
+ // Null = top level; a number = this category's parent.
   parent_id: number | null
   created_at: string
 }
@@ -40,7 +40,7 @@ export interface Tag {
 }
 
 export interface Post {
-  // Spec 29: human-readable permanent link segment ("" for legacy rows).
+ // Human-readable permanent link segment ("" for legacy rows).
   slug: string
   id: string
   title: string
@@ -53,8 +53,13 @@ export interface Post {
   tags?: Tag[]
   pinned: boolean
   cover?: string
+  // Thumbnail of `cover`, present only when the cover is a local upload whose
+  // thumbnail the worker has already produced. Cards should prefer it: a
+  // listing renders ten covers at once and the originals are often thousands
+  // of pixels wide.
+  cover_thumb?: string
   view_count: number
-  // Review / ban workflow (spec 24): the reviewer's note when the post was
+ // Review / ban workflow: the reviewer's note when the post was
   // sent back for revisions, and who/when it was reviewed.
   review_note?: string
   reviewed_by?: string
@@ -69,21 +74,18 @@ export interface AuthResult {
   user: UserPublic
 }
 
-// One login challenge. The kind decides which interaction to render, and the
-// server picks it from this client's failure history — the browser cannot ask
-// for the easier one.
+// One login challenge: a picture of four characters.
 //
-// The answer is never in here. For 'image' the picture is `image`; for 'slide'
-// it is the pair `bg`/`tile` plus the piece's vertical offset. The horizontal
-// target is exactly what the user has to work out.
+// The answer is never in here, and there is no field to derive it from. `id`
+// is 128 random bits that reference state held on the server; the server also
+// binds that state to the address that asked for it, so the answer cannot be
+// solved elsewhere and spent here.
 export interface CaptchaChallenge {
   id: string
-  kind: 'image' | 'slide'
-  image?: string
-  bg?: string
-  tile?: string
-  tile_y?: number
-  tile_size?: number
+  /** Only 'image' exists today; kept in the payload so a cached frontend keeps working. */
+  kind: 'image'
+  /** PNG data URI. The answer is never in this payload — only the picture. */
+  image: string
   expires_in: number
 }
 
@@ -95,11 +97,10 @@ export interface CaptchaIssued {
 }
 
 // What the login form hands to the transport layer once the user has solved the
-// challenge. Exactly one of code/x is meaningful, depending on kind.
+// challenge: which picture, and what they read off it.
 export interface CaptchaAnswer {
   id: string
   code: string
-  x: number
 }
 
 export interface CreatePostInput {
@@ -135,13 +136,13 @@ export interface ListPostsQuery {
   tag?: string
   // Scope to a single author (personal center "my content only").
   author?: string
-  // Personal-center sort (spec 20): "created_at" (default) | "views"
+ // Personal-center sort: "created_at" (default) | "views"
   sort?: 'created_at' | 'views'
   // "asc" | "desc" (default)
   order?: 'asc' | 'desc'
 }
 
-// Spec 31: one saved-before-edit snapshot.
+// One saved-before-edit snapshot.
 export interface Revision {
   id: number
   post_id: string
@@ -161,7 +162,7 @@ export interface PostPage {
 
 // --- image upload (POST /api/upload) ---
 
-// What POST /api/upload answers (spec 36). `deduped` means the library already
+// What POST /api/upload answers. `deduped` means the library already
 // held these exact bytes and nothing new was written to disk.
 export interface UploadResult {
   id: string
@@ -275,7 +276,7 @@ export interface UserWithDisabled {
   created_at: string
 }
 
-// --- site config (spec 05) ---
+// --- site config ---
 export interface FriendLink {
   name: string
   url: string
@@ -292,11 +293,11 @@ export interface SiteConfigPublic {
   footer_text: string
   icp_no: string
   friend_links: string // raw JSON array string
-  // Spec 24: posts per page on the public list (5/10/20/30, server-enforced).
+ // Posts per page on the public list (5/10/20/30, server-enforced).
   page_size: number
-  // Spec 27: whether anonymous visitors may read the site.
+ // Whether anonymous visitors may read the site.
   public_read: boolean
-  // Spec 37 (experimental): when true, sign-up and password reset ask for a
+ // (experimental): when true, sign-up and password reset ask for a
   // code mailed to the address. Public because the forms must know whether to
   // render the field.
   email_verify_enabled: boolean
@@ -313,10 +314,10 @@ export interface SiteConfigFull extends SiteConfigPublic {
   smtp_port: number
   smtp_user: string
   smtp_pass: string
-  // Spec 34: daily snapshot settings (root-only surface).
+ // Daily snapshot settings (root-only surface).
   auto_backup: boolean
   backup_keep: number
-  // Spec 36: image storage policy. The three ceilings are bytes; the two
+ // Image storage policy. The three ceilings are bytes; the two
   // switches decide what an ordinary author may do with their own pictures.
   // Sent in full on every save — the server treats a missing/zero ceiling as
   // "keep the stored one", so a stale form cannot disable the limits.
@@ -327,7 +328,7 @@ export interface SiteConfigFull extends SiteConfigPublic {
   allow_user_delete_upload: boolean
   allow_user_change_avatar: boolean
   allow_external_avatar: boolean
-  // Spec 37 (experimental): the switch, plus the two timings. Admin-only on
+ // (experimental): the switch, plus the two timings. Admin-only on
   // the write side — a plain admin's save inherits all three.
   email_verify_enabled: boolean
   email_code_ttl_min: number
@@ -335,7 +336,7 @@ export interface SiteConfigFull extends SiteConfigPublic {
   updated_at: string
 }
 
-// --- login log (spec 14) ---
+// --- login log ---
 export interface LoginLog {
   id: number
   user_id: string
@@ -346,7 +347,7 @@ export interface LoginLog {
   created_at: string
 }
 
-// --- author page (spec 15) ---
+// --- author page ---
 export interface AuthorUser {
   username: string
   display_name: string
@@ -358,14 +359,14 @@ export interface AuthorView {
   posts: Post[]
 }
 
-// --- dashboard (spec 06) ---
-// Spec 33: one day of the view trend (gap-filled server-side).
+// --- dashboard ---
+// One day of the view trend (gap-filled server-side).
 export interface DayViews {
   day: string
   views: number
 }
 
-// Spec 33: a most-read published post.
+// A most-read published post.
 export interface TopPost {
   id: string
   title: string
@@ -395,7 +396,7 @@ export interface ActionLog {
   created_at: string
 }
 
-// --- personal center (spec 20): caller's own post metrics ---
+// --- personal center: caller's own post metrics ---
 export interface UserStats {
   posts_total: number
   views_total: number
@@ -417,7 +418,7 @@ export interface BackupResult {
   stats: BackupStats
 }
 
-// One VACUUM INTO snapshot on the server disk (root-only listing, P2-14).
+// One VACUUM INTO snapshot on the server disk (root-only listing).
 export interface SnapshotInfo {
   name: string
   size: number

@@ -20,7 +20,7 @@ export type SiteTexts = {
     smms: string
     token: string
     tokenHint: string
-    // Spec 24: public list pagination
+ // Public list pagination
     display: string
     pageSize: string
     pageSizeHint: string
@@ -34,7 +34,7 @@ export type SiteTexts = {
     registerOpen: string
     registerOpenHint: string
     rootOnlyHint: string
-    // Spec 36: image storage policy (three ceilings + two author switches).
+ // Image storage policy (three ceilings + two author switches).
     storage: string
     storageHint: string
     uploadMaxImage: string
@@ -45,7 +45,7 @@ export type SiteTexts = {
     allowUserChangeAvatar: string
     allowExternalAvatar: string
     externalAvatarHint: string
-    // Spec 37 (experimental email verification)
+ // (experimental email verification)
     emailVerify: string
     emailVerifyHint: string
     emailVerifyEnable: string
@@ -86,8 +86,6 @@ export type SiteTexts = {
     nameTooLong: string
     siteUrl: string
     siteDescription: string
-    footerRss: string
-    footerSitemap: string
   },
   audit: {
     title: string
@@ -116,7 +114,7 @@ export type SiteTexts = {
     }
   },
   // "My uploads" — the author-side view. It is deliberately NOT called a
-  // library: a plain user only ever sees their own files (spec 36 §1).
+  // library: a plain user only ever sees their own files.
   myUploads: {
     title: string
     sub: string
@@ -213,8 +211,6 @@ export const siteZh: SiteTexts = {
     nameTooLong: '名称过长',
     siteUrl: '站点地址（用于 RSS / 站点地图的绝对链接，留空则自动推断）',
     siteDescription: '站点描述（显示在 RSS 频道头部，留空则用浏览器标题）',
-    footerRss: 'RSS 订阅',
-    footerSitemap: '站点地图',
   },
   audit: {
     title: '操作日志',
@@ -338,8 +334,6 @@ export const siteEn: SiteTexts = {
     nameTooLong: 'Name too long',
     siteUrl: 'Site URL (absolute links for RSS / sitemap; auto-detected if blank)',
     siteDescription: 'Site description (shown in the RSS channel header; falls back to the browser title when blank)',
-    footerRss: 'RSS feed',
-    footerSitemap: 'Sitemap',
   },
   audit: {
     title: 'Operation log',

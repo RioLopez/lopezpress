@@ -19,6 +19,7 @@ export type EditorTexts = {
     saved: string
     createFailed: string
     saveFailed: string
+    conflictReload: string
     notYourPost: string
     titlePlaceholder: string
     heading: string
@@ -47,6 +48,11 @@ export type EditorTexts = {
     visibilityPublicHint: string
     visibilityPrivateHint: string
     visibilityReviewHint: string
+    rereviewHint: string
+    pendingHint: string
+    submitReview: string
+    savePrivate: string
+    saving: string
     rejectedBanner: string
     resubmit: string
     modeSplit: string
@@ -62,6 +68,8 @@ export type EditorTexts = {
     savedAt: string
     publishing: string
     publishUpdate: string
+    publishUpdateRequeue: string
+    requeued: string
     toc: string
     metaPanel: string
   },
@@ -73,7 +81,7 @@ export type EditorTexts = {
     tooLarge: string
     badFormat: string
     noFile: string
-    // Spec 36: the library already held these exact bytes.
+ // The library already held these exact bytes.
     deduped: string
     // Avatar picker (crop + resize happens in the browser).
     cropTitle: string
@@ -109,6 +117,7 @@ export const editorZh: EditorTexts = {
     created: '文章已创建',
     saved: '已保存',
     createFailed: '创建失败',
+    conflictReload: '这篇文章刚被审核或管理操作改动过，你这次保存没有生效。请刷新看清最新状态后再改',
     saveFailed: '保存失败',
     notYourPost: '只有作者本人或 root 可以修改这篇文章的标题与正文。你可以把它退回给作者并附上修改意见。',
     titlePlaceholder: '文章标题',
@@ -135,9 +144,14 @@ export const editorZh: EditorTexts = {
     visibility: '可见范围',
     visibilityPublic: '公开',
     visibilityPrivate: '私密',
-    visibilityPublicHint: '未登录读者也能浏览这篇文章',
-    visibilityPrivateHint: '只有你自己能看到，其他人访问会显示 404',
-    visibilityReviewHint: '本文需经审核通过后才会公开，请留意审核结果通知',
+    visibilityPublicHint: '保存后所有读者都能看到这篇文章',
+    visibilityPrivateHint: '不出现在公开列表，游客和其他读者访问会显示 404；网站管理员可以看到。不进审核队列，随时可以再提交审核',
+    visibilityReviewHint: '提交后进入审核队列，审核通过才会公开',
+    rereviewHint: '修改正文、标题或封面后，这篇文章会重新进入审核队列；审核通过前，它不会显示在公开页面。只改分类、标签或链接不会触发审核',
+    pendingHint: '这篇文章正在审核队列中，审核通过前不会公开；再次保存会保持待审状态',
+    submitReview: '提交审核',
+    savePrivate: '保存',
+    saving: '保存中…',
     rejectedBanner: '本文已被打回，请根据下方审核意见修改后重新提交',
     resubmit: '重新提交审核',
     modeSplit: '分屏预览',
@@ -153,6 +167,8 @@ export const editorZh: EditorTexts = {
     savedAt: '已保存 {time}',
     publishing: '发布中…',
     publishUpdate: '更新',
+    publishUpdateRequeue: '保存并重新送审',
+    requeued: '已提交审核，审核通过前文章暂不对外显示',
     toc: '目录',
     metaPanel: '发布选项',
   },
@@ -198,6 +214,7 @@ export const editorEn: EditorTexts = {
     created: 'Post created',
     saved: 'Saved',
     createFailed: 'Failed to create',
+    conflictReload: 'This post was just reviewed or moderated, so this save did not apply. Reload to see its current state, then edit again',
     saveFailed: 'Failed to save',
     notYourPost: 'Only the author or the root can change this post\u2019s title and body. Send it back to the author with a review note instead.',
     titlePlaceholder: 'Post title',
@@ -224,9 +241,14 @@ export const editorEn: EditorTexts = {
     visibility: 'Visibility',
     visibilityPublic: 'Public',
     visibilityPrivate: 'Private',
-    visibilityPublicHint: 'Anyone can read this post, even when logged out',
-    visibilityPrivateHint: 'Only you can see it; others get a 404',
-    visibilityReviewHint: 'This post becomes public only after it passes review',
+    visibilityPublicHint: 'Once saved, anyone can read this post',
+    visibilityPrivateHint: 'Hidden from public listings: visitors and other readers get a 404, while site admins can read it. Private posts skip review and you can submit one for review at any time',
+    visibilityReviewHint: 'Submitting puts it in the review queue; it goes public only after it passes',
+    rereviewHint: 'Changing the text, title or cover sends this article back through review; until it passes again it will not appear on the public site. Editing only the category, tags or slug does not trigger a review',
+    pendingHint: 'This article is in the review queue and stays hidden until it passes; saving again keeps it queued',
+    submitReview: 'Submit for review',
+    savePrivate: 'Save',
+    saving: 'Saving…',
     rejectedBanner: 'This post was rejected. Revise it using the review note below, then resubmit',
     resubmit: 'Resubmit for review',
     modeSplit: 'Split preview',
@@ -242,6 +264,8 @@ export const editorEn: EditorTexts = {
     savedAt: 'Saved {time}',
     publishing: 'Publishing…',
     publishUpdate: 'Update',
+    publishUpdateRequeue: 'Save and resubmit for review',
+    requeued: 'Submitted for review — the article stays hidden until it passes',
     toc: 'Outline',
     metaPanel: 'Publish options',
   },

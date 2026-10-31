@@ -30,7 +30,7 @@ export function MyHomepage({ user }: { user: UserPublic | null }) {
 
   return (
     <div class="center-section">
-      {/* Profile banner (spec 20 §四.1) */}
+      {/* Profile banner */}
       <section class="center-banner">
         <div class="center-banner-row">
           <div class="center-banner-id">
@@ -63,7 +63,7 @@ export function MyHomepage({ user }: { user: UserPublic | null }) {
         </div>
       </section>
 
-      {/* Article list with sort + pagination (spec 20 §四.2) */}
+      {/* Article list with sort + pagination */}
       <section class="center-posts">
         <div class="sortbar">
           <span class="sortbar-label">{t('center.sortBy')}</span>

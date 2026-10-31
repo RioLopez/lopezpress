@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks'
 import { useAuth } from '../../core/auth'
 import { useI18n } from '../../core/i18n'
+import { passwordProblem } from '../../core/password'
 import { useNav } from '../../core/router'
 import { useApp } from '../../core/app'
 import { changePassword, meLoginHistory, logoutAll, errMessage, errStatus } from '../../core/api'
@@ -8,7 +9,7 @@ import type { UserPublic } from '../../core/types'
 import { useQuery } from '../../core/useQuery'
 
 // Partially mask an email: keep first + last char of the local part, hide the
-// middle (spec 20 §六.1).
+// middle.
 const maskEmail = (email: string) => {
   const [name, domain] = email.split('@')
   if (!domain) return email
@@ -38,8 +39,9 @@ export function SecurityCenter({ user }: { user: UserPublic | null }) {
   const submitPw = (e: Event) => {
     e.preventDefault()
     setPwErr('')
-    if (npw.length < 8) {
-      setPwErr(t('center.secPwTooShort'))
+    const problem = passwordProblem(npw)
+    if (problem) {
+      setPwErr(t(problem === 'long' ? 'center.secPwTooLong' : 'center.secPwTooShort'))
       return
     }
     if (npw !== cfm) {

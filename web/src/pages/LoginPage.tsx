@@ -2,10 +2,14 @@ import { useEffect, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { ApiError, errMessage, getCaptcha } from '../core/api'
+import { ApiError, errMessage, errStatus, getCaptcha } from '../core/api'
 import { useNav } from '../core/router'
 import type { CaptchaChallenge } from '../core/types'
 import { CaptchaWidget } from '../components/CaptchaWidget'
+
+// How long a 429 keeps the retry button disabled. The server's own window is
+// one minute, so anything shorter just walks into the same refusal again.
+const THROTTLE_COOLDOWN = 60
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -23,20 +27,31 @@ export function LoginPage() {
   // old one.
   const [challenge, setChallenge] = useState<CaptchaChallenge | null>(null)
   const [needed, setNeeded] = useState(false)
-  const [answer, setAnswer] = useState({ code: '', x: 0 })
+  const [answer, setAnswer] = useState({ code: '' })
+  // Why the picture is missing. A 429 is not a failure — it means this client
+  // asked for more pictures than its per-minute budget allows, and the honest
+  // answer is a countdown, not "failed to load" (which invited people to tap
+  // retry until they spent the budget all over again).
+  const [blocked, setBlocked] = useState<{ throttled: boolean; status?: number } | null>(null)
+  const [retryIn, setRetryIn] = useState(0)
 
   const loadCaptcha = async () => {
     try {
       const r = await getCaptcha()
       setNeeded(r.enabled)
       setChallenge(r.captcha || null)
-      setAnswer({ code: '', x: 0 })
-    } catch {
+      setAnswer({ code: '' })
+      setBlocked(null)
+      setRetryIn(0)
+    } catch (e) {
       // The fetch failed. Keep the form locked rather than silently dropping
       // the requirement: the server would reject the login anyway, and asking
       // again is the honest answer.
       setNeeded(true)
       setChallenge(null)
+      const st = errStatus(e)
+      setBlocked({ throttled: st === 429, status: st })
+      setRetryIn(st === 429 ? THROTTLE_COOLDOWN : 0)
     }
   }
 
@@ -44,13 +59,16 @@ export function LoginPage() {
     void loadCaptcha()
   }, [])
 
-  const solved =
-    !needed ||
-    (challenge
-      ? challenge.kind === 'slide'
-        ? answer.x > 0
-        : answer.code.trim().length > 0
-      : false)
+  // One ticker for the cooldown, keyed on "are we cooling down" so it is not
+  // torn down and rebuilt on every tick.
+  const cooling = retryIn > 0
+  useEffect(() => {
+    if (!cooling) return
+    const id = setInterval(() => setRetryIn((n) => (n <= 1 ? 0 : n - 1)), 1000)
+    return () => clearInterval(id)
+  }, [cooling])
+
+  const solved = !needed || (challenge ? answer.code.trim().length > 0 : false)
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -66,9 +84,8 @@ export function LoginPage() {
       const u = await login(email.trim(), password, {
         id: challenge?.id,
         code: answer.code.trim(),
-        x: answer.x,
       })
-      // First-boot admin (spec #2): the seeded random password forces a
+ // First-boot admin: the seeded random password forces a
       // change on the very first login.
       if (u.must_change_password) {
         navigate('/change-password')
@@ -82,13 +99,22 @@ export function LoginPage() {
       const payload = e instanceof ApiError ? e.payload : null
       if (payload && payload.captcha) {
         setChallenge(payload.captcha as CaptchaChallenge)
-        setAnswer({ code: '', x: 0 })
+        setAnswer({ code: '' })
         pushToast('error', t('auth.captchaWrong'))
         return
       }
+      // A 429 is the limiter, not a wrong password. Reporting it as "login
+      // failed" hides the only useful information: wait, do not retry.
+      if (errStatus(e) === 429) {
+        setChallenge(null)
+        setBlocked({ throttled: true, status: 429 })
+        setRetryIn(THROTTLE_COOLDOWN)
+        pushToast('error', t('common.tooManyRequests'))
+        return
+      }
       pushToast('error', errMessage(e, t('auth.loginFailed')))
-      // A wrong password also escalates this client, so the next challenge may
-      // be a different kind. Re-fetch instead of reusing the current one.
+      // The picture was spent by this attempt (single use, whether it passed or
+      // not), so fetch a new one before the user tries again.
       if (needed) void loadCaptcha()
     } finally {
       setBusy(false)
@@ -133,9 +159,19 @@ export function LoginPage() {
       )}
       {needed && !challenge && (
         <div class="captcha-block">
-          <p class="muted">{t('auth.captchaUnavailable')}</p>
-          <button type="button" class="captcha-refresh" onClick={() => void loadCaptcha()}>
-            {t('auth.captchaRefresh')}
+          <p class="muted">
+            {retryIn > 0
+              ? t('auth.captchaThrottled', { s: String(retryIn) })
+              : blocked?.throttled
+                ? t('auth.captchaUnavailable')
+                : blocked?.status
+                  ? t('auth.captchaError', { status: String(blocked.status) })
+                  : t('auth.captchaUnavailable')}
+          </p>
+          {/* While cooling down the button keeps counting, so a visitor never
+              has to guess whether tapping again is allowed yet. */}
+          <button type="button" class="captcha-refresh" onClick={() => void loadCaptcha()} disabled={cooling}>
+            {cooling ? `${retryIn}s` : t('auth.captchaRefresh')}
           </button>
         </div>
       )}

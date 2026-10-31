@@ -10,6 +10,7 @@ import {
   restoreUpload,
   uploadImage,
   errMessage,
+  errStatus,
 } from '../core/api'
 import type { UploadFileInfo } from '../core/types'
 
@@ -17,7 +18,7 @@ const PAGE_SIZE = 24
 
 type StatusFilter = 'live' | 'deleted' | 'all'
 
-// Admin media library (spec 36).
+// Admin media library.
 //
 // This is the site owner's asset view, not a gallery for readers: every file
 // with its owner, size, geometry, source IP and — the part that actually
@@ -39,6 +40,7 @@ export function AdminMediaPage() {
   const [detail, setDetail] = useState<UploadFileInfo | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const { data, loading, reload } = useQuery(
     () => listUploads({ status, kind: kind || undefined, page, size: PAGE_SIZE }),
@@ -51,16 +53,53 @@ export function AdminMediaPage() {
     await reload()
   }
 
-  const onUpload = async (file: File) => {
-    setUploading(true)
-    try {
-      const r = await uploadImage(file, 'post')
-      await after(r.deduped ? t('imgUpload.deduped') : t('imgUpload.uploaded'))
-    } catch (e) {
-      pushToast('error', errMessage(e, t('imgUpload.failed')))
-    } finally {
-      setUploading(false)
+  // One file at a time on purpose. The server allows 20 uploads a minute per
+  // account (internal/services/upload_limits.go); firing fifty in parallel
+  // would spend the whole allowance on 429s and give the operator no idea what
+  // happened. A 429 here means "wait", not "no" — the limiter sits outside the
+  // handler, so the file was never received — and waiting out the refill is
+  // what makes importing an existing library possible unattended.
+  const uploadOne = async (file: File) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await uploadImage(file, 'post')
+      } catch (e) {
+        if (errStatus(e) === 429 && attempt < 5) {
+          await new Promise((r) => setTimeout(r, 3200))
+          continue
+        }
+        throw e
+      }
     }
+  }
+
+  const onUploadMany = async (files: File[]) => {
+    if (files.length === 0) return
+    setUploading(true)
+    setProgress({ done: 0, total: files.length })
+    let added = 0
+    let reused = 0
+    let failed = 0
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const r = await uploadOne(files[i])
+        if (r.deduped) reused++
+        else added++
+      } catch {
+        failed++
+      }
+      setProgress({ done: i + 1, total: files.length })
+    }
+    setUploading(false)
+    setProgress(null)
+    // One summary instead of one toast per file: a batch of fifty would
+    // otherwise bury the page in notifications.
+    const parts: string[] = []
+    if (added) parts.push(t('media.batchAdded', { n: String(added) }))
+    if (reused) parts.push(t('media.batchReused', { n: String(reused) }))
+    if (failed) parts.push(t('media.batchFailed', { n: String(failed) }))
+    pushToast(failed ? 'error' : 'info', parts.join(' · '))
+    await reload()
   }
 
   const withdraw = async (item: UploadFileInfo) => {
@@ -118,16 +157,22 @@ export function AdminMediaPage() {
           <p class="muted">{t('media.sub')}</p>
         </div>
         <label class="btn btn-primary btn-sm">
-          {uploading ? t('common.loading') : t('media.upload')}
+          {uploading
+            ? progress
+              ? `${progress.done}/${progress.total}`
+              : t('common.loading')
+            : t('media.upload')}
           <input
             type="file"
             accept="image/*"
+            multiple
             hidden
             disabled={uploading}
             onChange={(e) => {
-              const f = (e.target as HTMLInputElement).files?.[0]
-              if (f) onUpload(f)
-              ;(e.target as HTMLInputElement).value = ''
+              const input = e.target as HTMLInputElement
+              const files = Array.from(input.files || [])
+              if (files.length) onUploadMany(files)
+              input.value = ''
             }}
           />
         </label>

@@ -8,7 +8,7 @@ import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
 
-// Content review workbench (spec 24). Every post authored by a plain user is
+// Content review workbench. Every post authored by a plain user is
 // reviewed by an admin; a post authored by an admin is reviewed by root. The
 // backend already scopes the queue to the caller's tier, so this page simply
 // renders whatever comes back and offers the two decisions.

@@ -38,6 +38,7 @@ export type CenterTexts = {
     secPwChanged: string
     secPwMismatch: string
     secPwTooShort: string
+    secPwTooLong: string
     secPwWrong: string
     secLoginHistory: string
     secNoLogins: string
@@ -91,7 +92,8 @@ export const centerZh: CenterTexts = {
     secPwBtn: '更新密码',
     secPwChanged: '密码已更新',
     secPwMismatch: '两次输入的新密码不一致',
-    secPwTooShort: '新密码至少 8 位',
+    secPwTooShort: '新密码至少 8 位，且不要用常见密码',
+    secPwTooLong: '新密码太长（最多 72 字节，约 24 个汉字）',
     secPwWrong: '当前密码错误',
     secLoginHistory: '登录记录',
     secNoLogins: '暂无登录记录',
@@ -145,7 +147,8 @@ export const centerEn: CenterTexts = {
     secPwBtn: 'Update password',
     secPwChanged: 'Password updated',
     secPwMismatch: 'New passwords do not match',
-    secPwTooShort: 'New password must be at least 8 characters',
+    secPwTooShort: 'At least 8 characters, and not a common password',
+    secPwTooLong: 'Too long (max 72 bytes, about 24 Chinese characters)',
     secPwWrong: 'Current password is incorrect',
     secLoginHistory: 'Login history',
     secNoLogins: 'No login records yet',

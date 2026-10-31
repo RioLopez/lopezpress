@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 
-// Avatar cropper (spec 36 §7).
+// Avatar cropper.
 //
 // Why the browser and not the server: Go's standard library only offers
 // nearest-neighbour scaling (image/draw), which makes a 512px avatar look

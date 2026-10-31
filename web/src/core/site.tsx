@@ -22,7 +22,7 @@ const DEFAULT: SiteConfigPublic = {
   // Until the real config arrives, assume public: a blog should not flash a
   // login redirect at a visitor while the config request is in flight.
   public_read: true,
-  // Spec 37: off until the server says otherwise, matching the schema default.
+ // Off until the server says otherwise, matching the schema default.
   email_verify_enabled: false,
 }
 

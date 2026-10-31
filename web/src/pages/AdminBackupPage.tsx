@@ -16,12 +16,12 @@ export function AdminBackupPage() {
   const [importBusy, setImportBusy] = useState(false)
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
   const [restoreBusy, setRestoreBusy] = useState<string | null>(null)
-  // Spec 34: daily-snapshot state ("did last night run?"). Root-only.
+ // Daily-snapshot state ("did last night run?"). Root-only.
   const [auto, setAuto] = useState<{ enabled: boolean; keep: number; last_at: string; files: number } | null>(null)
   const [autoBusy, setAutoBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  // Snapshots are root-only (whole-database artifacts, as-built audit Q7).
+  // Snapshots are root-only (whole-database artifacts).
   useEffect(() => {
     if (isRoot(user?.role)) {
       listSnapshots().then(setSnapshots).catch(() => setSnapshots([]))
@@ -60,7 +60,7 @@ export function AdminBackupPage() {
     try {
       const r = await exportBackup()
       // The server writes the JSON to its own disk; fetch it back so the
-      // admin actually receives a file (spec 10 AC-1.1).
+ // admin actually receives a file.
       const blob = await downloadBackup(r.filename)
       saveBlob(blob, r.filename)
       setResult(r)
@@ -192,7 +192,7 @@ export function AdminBackupPage() {
         <h2>{t('admin.importTitle')}</h2>
         <p class="muted">{t('admin.importSub')}</p>
         {/* Import/restore replaces the whole database including the users
-            table, so it is root-only (as-built audit Q7). Admins see the
+            table, so it is root-only. Admins see the
             section disabled rather than hidden, so the gate is explicit. */}
         {isRoot(user?.role) ? (
           <div class="backup-import-row">

@@ -30,12 +30,30 @@ export function setTokenGetter(fn: () => string) {
   tokenGetter = fn
 }
 
+// A status => localised line resolver, installed by the i18n provider. It is
+// injected rather than imported because this module deliberately has no
+// dependency on the dictionary: the tests import it without a component tree.
+let errorTranslator: ((status: number) => string | undefined) | null = null
+export function setErrorTranslator(fn: ((status: number) => string | undefined) | null) {
+  errorTranslator = fn
+}
+
 // Invoked on a 401 from a non-auth endpoint (i.e. an expired/invalid token),
 // so the app can clear the session and bounce to /login. Registered by the
 // auth context. Business 401s from /api/auth/* are handled per-call.
 let onUnauthorized: (() => void) | null = null
 export function setOnUnauthorized(fn: (() => void) | null) {
   onUnauthorized = fn
+}
+
+// While the must-change flag is set the server refuses every endpoint except
+// the password-change one. The client normally learns about the flag at login
+// or /me, but it can miss it: an operator running `-reset-root-password`
+// against a live session turns the flag on behind an already-open tab. Without
+// this hook the user just collects identical 403s and never sees the form.
+let onPasswordChangeRequired: (() => void) | null = null
+export function setOnPasswordChangeRequired(fn: (() => void) | null) {
+  onPasswordChangeRequired = fn
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -46,9 +64,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 // reach the handler (the limiter sits outside the handlers), so retrying a
 // mutation would risk a double-apply. `request` therefore retries a 429 only
 // when the method is GET and there is no body.
-async function fetchRaw(path: string, init: RequestInit): Promise<Response> {
+//
+// `allowRetry` lets a caller opt out. The login captcha does: a challenge is
+// single-use, so a retried fetch asks the server to draw an entirely new
+// picture, spending another slot of a per-IP budget that is exactly what ran
+// out. Retrying there made "throttled" feel like "broken" — the user saw a
+// failed load, tapped retry, and burned three more slots per tap.
+async function fetchRaw(path: string, init: RequestInit, allowRetry = true): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
-  const canRetry = method === 'GET' && !init.body
+  const canRetry = allowRetry && method === 'GET' && !init.body
   let attempt = 0
   const maxAttempts = canRetry ? 3 : 1
   for (;;) {
@@ -82,18 +106,29 @@ async function readJson(res: Response): Promise<any> {
 }
 
 function raise(res: Response, data: any, path: string): never {
+  const msg = (data && data.error) || `HTTP ${res.status}`
   if (res.status === 401 && onUnauthorized && !path.startsWith('/api/auth/')) {
     onUnauthorized()
   }
-  const msg = (data && data.error) || `HTTP ${res.status}`
+  // Exact match on purpose: a business 403 (wrong password, no permission)
+  // must never bounce the user to the password form. The change-password path
+  // is excluded so an error there cannot make the redirect feed itself.
+  if (
+    res.status === 403 &&
+    msg === 'password change required' &&
+    onPasswordChangeRequired &&
+    !path.startsWith('/api/auth/change-password')
+  ) {
+    onPasswordChangeRequired()
+  }
   throw new ApiError(res.status, msg, data)
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, opts?: { retry429?: boolean }): Promise<T> {
   const headers = authHeaders(init?.headers)
   if (init?.body) headers.set('Content-Type', 'application/json')
 
-  const res = await fetchRaw(path, { ...init, headers })
+  const res = await fetchRaw(path, { ...init, headers }, opts?.retry429 !== false)
   if (res.status === 204) return undefined as T
 
   const data = await readJson(res)
@@ -129,8 +164,17 @@ export async function download(path: string): Promise<Blob> {
 // to write `e instanceof ApiError ? e.message : t('fallback')` by hand, which
 // meant the fallback policy could never evolve. These two helpers are the only
 // places that know ApiError's shape.
+//
+// The backend has no localised strings at all — every message it sends is
+// English ("too many captcha requests, slow down", "file too large"). Rendering
+// one of those inside a Chinese page is the seam this code closes: statuses
+// whose cause is mechanical get a localised line, while business errors (a 400
+// from the password policy, say) keep the server text, because it names the
+// rule that actually failed and the UI has no better answer.
 export function errMessage(e: unknown, fallback: string): string {
-  return e instanceof ApiError ? e.message : fallback
+  if (!(e instanceof ApiError)) return fallback
+  const localized = errorTranslator?.(e.status)
+  return localized ?? e.message
 }
 
 export function errStatus(e: unknown): number | undefined {

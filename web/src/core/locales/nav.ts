@@ -8,7 +8,7 @@ export type NavTexts = {
     settings: string
     admin: string
     backToContent: string
-    // Spec 26: admin sidebar is grouped instead of 10 flat items.
+ // Admin sidebar is grouped instead of 10 flat items.
     groupContent: string
     groupUsers: string
     groupSystem: string

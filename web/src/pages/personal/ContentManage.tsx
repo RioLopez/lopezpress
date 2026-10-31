@@ -20,7 +20,7 @@ export function ContentManage() {
     () => listPostsPaged({ page, size: PAGE_SIZE, author: user?.id }),
     [page, user?.id],
   )
-  // Optimistic visibility switch + undo (spec 22). Undo holds the previous
+ // Optimistic visibility switch + undo. Undo holds the previous
   // status so the user can roll back within a short window; at most one
   // pending undo is kept, and flipping again clears it.
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -109,7 +109,6 @@ export function ContentManage() {
     if (post.status === 'pending') return t('admin.statusLabel.pending')
     if (post.status === 'rejected') return t('admin.statusLabel.rejected')
     if (post.status === 'banned') return t('admin.statusLabel.banned')
-    if (post.status === 'draft') return t('admin.statusLabel.draft')
     return t('list.published')
   }
   // The visibility toggle only applies to the two author-controlled states.

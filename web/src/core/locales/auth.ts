@@ -23,18 +23,21 @@ export type AuthTexts = {
     loginBtn: string
     registering: string
     loginBusy: string
-    // Login captcha. The picture challenge is the default; the slide replaces
-    // it after repeated failures, so both need a label and a hint.
+    // Login captcha: one picture, four characters, no second interaction.
     captchaLabel: string
     captchaPlaceholder: string
     captchaRefresh: string
     captchaRequired: string
     captchaWrong: string
     captchaUnavailable: string
-    captchaSlideLabel: string
-    captchaSlideHint: string
+    // A 429 is not a failure — the server is fine, this client simply asked
+    // for too many pictures. Saying "failed to load" sent people into a
+    // retry loop that spent the very budget they were waiting on.
+    captchaThrottled: string
+    captchaError: string
     passwordTooShort: string
-    // Spec 37 (experimental email verification)
+    passwordTooLong: string
+ // (experimental email verification)
     codeLabel: string
     codePlaceholder: string
     sendCode: string
@@ -59,6 +62,7 @@ export type AuthTexts = {
     fillAll: string
     mismatch: string
     tooShort: string
+    tooLong: string
     changed: string
     changeFailed: string
     newLabel: string
@@ -74,7 +78,7 @@ export type AuthTexts = {
     usernameHint: string
     email: string
     emailHint: string
-    // Spec 37 (experimental verified email change)
+ // (experimental verified email change)
     changeEmail: string
     newEmail: string
     confirmEmail: string
@@ -125,9 +129,10 @@ export const authZh: AuthTexts = {
     captchaRequired: '请先完成验证码',
     captchaWrong: '验证码不正确，已换新的',
     captchaUnavailable: '验证码加载失败，请点下面重试',
-    captchaSlideLabel: '安全验证',
-    captchaSlideHint: '拖动拼图块到缺口位置',
-    passwordTooShort: '密码至少 8 位',
+    captchaThrottled: '取图太频繁，请 {s} 秒后再试',
+    captchaError: '验证码加载失败（{status}），请点下面重试',
+    passwordTooShort: '密码至少 8 位，且不要用常见密码',
+    passwordTooLong: '密码太长（最多 72 字节，约 24 个汉字）',
     codeLabel: '邮箱验证码',
     codePlaceholder: '6 位数字',
     sendCode: '发送验证码',
@@ -151,7 +156,8 @@ export const authZh: AuthTexts = {
     continue: '继续',
     fillAll: '请填写所有字段',
     mismatch: '两次输入的新密码不一致',
-    tooShort: '新密码至少 8 个字符',
+    tooShort: '新密码至少 8 个字符，且不要用常见密码',
+    tooLong: '新密码太长（最多 72 字节，约 24 个汉字）',
     changed: '密码已修改',
     changeFailed: '修改失败，请检查当前密码是否正确',
     newLabel: '新密码',
@@ -217,9 +223,10 @@ export const authEn: AuthTexts = {
     captchaRequired: 'Please solve the challenge first',
     captchaWrong: 'That was not it — here is a new one',
     captchaUnavailable: 'Could not load the challenge, tap below to retry',
-    captchaSlideLabel: 'Security check',
-    captchaSlideHint: 'Drag the piece into the gap',
-    passwordTooShort: 'Password must be at least 8 characters',
+    captchaThrottled: 'Too many requests — try again in {s}s',
+    captchaError: 'Could not load the challenge ({status}) — tap below to retry',
+    passwordTooShort: 'At least 8 characters, and not a common password',
+    passwordTooLong: 'Password is too long (max 72 bytes, about 24 Chinese characters)',
     codeLabel: 'Email code',
     codePlaceholder: '6 digits',
     sendCode: 'Send code',
@@ -243,7 +250,8 @@ export const authEn: AuthTexts = {
     continue: 'Continue',
     fillAll: 'Please fill in all fields',
     mismatch: 'The two new passwords do not match',
-    tooShort: 'New password must be at least 8 characters',
+    tooShort: 'At least 8 characters, and not a common password',
+    tooLong: 'Too long (max 72 bytes, about 24 Chinese characters)',
     changed: 'Password changed',
     changeFailed: 'Failed to change password. Check your current password.',
     newLabel: 'New password',
