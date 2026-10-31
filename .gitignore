@@ -2,6 +2,7 @@
 /lopezpress
 bin/
 *.exe
+*.exe~
 *.test
 
 # 数据目录（SQLite 文件 + 运行期产生的 uploads/logs/backups 全部在这里）
@@ -23,6 +24,11 @@ web/node_modules/
 web/dist/
 web/.vite/
 vite.config.ts.timestamp-*
+
+# Vditor 运行时资源：由 vite.config.ts 的 vditor-local-assets 插件在每次 dev/build
+# 前从 node_modules 裁剪复制（24MB -> 4.7MB）。属生成物，改动由脚本决定，
+# 入库只会让每次升级 vditor 都产生一堆二进制 diff。
+web/public/vditor/
 
 # IDE 与系统文件
 .idea/

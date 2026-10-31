@@ -38,7 +38,7 @@
 - **后台文章管理**：筛选 / 勾选 / 批量发布·转私密·改分类·加减标签·删除（逐条复用单条权限逻辑）
 - **公开阅读开关**：后台一键切换"匿名可读 / 必须登录"，前后端同时执行（API 也 401）
 - SMTP 邮件通知（登录失败 / 改密 / 异地登录，手写零依赖客户端）
-- root 密码离线恢复：`lopezpress -reset-root-password`（随机新密码 + 强制改密 + 吊销旧会话，spec 22）
+- root 密码离线恢复：`lopezpress -reset-root-password`（随机新密码 + 强制改密 + 吊销旧会话）
 - 首启自动建表 + 写入演示数据（root 账号 `admin` + 3 篇示例文章 + **12 个两层预设分类** + 5 标签）
 
 ## 项目结构
@@ -56,10 +56,8 @@ lopezpress/
 │   └── httpx/                 # 请求/响应小工具
 ├── web/                       # 前端（Preact + Vite + TS）：22 个页面 + 9 个公共组件 + core 层（api/auth/i18n/router/theme/md/format）
 ├── deploy/                    # 部署脚本（systemd / Nginx / Docker Compose / 一键上传）
-├── docs/                      # 文档体系（入口 docs/README.md；AI 协作见 AGENTS.md）
+├── docs/                      # 2 份：待办清单 + 上线安全基线
 ├── scripts/contract_check.py  # 前后端 method+path 契约自动核对
-├── HANDOVER.md                # 交接文档（AI 接手必读：陷阱 / 未决决策 / 自测清单）
-├── AGENTS.md                  # AI 协作者入口（红线 + 验证门禁 + 文档两类制）
 ├── LopezPress.bat             # 一键启动（Windows）：后端 + 前端，自动开浏览器
 ├── .env                       # 运行时配置（端口 / JWT / DB 路径 / 限流）
 └── go.mod
@@ -112,7 +110,7 @@ npm run preview          # http://127.0.0.1:4173，同样带 API 反代
 
 ### 5. 环境配置（可选）
 
-默认值可直接运行。需要覆盖时（完整清单见 `.env.example` 与 `docs/ARCHITECTURE.md` §8）：
+默认值可直接运行。需要覆盖时（完整清单见 `.env.example` 与 `internal/config/config.go`）：
 
 ```powershell
 $env:PORT="8080"
@@ -123,10 +121,10 @@ $env:DB_PATH="data/app.db"
 $env:CORS_ORIGINS="*"           # prod 改为显式来源列表，逗号分隔
 $env:RATE_LIMIT_RPS="20"
 $env:RATE_LIMIT_BURST="50"
-$env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有（spec #7）
+$env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有
 ```
 
-> 生产部署务必：更换 `JWT_SECRET`（≥32 字节）、`APP_ENV=prod`、`CORS_ORIGINS` 显式列表、启用 HTTPS。安全加固细节见 `docs/AUDIT_REPORT.md` §4.4.2，接手前必读 `HANDOVER.md`。
+> 生产部署务必：更换 `JWT_SECRET`（≥32 字节）、`APP_ENV=prod`、`CORS_ORIGINS` 显式列表、启用 HTTPS。**上线前请读 [`docs/SECURITY_BASELINE.md`](docs/SECURITY_BASELINE.md)**——它逐项写了防住了什么、还剩哪两件没做完、哪些风险是明确接受的。
 
 ## 演示账号
 
@@ -136,8 +134,10 @@ $env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有（
 
 > **admin 密码说明**：`seedDemoData` 仅在数据库**不存在 admin 账号**时新建，并使用随机 22 字符密码（在 stderr 打印一次横幅，不落日志），登录后强制跳 `/change-password` 改密。若数据库**已存在** admin 账号（如本机开发库），则沿用既有密码不被覆盖——历史开发库的 admin 密码可能是早期固定的 `admin123` 或此前某次随机值，**以实际数据库为准**；忘记密码可用 `ADMIN_INITIAL_PASSWORD` 环境变量在下次首启（无 admin 时）固定。
 >
+> **密码策略只管写入，不管既有密码**（1.0.1 起）：新建账号 / 改密 / 重置密码要求「≥ 8 个字符且 ≤ 72 字节，且不在常见密码表里」；但一个存量 `admin123` **仍然能登录**——策略拦截的是"设置弱密码"，不是"已有弱密码"。它会在下一次改密时被要求换掉。
+>
 > ⚠️ **首启账号是 root，不是 admin**（`config.go` seed 写入 `Role: RoleRoot`）。因此：
-> - `POST /api/users/{id}/reset-password` **无法重置 root 密码**（admin 重置 root 会被 `canManageUser` 403 拦下，这是 P0-1 的修复结果）；
+> - `POST /api/users/{id}/reset-password` **无法重置 root 密码**（admin 重置 root 会被 `canManageUser` 403 拦下）；
 > - root 忘记密码走**离线恢复**（HTTP 无路径，刻意如此）：
 >
 > ```bat
@@ -146,7 +146,7 @@ $env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有（
 > LopezPress.bat
 > ```
 >
-> 详见 `docs/specs/22-root-password-recovery.md`。
+> root 没有 HTTP 恢复路径是**刻意设计**：任何在线入口都会变成提权面。只能上机执行上面那条命令。
 
 ## 验证
 
@@ -186,24 +186,22 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 
 ## 文档导航
 
-仓库文档分**两类**（见 `AGENTS.md` §6）：Class A 约束 AI 怎么干活，Class B 描述项目是什么。
+仓库里只有 **5 份文档**（2026-10-27 精简，原来 90 多份已完成的设计稿与历史记录已删除）：
 
 | 想了解 | 看这里 |
 | --- | --- |
-| **总索引：有哪些文档、去哪找** | **[`MASTER.md`](MASTER.md)**（母文档，一切从这里开始） |
-| AI 协作入口（红线 / 门禁 / 文档两类制） | [`AGENTS.md`](AGENTS.md) |
-| AI 工作流程标准（T0–T3 分级 / 五阶段 / 十条红线） | [`docs/AI_STANDARD.md`](docs/AI_STANDARD.md) |
-| 接手交接（现状 / 关键陷阱 / 未决决策） | [`HANDOVER.md`](HANDOVER.md) |
-| 轮次史 | [`PROGRESS.md`](PROGRESS.md) |
-| 唯一权威待办 | [`docs/TODO.md`](docs/TODO.md) |
-| 架构设计 / 代码地图 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) |
-| API 参考 | [`api.md`](api.md) |
-| 页面规格 / 决策记录 / 审计报告 | [`docs/specs/`](docs/specs) · [`docs/decisions/`](docs/decisions) · [`docs/AUDIT_2026-10-15.md`](docs/AUDIT_2026-10-15.md) |
-| 提示词模板（继续 / 新功能 / 修 bug / 自查 / 验证） | [`docs/prompts/`](docs/prompts) |
+| 怎么跑起来 / 环境配置 / 演示账号 | 本文件 |
+| 接口、端点、请求响应样例 | [`api.md`](api.md) |
+| 部署 / 上线 / HTTPS / 排障 | [`deploy/README.md`](deploy/README.md) |
+| **还有什么没做** | [`docs/TODO.md`](docs/TODO.md) |
+| **能不能上线 / 还剩什么安全债** | [`docs/SECURITY_BASELINE.md`](docs/SECURITY_BASELINE.md) |
+
+> AI 协作用的唯一入口是 `dev/ai-dev/MASTER.md`：项目全貌、改码陷阱、决策理由、事实基线全在那一份里。
+> 它放在 `dev/` 下并被 gitignore（含本机路径与历史细节），所以不在公开仓库中。
 
 ## 部署
 
-见 [deploy/README.md](deploy/README.md)：systemd 服务、Nginx 反代 + 前端静态托管、一键上传脚本（已包含前端构建）；容器化方案见 [deploy/docker/](deploy/docker)。
+见 [deploy/README.md](deploy/README.md)：systemd 服务、Nginx 反代 + 前端静态托管、一键上传脚本、线上校验脚本（`check-live.sh`，确认服务器跑的就是这份代码）；容器化方案（**本机无 Docker，未实跑过**）见 [deploy/docker/](deploy/docker)。
 
 ## 说明
 
