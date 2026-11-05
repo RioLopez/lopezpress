@@ -97,7 +97,12 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 	filename := fmt.Sprintf("backup-%s.json", now.UTC().Format("20060102-150405"))
 	full := filepath.Join(dir, filename)
 
-	out, err := os.Create(full)
+	// K2: the dump embeds bcrypt password hashes AND live credentials (SMTP
+	// password, image-host token), so the file itself is a secret. Create it
+	// with 0o600 so it is owner-read/write only (effective on the Linux deploy
+	// target; Windows has no POSIX perms and ignores the mode). The parent
+	// directory is already 0o755.
+	out, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return BackupResult{}, newErr(http.StatusInternalServerError, "cannot write backup file")
 	}

@@ -49,7 +49,10 @@ func TestValidateSecurity(t *testing.T) {
 		{"prod too short", "prod", "abc", true},
 		{"prod repeated char", "prod", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
 		{"prod strong", "prod", "a3f9c1b2e7d48590f2a6c8e1d3b57049", false},
-		{"prod boundary 32", "prod", "abc123abc123abc123abc123abc123ab", false},
+		// 32 hex chars = 128 bits exactly: at the entropy floor, accepted.
+		{"prod boundary 32 high entropy", "prod", "a3f9c1b2e7d48590f2a6c8e1d3b57049", false},
+		// 32 chars but only 6 distinct (a,b,c,1,2,3) ≈ 83 bits: rejected.
+		{"prod 32 low entropy rejected", "prod", "abc123abc123abc123abc123abc123ab", true},
 		{"unknown env treated as prod", "staging", "short", true},
 	}
 	for _, tc := range cases {

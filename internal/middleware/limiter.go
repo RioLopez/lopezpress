@@ -39,13 +39,14 @@ import (
 // instance. For a multi-instance deployment replace the map with a
 // shared counter (e.g. Redis).
 type Limiter struct {
-	mu          sync.Mutex
-	buckets     map[string]*list.Element // key -> element wrapping *bucket
-	lru         *list.List               // front = most-recently-used, back = LRU
-	rps         float64
-	burst       int
-	maxBuckets  int
-	tokenSecret string // set once at startup; read-only afterwards
+	mu           sync.Mutex
+	buckets      map[string]*list.Element // key -> element wrapping *bucket
+	lru          *list.List               // front = most-recently-used, back = LRU
+	rps          float64
+	burst        int
+	maxBuckets   int
+	tokenSecret  string        // set once at startup; read-only afterwards
+	anonLimiter  *rate.Limiter // global cap on all unauthenticated traffic (D5)
 }
 
 // LimiterConfig carries the knobs for NewLimiter.
@@ -62,6 +63,19 @@ type LimiterConfig struct {
 // become a memory hotspot. It is copied into Limiter.maxBuckets so tests
 // can shrink it.
 const maxBuckets = 512
+
+// anonRPS / anonBurst cap ALL unauthenticated traffic combined (D5). The
+// per-identity buckets key anonymous callers by raw client IP, which an
+// attacker rotating source addresses can dilute; a single global anonymous
+// bucket bounds the total anonymous rate regardless of how many IPs are used.
+// 200 rps / 400 burst is far above any single legitimate visitor's anonymous
+// rate (a page load issues a handful of requests) yet throttles bulk scanning
+// or a botnet spreading load across many source IPs. Authenticated requests
+// are NOT charged against this bucket.
+const (
+	anonDefaultRPS   = 200
+	anonDefaultBurst = 400
+)
 
 // bucket pairs a rate-limit identity key with its token bucket, and is the
 // element stored in the LRU list.
@@ -90,11 +104,12 @@ func NewLimiter(cfg LimiterConfig) *Limiter {
 		cfg.Burst = 50
 	}
 	return &Limiter{
-		buckets:    make(map[string]*list.Element),
-		lru:        list.New(),
-		rps:        cfg.RPS,
-		burst:      cfg.Burst,
-		maxBuckets: maxBuckets,
+		buckets:     make(map[string]*list.Element),
+		lru:         list.New(),
+		rps:         cfg.RPS,
+		burst:       cfg.Burst,
+		maxBuckets:  maxBuckets,
+		anonLimiter: rate.NewLimiter(rate.Limit(anonDefaultRPS), anonDefaultBurst),
 	}
 }
 
@@ -103,6 +118,17 @@ func NewLimiter(cfg LimiterConfig) *Limiter {
 // everything else falls back to the client IP.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Global anonymous backstop (D5): only requests with no verifiable
+		// identity are charged here, so an attacker rotating source IPs cannot
+		// dilute the per-IP limit. Authenticated callers skip this bucket
+		// entirely.
+		if l.isAnonymous(r) {
+			if !l.anonLimiter.Allow() {
+				write429(w, int64(math.Ceil(1.0/anonDefaultRPS)))
+				return
+			}
+		}
+
 		identity := l.resolveIdentity(r)
 		key := "id:" + identity
 
@@ -111,19 +137,33 @@ func (l *Limiter) Middleware(next http.Handler) http.Handler {
 		if !lim.Allow() {
 			// x/time/rate has no ResumeAfter; estimate the time until the
 			// bucket refills one token: ceil(1 / rps) seconds.
-			retry := int64(math.Ceil(1.0 / l.rps))
-			if retry < 1 {
-				retry = 1
-			}
-			w.Header().Set("Retry-After", strconv.FormatInt(retry, 10))
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+			write429(w, int64(math.Ceil(1.0/l.rps)))
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// write429 emits a 429 with a Retry-After estimate (seconds).
+func write429(w http.ResponseWriter, retry int64) {
+	if retry < 1 {
+		retry = 1
+	}
+	w.Header().Set("Retry-After", strconv.FormatInt(retry, 10))
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusTooManyRequests)
+	_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+}
+
+// isAnonymous reports whether the request carries no verifiable user identity:
+// no user-id in the context and no valid bearer token. Only such requests are
+// charged against the global anonymous bucket.
+func (l *Limiter) isAnonymous(r *http.Request) bool {
+	if UserIDFrom(r.Context()) != "" {
+		return false
+	}
+	return l.tokenSubject(r) == ""
 }
 
 // limiterFor returns (and lazily creates) the bucket for a given key.
