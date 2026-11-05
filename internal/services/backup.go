@@ -112,8 +112,12 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 		"app_version":    BackupAppVersion,
 		"exported_at":    now.UTC().Format(time.RFC3339),
 		// Security note travels inside the file so a leaked/recovered dump
-		// still warns the reader that it embeds bcrypt password hashes.
-		"security_note":   "This backup contains bcrypt password hashes. Anyone with the file can attempt offline cracking, so store it like a secrets file: restrict access, never commit to version control or share publicly.",
+		// still warns the reader that it embeds bcrypt password hashes AND
+		// live credentials. Kept accurate on purpose: the API endpoint masks
+		// SmtpPass/ImgHostToken, but a backup is a restore artifact and must
+		// round-trip them, so they land here in plaintext — the file is the
+		// secret, not just the hashes.
+		"security_note": "This backup contains bcrypt password hashes AND live credentials (SMTP password, image-host token) in plaintext. Treat the ENTIRE file as a secret key: restrict access (chmod 600), never commit to version control or share publicly. SMTP passwords are frequently reused as login passwords, so a leaked backup can compromise accounts beyond this site.",
 		"users":           users,
 		"password_hashes": pwHashes,
 		"categories":      categories,
@@ -147,7 +151,7 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 			Revisions:   int64(len(revisions)),
 			UploadFiles: int64(len(uploadFiles)),
 		},
-		Warning: "The backup file contains bcrypt password hashes, equivalent to an offline cracking target for the plaintext passwords. Store it like a secret key: restrict access, never commit it to a code repository or share it publicly. It also does NOT contain the image files themselves: the bytes live on disk under data/uploads and must be backed up separately (rsync/copy that directory).",
+		Warning: "The backup file contains bcrypt password hashes, equivalent to an offline cracking target for the plaintext passwords, AND live credentials (SMTP password, image-host token) in plaintext. Treat it like a secret key: restrict access (e.g. chmod 600), never commit it to a code repository or share it publicly — an SMTP password is often reused as a login password, so a leaked backup can compromise accounts beyond this site. It also does NOT contain the image files themselves: the bytes live on disk under data/uploads and must be backed up separately (rsync/copy that directory).",
 	}, nil
 }
 

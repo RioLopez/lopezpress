@@ -177,9 +177,21 @@ func main() {
 
 	h := router.New(cfg, limiter, loginLimiter)
 
+	// Timeouts are defense-in-depth against slowloris-style connection
+	// exhaustion: a client that trickles headers, trickles the request body, or
+	// holds keep-alive idle is cut off instead of pinning a goroutine and a
+	// file descriptor forever. The binary normally listens on 127.0.0.1 behind
+	// nginx, but these bounds also make it safe to expose directly without a
+	// proxy in front. ReadHeaderTimeout is the specific slow-header guard;
+	// ReadTimeout additionally bounds the body read (image uploads); WriteTimeout
+	// bounds the response; IdleTimeout bounds idle keep-alive sockets.
 	srv := &http.Server{
-		Addr:    cfg.ListenAddr(),
-		Handler: h,
+		Addr:              cfg.ListenAddr(),
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
