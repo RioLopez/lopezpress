@@ -80,6 +80,9 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Issue the JWT as an HttpOnly cookie (XSS-resistant) in addition to the
+	// JSON body, which API clients may still read.
+	setAuthCookie(w, r, res.Token, res.Expires)
 	writeJSON(w, http.StatusCreated, res)
 }
 
@@ -90,9 +93,11 @@ func Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout is a client-side signal only. JWT is stateless, so the server does
-// not truly revoke; the client should discard its stored token.
+// not truly revoke; the client should discard its stored token. The HttpOnly
+// cookie is cleared here so the browser stops sending it.
 // POST /api/auth/logout  (requires JWT)
 func Logout(w http.ResponseWriter, r *http.Request) {
+	clearAuthCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
@@ -113,7 +118,9 @@ func ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A fresh token is returned because the change revoked the old one (token
-	// version bumped). The client swaps it in to stay signed in.
+	// version bumped). Re-issue it as an HttpOnly cookie so the session stays
+	// alive without the SPA holding the token in JS storage.
+	setAuthCookie(w, r, token, expires)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "password changed",
 		"token":   token,
@@ -157,6 +164,7 @@ func LogoutAll(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	clearAuthCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "all sessions revoked"})
 }
 
@@ -171,9 +179,9 @@ func LogoutAll(w http.ResponseWriter, r *http.Request) {
 // set by Init. The router simply passes through the handler.
 func WithAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
+		h := extractToken(r)
 		if h == "" {
-			writeError(w, http.StatusUnauthorized, "missing authorization header")
+			writeError(w, http.StatusUnauthorized, "missing authorization token")
 			return
 		}
 
@@ -261,7 +269,7 @@ func RequireRole(roles ...string) func(http.HandlerFunc) http.HandlerFunc {
 // is treated as anonymous.
 func WithOptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
+		h := extractToken(r)
 		if h == "" {
 			// When the site is locked to signed-in readers, an
 			// anonymous read is a 401 — the "login required" promise must be

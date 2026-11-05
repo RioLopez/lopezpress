@@ -1,5 +1,16 @@
-// Auth context: token + user, persisted to localStorage so the SPA can
-// survive a reload and re-verify via GET /api/auth/me on boot.
+// Auth context: user + session state.
+//
+// SECURITY: the JWT is issued by the server as an HttpOnly, SameSite=Lax cookie
+// (see internal/handlers/auth.go). The browser sends it automatically on
+// same-origin requests, and JavaScript can NEVER read it — so an XSS bug can no
+// longer walk off with the session token. This module therefore stores NO token
+// in JS-accessible storage.
+//
+// The only thing kept in localStorage is a non-secret *marker* (`echo.session`)
+// that merely records "a session exists" so the route guards can render
+// instantly without waiting for /api/auth/me. It is not a credential and an
+// attacker who reads it gains nothing — the real token lives in the HttpOnly
+// cookie the browser refuses to expose to script.
 
 import { createContext } from 'preact'
 import { useContext, useEffect, useState } from 'preact/hooks'
@@ -8,34 +19,29 @@ import { me as getMe, login as apiLogin, logout as apiLogout, register as apiReg
 import { setTokenGetter, setOnUnauthorized, setOnPasswordChangeRequired } from './api'
 import type { AuthResult, UserPublic } from './types'
 
-const TOKEN_KEY = 'echo.token'
+// Marker only — NOT a token. Lets the guards decide instantly; never sent as a
+// credential.
+const SESSION_KEY = 'echo.session'
 
-// The token getter must be armed at MODULE LOAD, not inside the provider's
-// useEffect: child components' effects flush before the provider's, so a
-// getter installed there would leave first-render requests (e.g.
-// /api/me/stats on /me) without an Authorization header → 401 →
-// onUnauthorized → a hard refresh of any authed page bounces to /login.
-setTokenGetter(() => localStorage.getItem(TOKEN_KEY) || '')
+// No Authorization header: the HttpOnly cookie is sent automatically by the
+// browser on same-origin requests. This must be armed at MODULE LOAD so child
+// effects (which flush first) already see it.
+setTokenGetter(() => '')
 
 interface AuthContextValue {
   user: UserPublic | null
   loading: boolean
-  // The solved captcha travels with the credentials because the server will
-  // not compare the password without it. Optional so callers that predate the
-  // challenge (and the captcha-off configuration) keep working.
   login: (
     email: string,
     password: string,
     captcha?: { id?: string; code?: string },
   ) => Promise<UserPublic>
-  // code is only used while the site has email verification switched on
- // (experimental); pass undefined otherwise.
   register: (u: string, e: string, p: string, code?: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
-  // adoptToken swaps in a server-issued token (e.g. the fresh one returned by
-  // a password change, which also bumps the token version and so revokes the
-  // previous token). It persists the token and re-verifies the user.
+  // adoptToken is called after a password change, which rotates the token. The
+  // server already re-issued the HttpOnly cookie on the change-password
+  // response, so we just re-verify the session; the argument is ignored.
   adoptToken: (token: string) => Promise<void>
   token: string
   hasToken: boolean
@@ -47,32 +53,27 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
   const [user, setUser] = useState<UserPublic | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // On mount: re-verify the stored token (if any) via GET /api/auth/me.
-  // (The token getter itself is armed at module load — see above.)
   useEffect(() => {
-    // Global 401 handling: a non-auth endpoint rejecting our token means it
-    // expired — clear the session and bounce to login (unless already there).
     setOnUnauthorized(() => {
-      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(SESSION_KEY)
       setUser(null)
       if (!location.pathname.startsWith('/login')) location.assign('/login')
     })
-    // Opposite outcome: the session is still valid, it just cannot do anything
-    // until the password is changed. Mark the flag locally so the form renders,
-    // then land on it.
     setOnPasswordChangeRequired(() => {
       setUser((u) => (u ? { ...u, must_change_password: true } : u))
       if (!location.pathname.startsWith('/change-password')) location.assign('/change-password')
     })
-    const t = localStorage.getItem(TOKEN_KEY)
-    if (!t) {
+
+    // Boot: if the marker says a session exists, verify it via /api/auth/me.
+    // The HttpOnly cookie is sent automatically; we never read it from JS.
+    if (!localStorage.getItem(SESSION_KEY)) {
       setLoading(false)
       return
     }
     getMe()
       .then((u: UserPublic) => setUser(u))
       .catch(() => {
-        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(SESSION_KEY)
         setUser(null)
       })
       .finally(() => setLoading(false))
@@ -89,23 +90,21 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
       captcha_id: captcha?.id,
       captcha_code: captcha?.code,
     })
-    localStorage.setItem(TOKEN_KEY, res.token)
+    // The server set the HttpOnly cookie; we only keep the non-secret marker.
+    localStorage.setItem(SESSION_KEY, '1')
     setUser(res.user)
     return res.user
   }
 
   const doRegister = async (u: string, e: string, p: string, code?: string): Promise<void> => {
- // The register endpoint issues a JWT itself, so the new
-    // account is signed in immediately without a second login round trip.
     const res: AuthResult = await apiRegister({ username: u, email: e, password: p, code })
-    localStorage.setItem(TOKEN_KEY, res.token)
+    localStorage.setItem(SESSION_KEY, '1')
     setUser(res.user)
   }
 
   const doLogout = () => {
-    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(SESSION_KEY)
     setUser(null)
-    // Best-effort: call server logout (stateless, mostly a no-op signal).
     apiLogout().catch(() => {})
   }
 
@@ -118,11 +117,9 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
     }
   }
 
-  // Replace the stored token with a server-issued one and re-verify, so a
-  // session that just rotated its token (password change) keeps working and
-  // the user object reflects the post-change state (e.g. cleared flag).
-  const doAdoptToken = async (t: string) => {
-    localStorage.setItem(TOKEN_KEY, t)
+  // The server already rotated the HttpOnly cookie on the change-password
+  // response; re-verify so the user object reflects the post-change state.
+  const doAdoptToken = async (_t: string) => {
     try {
       setUser(await getMe())
     } catch {
@@ -138,8 +135,8 @@ export function AuthProvider({ children }: { children: ComponentChildren }) {
     logout: doLogout,
     refresh: doRefresh,
     adoptToken: doAdoptToken,
-    token: user ? localStorage.getItem(TOKEN_KEY) || '' : '',
-    hasToken: !!localStorage.getItem(TOKEN_KEY),
+    token: '',
+    hasToken: !!localStorage.getItem(SESSION_KEY) || !!user,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
