@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -162,7 +163,8 @@ func (c *Config) ListenAddr() string {
 //   - APP_ENV of "dev" (or unset): warning only, never blocks.
 //   - APP_ENV of "prod"/"production" (or any unknown value): treated as prod,
 //     and JWT_SECRET must be non-empty, not a known default, at least 32
-//     bytes, and not a repeated single character.
+//     bytes, not a repeated single character, and must carry enough entropy to
+//     resist offline brute-force (>= 128 bits).
 func (c *Config) ValidateSecurity() error {
 	appEnv := envOr("APP_ENV", "dev")
 	strict := appEnv != "dev" // prod / production / anything else -> prod
@@ -220,8 +222,30 @@ func validateJWTSecret(s string) error {
 		return fmt.Errorf("JWT_SECRET must not be a repeated single character")
 	case len(s) < 32:
 		return fmt.Errorf("JWT_SECRET must be at least 32 bytes (got %d)", len(s))
+	case !hasEnoughEntropy(s):
+		return fmt.Errorf("JWT_SECRET entropy too low; use a random value (e.g. `openssl rand -base64 48`)")
 	}
 	return nil
+}
+
+// hasEnoughEntropy is a floor on JWT_SECRET strength: a secret drawn uniformly
+// from an alphabet of C distinct characters carries at most len*log2(C) bits,
+// so we reject anything that structurally cannot reach ~128 bits (the NIST
+// floor for a symmetric signing key). Because it assumes a uniform draw, it is
+// a conservative floor — a human phrase that spans many characters is still
+// flagged if its alphabet is small, and a repeated "word" like
+// "passwordpassword..." is caught by the tiny distinct-character count. A random
+// base64/hex secret passes comfortably.
+func hasEnoughEntropy(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	distinct := make(map[rune]bool, len(s))
+	for _, r := range s {
+		distinct[r] = true
+	}
+	bits := float64(len(s)) * math.Log2(float64(len(distinct)))
+	return bits >= 128
 }
 
 func envOr(key, def string) string {

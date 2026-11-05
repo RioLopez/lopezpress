@@ -31,8 +31,8 @@ func TestRandomPassword(t *testing.T) {
 
 // TestValidateSecurity covers the JWT_SECRET validation rules:
 //   - dev (default) only warns, never blocks.
-//   - prod blocks on empty / known default / too-short / repeated-char secrets.
-//   - prod accepts a strong secret.
+//   - prod blocks on empty / known default / too-short / repeated-char / low-entropy secrets.
+//   - prod accepts a strong secret (>= 128 bits of entropy).
 func TestValidateSecurity(t *testing.T) {
 	cases := []struct {
 		name    string

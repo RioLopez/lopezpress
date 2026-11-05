@@ -59,5 +59,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	// Getting in clears the streak: a human who eventually types the right
 	// password should not keep paying for yesterday's typos.
 	captcha.Default().NoteSuccess(ip)
+	// Issue the JWT as an HttpOnly cookie (XSS-resistant); the JSON body still
+	// carries it for API clients that prefer the Authorization header.
+	setAuthCookie(w, r, res.Token, res.Expires)
 	writeJSON(w, http.StatusOK, res)
 }

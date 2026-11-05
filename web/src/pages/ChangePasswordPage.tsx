@@ -21,11 +21,11 @@ export function ChangePasswordPage() {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // `hasToken` (the route guard) reads localStorage, so it lets this page
-  // render before /api/auth/me has answered. Deciding anything about the flag
-  // during that round-trip showed the "nothing to change" verdict first and
-  // the real form a moment later; when /me used to omit the flag, the wrong
-  // verdict was also the final one and the user got stuck behind 403s.
+  // `hasToken` (the route guard) now reflects the non-secret session marker, so
+  // it lets this page render before /api/auth/me has answered. Deciding anything
+  // about the flag during that round-trip showed the "nothing to change" verdict
+  // first and the real form a moment later; when /me used to omit the flag, the
+  // wrong verdict was also the final one and the user got stuck behind 403s.
   if (loading || !user) return null
 
   // If the user is no longer flagged for a forced change, let them through.
