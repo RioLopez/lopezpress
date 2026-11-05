@@ -33,6 +33,15 @@ fi
 # either way the proxy is not the way to reach it.
 CURL=(curl -s --max-time 15 --noproxy '*' -H 'Cache-Control: no-cache')
 
+# Windows builds of curl use schannel, which aborts every HTTPS request when the
+# revocation (CRL) endpoint is unreachable — the failure looks like "request
+# failed" with no status code, which is exactly how a healthy server gets
+# misread as down. Other builds reject the flag outright, so probe for support
+# rather than guessing from the OS name.
+if curl --ssl-no-revoke --version >/dev/null 2>&1; then
+  CURL+=(--ssl-no-revoke)
+fi
+
 # Fixed scratch names in the temp directory, overwritten on each run rather than
 # deleted: this script is meant to be run from odd shells, and a cleanup trap on
 # a freshly made file is one more thing that can fail for no benefit.

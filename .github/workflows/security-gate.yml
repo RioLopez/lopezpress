@@ -1,0 +1,57 @@
+name: Security Gate
+
+# Runs the project's local gate suite on every push and pull request so a
+# regression in architecture / security / docs / API contract / dependency
+# vulnerabilities is caught before release — not by remembering to run the
+# scripts by hand. The scripts live in scripts/ and are the same ones used
+# locally (see dev/ai-security/ for the threat model they defend against).
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Architecture gate
+        run: python3 scripts/arch_check.py
+
+      - name: Security static gate
+        run: python3 scripts/security_check.py
+
+      - name: Documentation gate
+        run: python3 scripts/doc_check.py --quiet
+
+      - name: API contract gate
+        run: python3 scripts/contract_check.py
+
+      - name: Dependency vulnerability gate
+        # Exit codes from scripts/vuln_check.py:
+        #   0 = PASS (no known reachable vulnerabilities)
+        #   1 = FAIL (real vulnerability found) -> must block the build
+        #   2 = INCOMPLETE (a scanner was missing) -> warn, do not block
+        run: |
+          python3 scripts/vuln_check.py
+          code=$?
+          if [ "$code" -eq 1 ]; then
+            echo "::error::Dependency vulnerability gate FAILED — upgrade the dependency or toolchain before releasing."
+            exit 1
+          elif [ "$code" -eq 2 ]; then
+            echo "::warning::Dependency vulnerability gate INCOMPLETE (a scanner was missing). Review locally with 'python3 scripts/vuln_check.py'."
+          fi
