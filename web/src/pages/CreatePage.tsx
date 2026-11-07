@@ -30,6 +30,7 @@ export function CreatePage() {
         try {
           const p = await createPost({
             title: v.title,
+            slug: v.slug,
             body: v.body,
             status: v.status,
             category_id: v.category_id,

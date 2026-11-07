@@ -105,6 +105,8 @@ export interface CaptchaAnswer {
 
 export interface CreatePostInput {
   title: string
+  // Empty = the server derives the permanent link from the title.
+  slug?: string
   body: string
   status: PostStatus
   category_id?: number
@@ -115,6 +117,8 @@ export interface CreatePostInput {
 
 export interface UpdatePostInput {
   title?: string
+  // Empty = keep the current permanent link.
+  slug?: string
   body?: string
   status?: PostStatus
   category_id?: number
@@ -235,6 +239,7 @@ export interface UploadDeleteResult {
 // --- editor form values ---
 export interface EditorValues {
   title: string
+  slug?: string
   body: string
   status: PostStatus
   category_id?: number

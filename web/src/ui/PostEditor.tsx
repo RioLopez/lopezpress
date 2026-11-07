@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'preact/hooks'
+import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { wordCount } from '../core/md'
 import { errMessage, listCategories, listTags, uploadImage } from '../core/api'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { isAdmin, isRoot } from '../core/roles'
-import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
-import { normalizeTagInput, suggestTags } from '../core/tags'
 import type { EditorValues, PostStatus, Category, Tag } from '../core/types'
 import { VditorEditor, type EditorMode } from './VditorEditor'
+import { EditorSettingsDrawer } from './EditorSettingsDrawer'
 
 const DRAFT_TTL_DAYS = 30
 const DRAFT_TTL_MS = DRAFT_TTL_DAYS * 24 * 60 * 60 * 1000
@@ -25,6 +24,7 @@ type Visibility = PostStatus
 
 interface Draft {
   title: string
+  slug: string
   body: string
   status: Visibility
   category: number | ''
@@ -72,6 +72,7 @@ function pruneOldDrafts() {
 export interface PostEditorProps {
   id?: string
   initialTitle?: string
+  initialSlug?: string
   initialBody?: string
   initialStatus?: PostStatus
   initialReviewNote?: string
@@ -87,6 +88,7 @@ export interface PostEditorProps {
 export function PostEditor({
   id,
   initialTitle = '',
+  initialSlug = '',
   initialBody = '',
   initialStatus = 'published',
   initialReviewNote = '',
@@ -109,6 +111,9 @@ export function PostEditor({
   // and the control is hidden here to match (no button that 403s).
   const canPin = isAdmin(user?.role)
   const [title, setTitle] = useState(initialTitle)
+  // Empty means "derive from the title" on create and "leave the permalink
+  // alone" on edit - the server already draws that distinction.
+  const [slug, setSlug] = useState(initialSlug)
  // Default to public ("published") when no initial status supplied.
   // Any legacy draft/scheduled value is coerced back to public so a stale
   // record can never produce a hidden or scheduled post.
@@ -128,14 +133,11 @@ export function PostEditor({
   const [body, setBody] = useState(initialBody)
   const [categories, setCategories] = useState<Category[]>([])
   const [savedAt, setSavedAt] = useState<number | null>(null)
-  // Tag picker state: the site's existing tags (for autocomplete), what the
-  // author is typing, whether the dropdown is open, and which row is
-  // highlighted for Enter/arrow keys.
+  // The site's existing tags, handed to the settings drawer for autocomplete.
   const [allTags, setAllTags] = useState<Tag[]>([])
-  const [tagInput, setTagInput] = useState('')
-  const [tagOpen, setTagOpen] = useState(false)
-  const [tagActive, setTagActive] = useState(0)
   const [coverBusy, setCoverBusy] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsBtnRef = useRef<HTMLButtonElement>(null)
 
   const bodyRef = useRef(initialBody)
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -144,8 +146,8 @@ export function PostEditor({
   const [showRestore, setShowRestore] = useState(!!initialDraft.current)
   const [restoreDecided, setRestoreDecided] = useState(false)
 
-  const valuesRef = useRef({ title, status, category, tags, pinned, cover })
-  valuesRef.current = { title, status, category, tags, pinned, cover }
+  const valuesRef = useRef({ title, slug, status, category, tags, pinned, cover })
+  valuesRef.current = { title, slug, status, category, tags, pinned, cover }
 
   useEffect(() => {
     pruneOldDrafts()
@@ -159,6 +161,7 @@ export function PostEditor({
     if (id === undefined && !bodyRef.current && !valuesRef.current.title) return
     const d: Draft = {
       title: valuesRef.current.title,
+      slug: valuesRef.current.slug,
       body: bodyRef.current,
       status: valuesRef.current.status,
       category: valuesRef.current.category,
@@ -231,6 +234,7 @@ export function PostEditor({
     const d = initialDraft.current
     if (d) {
       setTitle(d.title || '')
+      setSlug(d.slug || '')
       // Coerce any legacy draft/scheduled value to public.
       setStatus(d.status === 'private' ? 'private' : 'published')
       setCategory(d.category ?? '')
@@ -249,95 +253,20 @@ export function PostEditor({
     setRestoreDecided(true)
   }
 
-  // --- tag picker -----------------------------------------------------------
-  // The dropdown mirrors the site's existing tags so an author never has to
-  // remember whether the site spells it "Go" or "go". Matching is delegated to
-  // core/tags (pure + unit-tested); this component only handles focus and keys.
-  const tagSuggestions = useMemo(
-    () => (tagOpen ? suggestTags(allTags, tagInput, tags) : []),
-    [tagOpen, allTags, tagInput, tags],
-  )
-
-  // Close the dropdown on an outside click rather than on input blur. A blur
-  // timer raced with typing (the timer fired just after the next keystroke
-  // reopened the list, so the list vanished while the author was still typing)
-  // and it also fired when the click landed on an option. A document-level
-  // mousedown scoped to the box has neither problem.
-  const tagBoxRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!tagOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (tagBoxRef.current && !tagBoxRef.current.contains(e.target as Node)) setTagOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [tagOpen])
-
-  const addTag = (raw: string) => {
-    const name = normalizeTagInput(raw.replace(/,/g, ' '))
-    if (!name) return
-    // Reuse the stored spelling when one exists: attaching "go" to the "Go"
-    // tag is what keeps one concept from splitting into three.
-    const existing = allTags.find((t) => t.name.toLowerCase() === name.toLowerCase())
-    const final = existing ? existing.name : name
-    setTags((prev) =>
-      prev.some((t) => t.toLowerCase() === final.toLowerCase()) ? prev : [...prev, final],
-    )
-    setTagInput('')
-    setTagActive(0)
-    setTagOpen(false)
+  // Tag and slug edits are browser-draft material too, so they schedule an
+  // autosave the same way the title does.
+  const updateTags = (next: string[]) => {
+    setTags(next)
+    scheduleAutosave()
+  }
+  const updateSlug = (next: string) => {
+    setSlug(next)
+    scheduleAutosave()
   }
 
-  const pickSuggestion = (index: number) => {
-    const picked = tagSuggestions[index]
-    if (picked) addTag(picked.name)
-    else addTag(tagInput)
-  }
-
-  const onTagKey = (e: KeyboardEvent) => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        if (!tagOpen && tagInput.trim()) { setTagOpen(true); setTagActive(0); return }
-        setTagActive((i) => Math.min(i + 1, Math.max(0, tagSuggestions.length - 1)))
-        return
-      case 'ArrowUp':
-        e.preventDefault()
-        setTagActive((i) => Math.max(0, i - 1))
-        return
-      case 'Escape':
-        // Close the dropdown without touching what was typed.
-        if (tagOpen) { e.preventDefault(); setTagOpen(false) }
-        return
-      case 'Enter':
-      case 'Tab':
-        e.preventDefault()
-        // Enter takes the highlighted suggestion (a create-row is part of the
-        // suggestion list, so "type a new name + Enter" still creates it).
-        if (tagOpen && tagSuggestions.length) pickSuggestion(tagActive)
-        else addTag(tagInput)
-        return
-      case ',':
-        e.preventDefault()
-        addTag(tagInput)
-        return
-      case ' ':
-        // Space only commits when it cannot be part of a name: multi-word tags
-        // like "web dev" are legitimate, so a space mid-typing stays literal.
-        if (tagOpen && tagSuggestions.length) {
-          e.preventDefault()
-          pickSuggestion(tagActive)
-        }
-        return
-      case 'Backspace':
-        if (!tagInput && tags.length) {
-          e.preventDefault()
-          setTags(tags.slice(0, -1))
-        }
-        return
-      default:
-        return
-    }
+  const closeSettings = () => {
+    setSettingsOpen(false)
+    settingsBtnRef.current?.focus()
   }
 
   const pickCoverFromBody = () => {
@@ -370,6 +299,10 @@ export function PostEditor({
     const effectiveStatus: PostStatus = status === 'rejected' ? 'pending' : status
     onSubmit({
       title: title.trim(),
+      // Empty is meaningful on both routes (create: derive from title,
+      // edit: keep the current permalink), so it is sent as-is rather than
+      // dropped the way an absent field would be.
+      slug: slug.trim(),
       body: bodyRef.current,
       status: effectiveStatus,
       category_id: category !== '' ? Number(category) : undefined,
@@ -395,11 +328,6 @@ export function PostEditor({
   // every branch below was dead code: a non-root author saw "发布" on a button
   // that only filed the article for review.
   const wasPublished = initialStatus === 'published'
-  // A pending post has already asked for readers, so the public radio is the
-  // one that describes it. Neither radio matched `status === 'pending'`, which
-  // left the pair unselected on the one screen where the author needs to see
-  // what state the article is in.
-  const wantsPublic = status === 'published' || status === 'pending'
   const saveBtnLabel = status === 'rejected'
     ? t('editor.resubmit')
     : isRootUser
@@ -423,17 +351,28 @@ export function PostEditor({
         </div>
       )}
 
-      {/* Row 1: page title (left) + publish action (right). Page-level ops live here,
-          not in the editor toolbar. */}
+      {/* Row 1: page title (left) + page-level actions (right). Page-level ops
+          live here, not in the editor toolbar. */}
       <div class="pe-topbar">
         <h1 class="pe-heading">{t('editor.heading')}</h1>
-        <button
-          class={`btn btn-primary pe-savebtn ${publishing ? 'pe-publishing' : ''}`}
-          disabled={publishing}
-          onClick={() => doSubmit()}
-        >
-          {publishing ? busyLabel : saveBtnLabel}
-        </button>
+        <div class="pe-topbar-actions">
+          <button
+            ref={settingsBtnRef}
+            class={`btn btn-ghost pe-settingsbtn ${settingsOpen ? 'is-active' : ''}`}
+            onClick={() => setSettingsOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
+          >
+            {t('editor.settings')}
+          </button>
+          <button
+            class={`btn btn-primary pe-savebtn ${publishing ? 'pe-publishing' : ''}`}
+            disabled={publishing}
+            onClick={() => doSubmit()}
+          >
+            {publishing ? busyLabel : saveBtnLabel}
+          </button>
+        </div>
       </div>
 
       {/* Row 2: full-width post title input. */}
@@ -464,221 +403,69 @@ export function PostEditor({
         </div>
       </div>
 
-      <div class="pe-grid">
-        <div class="pe-editor">
-          <VditorEditor
-            value={body}
-            onChange={setBodyValue}
-            mode={mode}
-            lang={locale === 'zh' ? 'zh_CN' : 'en_US'}
-            placeholder={t('editor.bodyPlaceholder')}
-            onUploadImage={uploadForEditor}
-            onUploadError={(m) => pushToast('error', m)}
-          />
-
-          <div class="pe-statline">
-            <span>{t('editor.stats', { n: String(wc) })}</span>
-            {readMin > 0 && <span>· {t('editor.readTime', { n: String(readMin) })}</span>}
-            {savedAt && (
-              <span class="pe-saved">{t('editor.savedAt', { time: new Date(savedAt).toLocaleTimeString() })}</span>
-            )}
-            <span class="pe-statline-cancel">
-              <button class="btn btn-ghost btn-sm" onClick={onCancel}>
-                {t('editor.cancel')}
-              </button>
-            </span>
-          </div>
-        </div>
-
-        <aside class="pe-meta">
-          <h3>{t('editor.metaPanel')}</h3>
-
-          <div class="pe-field">
-            <label>{t('editor.category')}</label>
-            <select
-              value={String(category)}
-              onChange={(e) =>
-                setCategory((e.target as HTMLSelectElement).value === '' ? '' : Number((e.target as HTMLSelectElement).value))
-              }
-            >
-              <option value="">{t('editor.allCategories')}</option>
-              {/* Same indented tree as the public filter: filing a post must
-                  show which node is a parent and which is a leaf. */}
-              {orderCategories(categories).map((node) => (
-                <option key={node.cat.id} value={String(node.cat.id)}>
-                  {categoryOptionLabel(node)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div class="pe-field">
-            <label>{t('editor.tags')}</label>
-            <div
-              ref={tagBoxRef}
-              class={`pe-tags-input ${tagOpen && tagSuggestions.length ? 'pe-tags-input--open' : ''}`}
-            >
-              {tags.map((tg) => (
-                <span class="pe-tag" key={tg}>
-                  {tg}
-                  <button
-                    type="button"
-                    aria-label={`${t('editor.tagRemove')} ${tg}`}
-                    onClick={() => setTags(tags.filter((x) => x !== tg))}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <input
-                class="pe-tag-input"
-                value={tagInput}
-                placeholder={tags.length ? '' : t('editor.tagPlaceholder')}
-                onInput={(e) => {
-                  setTagInput((e.target as HTMLInputElement).value)
-                  setTagOpen(true)
-                  setTagActive(0)
-                }}
-                onFocus={() => { if (tagInput.trim()) setTagOpen(true) }}
-                onKeyDown={onTagKey}
-              />
-              {tagOpen && tagSuggestions.length > 0 && (
-                <ul class="pe-tag-menu">
-                  {tagSuggestions.map((s, i) => (
-                    <li
-                      key={`${s.exists ? 'e' : 'n'}:${s.name}`}
-                      class={[
-                        'pe-tag-option',
-                        i === tagActive ? 'pe-tag-option--active' : '',
-                        s.exists ? '' : 'pe-tag-option--create',
-                      ].join(' ')}
-                      // mousedown (not click) so the input never loses focus
-                      // before the choice is committed.
-                      onMouseDown={(e) => { e.preventDefault(); pickSuggestion(i) }}
-                      onMouseEnter={() => setTagActive(i)}
-                    >
-                      {s.exists ? (
-                        <span class="pe-tag-option-name">{s.name}</span>
-                      ) : (
-                        <>
-                          <span class="pe-tag-option-plus">+</span>
-                          <span class="pe-tag-option-label">{t('editor.tagCreate')}</span>
-                          <span class="pe-tag-option-name">{s.name}</span>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <p class="pe-tags-hint">{t('editor.tagHint')}</p>
-          </div>
-
-          <div class="pe-field">
-            <label>{t('editor.visibility')}</label>
-            {status === 'rejected' ? (
-              // A rejected post is in review-limbo: the author sees the
-              // reviewer's note, revises, then resubmits from the top bar.
-              // The visibility radios are hidden because the post cannot be
-              // made public or private until it clears review again.
-              <div class="pe-rejected-banner">
-                <p class="pe-rejected-title">{t('editor.rejectedBanner')}</p>
-                {reviewNote && (
-                  <p class="pe-rejected-note">
-                    <strong>{t('reviewNote')}</strong> {reviewNote}
-                  </p>
-                )}
-                <p class="pe-pinned-hint pe-review-hint">{t('editor.visibilityReviewHint')}</p>
-              </div>
-            ) : (
-              <div class="pe-visibility" role="radiogroup" aria-label={t('editor.visibility')}>
-                <label class={`pe-visibility-opt ${wantsPublic ? 'is-active' : ''}`}>
-                  <input
-                    type="radio"
-                    name="pe-visibility"
-                    checked={wantsPublic}
-                    onChange={() => setStatus('published')}
-                  />
-                  <span class="pe-visibility-dot pe-visibility-dot--public"></span>
-                  <span>{t('editor.visibilityPublic')}</span>
-                </label>
-                <label class={`pe-visibility-opt ${status === 'private' ? 'is-active' : ''}`}>
-                  <input
-                    type="radio"
-                    name="pe-visibility"
-                    checked={status === 'private'}
-                    onChange={() => setStatus('private')}
-                  />
-                  <span class="pe-visibility-dot pe-visibility-dot--private"></span>
-                  <span>{t('editor.visibilityPrivate')}</span>
-                </label>
-              </div>
-            )}
-            <p class="pe-pinned-hint">
-              {status === 'private' ? t('editor.visibilityPrivateHint') : t('editor.visibilityPublicHint')}
+      {/* A rejected post keeps its reviewer note on the canvas: that text is
+          the reason the author is editing at all, and hiding it behind a
+          drawer would make the banner something they have to go look for. */}
+      {status === 'rejected' && (
+        <div class="pe-rejected-banner pe-rejected-banner--canvas">
+          <p class="pe-rejected-title">{t('editor.rejectedBanner')}</p>
+          {reviewNote && (
+            <p class="pe-rejected-note">
+              <strong>{t('reviewNote')}</strong> {reviewNote}
             </p>
-            {/* A non-root post that goes public queues for review, so
-                say so. It must only appear for the public choice — showing it
-                next to 私密 contradicted the line directly above ("只有你自己
-                能看到"), and for a while the server agreed with the wrong one.
-                A live post says something stronger than a new one: editing it
-                re-opens the review, so the article leaves the public site until
-                it passes again. Saying only "提交后进入审核队列" here would be
-                true and useless — the author already cleared that queue once. */}
-            {!isRootUser && status !== 'private' && (
-              <p class="pe-pinned-hint pe-review-hint">
-                {status === 'pending'
-                  ? t('editor.pendingHint')
-                  : wasPublished ? t('editor.rereviewHint') : t('editor.visibilityReviewHint')}
-              </p>
-            )}
-          </div>
-
-          {canPin && (
-            <div class="pe-field">
-              <label class="pe-pinned">
-                <input
-                  type="checkbox"
-                  checked={pinned}
-                  onChange={(e) => setPinned((e.target as HTMLInputElement).checked)}
-                />
-                <span>{t('editor.pinnedLabel')}</span>
-              </label>
-              <p class="pe-pinned-hint">{t('editor.pinnedHint')}</p>
-            </div>
           )}
+        </div>
+      )}
 
-          <div class="pe-field">
-            <label>{t('editor.cover')}</label>
-            {cover ? (
-              <div class="pe-cover-preview">
-                <img src={cover} alt="cover" />
-                <button class="btn btn-ghost btn-sm" onClick={() => setCover('')}>
-                  {t('editor.coverClear')}
-                </button>
-              </div>
-            ) : (
-              <div class="pe-cover-actions">
-                <label class="btn btn-ghost btn-sm" style="cursor:pointer">
-                  {coverBusy ? t('editor.publishing') : t('editor.coverUpload')}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style="display:none"
-                    onChange={(e) => {
-                      const f = (e.target as HTMLInputElement).files?.[0]
-                      if (f) uploadCover(f)
-                    }}
-                  />
-                </label>
-                <button class="btn btn-ghost btn-sm" onClick={pickCoverFromBody}>
-                  {t('editor.coverFromBody')}
-                </button>
-              </div>
-            )}
-          </div>
-        </aside>
+      <div class="pe-canvas">
+        <VditorEditor
+          value={body}
+          onChange={setBodyValue}
+          mode={mode}
+          lang={locale === 'zh' ? 'zh_CN' : 'en_US'}
+          placeholder={t('editor.bodyPlaceholder')}
+          onUploadImage={uploadForEditor}
+          onUploadError={(m) => pushToast('error', m)}
+        />
+
+        <div class="pe-statline">
+          <span>{t('editor.stats', { n: String(wc) })}</span>
+          {readMin > 0 && <span>· {t('editor.readTime', { n: String(readMin) })}</span>}
+          {savedAt && (
+            <span class="pe-saved">{t('editor.savedAt', { time: new Date(savedAt).toLocaleTimeString() })}</span>
+          )}
+          <span class="pe-statline-cancel">
+            <button class="btn btn-ghost btn-sm" onClick={onCancel}>
+              {t('editor.cancel')}
+            </button>
+          </span>
+        </div>
       </div>
+
+      <EditorSettingsDrawer
+        open={settingsOpen}
+        onClose={closeSettings}
+        slug={slug}
+        onSlug={updateSlug}
+        category={category}
+        onCategory={setCategory}
+        categories={categories}
+        tags={tags}
+        onTags={updateTags}
+        allTags={allTags}
+        status={status}
+        onStatus={(s) => { setStatus(s); scheduleAutosave() }}
+        wasPublished={wasPublished}
+        isRootUser={isRootUser}
+        canPin={canPin}
+        pinned={pinned}
+        onPinned={setPinned}
+        cover={cover}
+        onCover={(v) => { setCover(v); scheduleAutosave() }}
+        coverBusy={coverBusy}
+        onUploadCover={uploadCover}
+        onPickCoverFromBody={pickCoverFromBody}
+      />
     </div>
   )
 }

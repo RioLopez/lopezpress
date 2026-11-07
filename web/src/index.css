@@ -105,9 +105,9 @@ html, body {
 /* The PostEditor root fills the remaining main height so the editor card
    reaches the bottom edge (page does not scroll vertically). */
 .layout.layout--editor .main.main--editor > .post-editor { flex: 1 1 auto; min-height: 0; }
-/* The editor grid must fill the post-editor's remaining height so the
-   editor card reaches the bottom edge (page never scrolls vertically). */
-.layout.layout--editor .main.main--editor .post-editor .pe-grid { height: 100%; min-height: 0; }
+/* The canvas must fill the post-editor's remaining height so the editing
+   surface reaches the bottom edge (page never scrolls vertically). */
+.layout.layout--editor .main.main--editor .post-editor .pe-canvas { height: 100%; min-height: 0; }
 .layout.layout--editor .site-footer { display: none; }
 
 .topbar {
@@ -1256,6 +1256,32 @@ tr.row-selected { transition: background .12s; }
 .friend-link-row input { flex: 1; min-width: 0; }
 .settings-actions { margin-top: 18px; }
 
+/* Grouped settings: left sub-nav, one group visible at a time. The ten
+   sections used to be a single long scroll; the switch you wanted was usually
+   at the other end of it. */
+.settings-layout {
+  display: grid; grid-template-columns: 200px minmax(0, 1fr);
+  gap: 24px; align-items: start; margin-top: 18px;
+}
+.settings-nav {
+  position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px;
+  padding: 6px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.settings-nav-item {
+  text-align: left; padding: 8px 10px; font-family: inherit; font-size: 13px;
+  color: var(--text-muted); background: none; border: 0;
+  border-radius: calc(var(--radius) - 2px); cursor: pointer;
+}
+.settings-nav-item:hover { background: var(--border); color: var(--text); }
+.settings-nav-item.is-active { background: var(--border); color: var(--primary); font-weight: 600; }
+.settings-body { min-width: 0; }
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 12px; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; }
+  .settings-nav-item { white-space: nowrap; }
+}
+
 /* Toggle (checkbox) ----------------------------------------------------- */
 .toggle {
   display: flex; align-items: center; gap: 8px;
@@ -1616,29 +1642,53 @@ tr.row-selected { transition: background .12s; }
 }
 .pe-mode--active { background: var(--surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
-/* Main grid: editor (fills remaining height, internal scroll) + meta sidebar
-   (fixed width, top-aligned, does NOT stretch the row).
-   1440: 360px · 1200–1439: 320px · 1024–1199: 280px · <1024: drop below.
-   Key fix: the grid row is `height:100%` (not content-driven) so the editor
-   column always gets the full remaining height regardless of meta height.
-   The left column clips (overflow:hidden) to that height; the right column
-   stays `align-self:start` so it does not inflate the row. */
-.pe-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: 100%;
-  gap: 24px; min-height: 0; flex: 1 1 auto;
-}
-.pe-editor {
+/* Single-column canvas. The publish options used to be a fixed third column;
+   at 1440 the admin nav + 320px panel + 24px gap left the tag box about 80px,
+   which is exactly the input's min-width. They live in a drawer now, so the
+   editing surface owns the full width at every breakpoint. */
+.pe-canvas {
   min-width: 0; position: relative; display: flex; flex-direction: column;
-  min-height: 0; height: 100%; overflow: hidden;
+  min-height: 0; flex: 1 1 auto; overflow: hidden;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
 }
-.pe-meta { align-self: start; }
 /* Editor body + statline share the column height: the editing surface flexes,
    the statline stays fixed at the bottom. */
-.pe-editor .vd-host { flex: 1 1 auto; min-height: 0; }
+.pe-canvas .vd-host { flex: 1 1 auto; min-height: 0; }
 .pe-statline { flex: 0 0 auto; }
-.pe-meta { position: sticky; top: 80px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
-.pe-meta h3 { margin: 0 0 12px; font-size: 15px; }
+
+.pe-topbar-actions { display: flex; align-items: center; gap: 8px; }
+.pe-settingsbtn.is-active { color: var(--primary); border-color: var(--primary); }
+
+/* Settings drawer: slide-over on wide screens, full-screen panel below 1024
+   (a 320px column on a 768 screen would recreate the layout this replaces). */
+.pe-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0, 0, 0, .4); animation: pe-fade .15s ease-out;
+}
+.pe-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 91;
+  width: min(420px, 92vw); display: flex; flex-direction: column;
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, .18); animation: pe-slide-in .18s ease-out;
+}
+.pe-drawer-head {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.pe-drawer-head h3 { margin: 0; font-size: 15px; }
+.pe-drawer-close { font-size: 18px; line-height: 1; padding: 4px 10px; }
+.pe-drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 18px 24px; }
+.pe-drawer-foot { flex: 0 0 auto; display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
+.pe-group {
+  margin: 4px 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.pe-group:not(:first-child) { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.pe-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.pe-rejected-banner--canvas { flex: 0 0 auto; }
+
+@keyframes pe-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pe-slide-in { from { transform: translateX(16px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
 .pe-field { margin-bottom: 14px; }
 .pe-field > label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
 .pe-field .input, .pe-field select, .pe-field input[type="text"], .pe-field input[type="datetime-local"] {
@@ -1709,7 +1759,7 @@ tr.row-selected { transition: background .12s; }
 /* Vditor is a direct child of the editor card, and the card already draws the
    outer border and radius - a second one here would read as a double frame.
    Height 100% because Vditor measures its own container on mount. */
-.pe-editor .vditor { border: none !important; border-radius: 0 !important; height: 100%; }
+.pe-canvas .vditor { border: none !important; border-radius: 0 !important; height: 100%; }
 /* The preview has to be a rehearsal of the published page: same font stack,
    same 16px/1.85, same serif headings as .md-body. It used to be 15px/1.75 on
    Vditor's own "Helvetica Neue…" stack, so Chinese bold came out one weight
@@ -1717,50 +1767,42 @@ tr.row-selected { transition: background .12s; }
    :not(.vditor-sv) is load-bearing — in sv mode the source pane is
    `class="vditor-sv vditor-reset"` and inheriting this would cost it its
    monospace font. */
-.pe-editor .vditor-reset:not(.vditor-sv) {
+.pe-canvas .vditor-reset:not(.vditor-sv) {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-size: 16px;
   line-height: 1.85;
   color: var(--text);
 }
-.pe-editor .vditor-reset:not(.vditor-sv) h1,
-.pe-editor .vditor-reset:not(.vditor-sv) h2 {
+.pe-canvas .vditor-reset:not(.vditor-sv) h1,
+.pe-canvas .vditor-reset:not(.vditor-sv) h2 {
   font-family: var(--font-serif);
   letter-spacing: .01em;
   font-weight: 700;
 }
-.pe-editor .vditor-reset:not(.vditor-sv) h1 {
+.pe-canvas .vditor-reset:not(.vditor-sv) h1 {
   border-bottom: 1px solid var(--border);
   padding-bottom: .3em;
 }
 /* Explicit, and identical to .md-body strong: Vditor leaves <strong> on the UA
    default, so the two surfaces agreed only by accident. */
-.pe-editor .vditor-reset strong,
-.pe-editor .vditor-reset b { font-weight: 700; }
+.pe-canvas .vditor-reset strong,
+.pe-canvas .vditor-reset b { font-weight: 700; }
 /* Vditor's toolbar sits directly below the mode switch; trim its left padding
    so the two rows do not stack into a band of dead chrome. */
-.pe-editor .vditor-toolbar { padding-left: 4px; }
+.pe-canvas .vditor-toolbar { padding-left: 4px; }
 .pe-toc-float { position: absolute; top: 8px; right: 8px; z-index: 20; max-width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; max-height: 60vh; overflow: auto; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
 .pe-toc-float a { display: block; color: var(--text); text-decoration: none; padding: 2px 0; }
 .pe-toc-float a:hover { color: var(--primary); }
 
-/* Breakpoints (spec 21 layout revision) */
-@media (max-width: 1439px) {
-  .pe-grid { grid-template-columns: minmax(0, 1fr) 320px; }
-}
-@media (max-width: 1199px) {
-  .pe-grid { grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; }
-  .pe-meta { padding: 16px; }
-}
-/* <1024: meta panel drops below the editor as a stacked block (drawer hook).
-   Grid reverts to auto rows so the meta can stretch the page; the editor
-   still scrolls internally. */
+/* <1024: the drawer takes over the whole viewport. A 420px slide-over on a
+   768px screen leaves a strip of canvas that is useless to look at, and a
+   stacked meta block (the old behaviour) is the layout the drawer replaces. */
 @media (max-width: 1023px) {
-  .pe-grid { grid-template-columns: 1fr; grid-template-rows: auto auto; }
-  .pe-meta { position: static; top: auto; width: 100%; align-self: stretch; }
-  .layout.layout--editor .main.main--editor { overflow: auto; }
-  .layout.layout--editor .main.main--editor .post-editor .pe-grid { height: auto; min-height: 0; }
+  .pe-drawer {
+    width: 100%; border-left: none;
+    animation: pe-fade .15s ease-out;
+  }
 }
 @media (max-width: 768px) {
   .pe-topbar { gap: 10px; }
@@ -1887,7 +1929,7 @@ tr.row-selected { transition: background .12s; }
    ========================================================================= */
 
 /* 1. 全局防溢出 */
-img, video, pre, table, .vditor, .pe-editor, .pe-split { max-width: 100%; }
+img, video, pre, table, .vditor, .pe-canvas, .pe-split { max-width: 100%; }
 html { -webkit-text-size-adjust: 100%; }
 
 /* 2. 内容容器：响应式左右 padding（平滑），保持居中；上下 padding 维持原值 */

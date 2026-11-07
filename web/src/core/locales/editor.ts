@@ -72,6 +72,15 @@ export type EditorTexts = {
     requeued: string
     toc: string
     metaPanel: string
+    settings: string
+    settingsTitle: string
+    settingsGeneral: string
+    settingsAdvanced: string
+    settingsDone: string
+    settingsClose: string
+    slug: string
+    slugPlaceholder: string
+    slugHint: string
   },
   imgUpload: {
     uploadLocal: string
@@ -171,6 +180,15 @@ export const editorZh: EditorTexts = {
     requeued: '已提交审核，审核通过前文章暂不对外显示',
     toc: '目录',
     metaPanel: '发布选项',
+    settings: '设置',
+    settingsTitle: '发布设置',
+    settingsGeneral: '常规',
+    settingsAdvanced: '高级',
+    settingsDone: '完成',
+    settingsClose: '关闭设置',
+    slug: '链接别名',
+    slugPlaceholder: '留空自动生成',
+    slugHint: '留空时：新建文章由标题生成，编辑文章保持当前链接不变。修改后旧链接会失效。',
   },
   imgUpload: {
     uploadLocal: '上传本地图片',
@@ -268,6 +286,15 @@ export const editorEn: EditorTexts = {
     requeued: 'Submitted for review — the article stays hidden until it passes',
     toc: 'Outline',
     metaPanel: 'Publish options',
+    settings: 'Settings',
+    settingsTitle: 'Publish settings',
+    settingsGeneral: 'General',
+    settingsAdvanced: 'Advanced',
+    settingsDone: 'Done',
+    settingsClose: 'Close settings',
+    slug: 'Slug',
+    slugPlaceholder: 'Leave empty to generate',
+    slugHint: 'Left empty: derived from the title on create, and left unchanged on edit. Changing it breaks the old link.',
   },
   imgUpload: {
     uploadLocal: 'Upload local image',

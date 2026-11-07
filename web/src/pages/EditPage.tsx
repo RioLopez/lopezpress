@@ -56,6 +56,7 @@ export function EditPage({ id }: { id: string }) {
     <PostEditor
       id={id}
       initialTitle={post.title}
+      initialSlug={post.slug}
       initialBody={post.body}
       initialStatus={post.status}
       initialReviewNote={post.review_note}

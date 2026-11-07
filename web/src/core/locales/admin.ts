@@ -39,6 +39,12 @@ export type AdminTexts = {
     batchSkipped: string
     tagsPlaceholder: string
     name: string
+    author: string
+    allAuthors: string
+    sortNewest: string
+    sortOldest: string
+    sortViews: string
+    pageSizeLabel: string
     postCount: string
     deleteConfirmCat: string
     deleteConfirmTag: string
@@ -280,6 +286,12 @@ export const adminZh: AdminTexts = {
     batchSkipped: '{n} 篇被跳过（无权限或不存在）',
     tagsPlaceholder: '标签，逗号分隔',
     name: '名称',
+    author: '作者',
+    allAuthors: '全部作者',
+    sortNewest: '最新发布',
+    sortOldest: '最早发布',
+    sortViews: '浏览最多',
+    pageSizeLabel: '每页',
     postCount: '文章数',
     deleteConfirmCat: '确定删除分类「{t}」吗？该分类下的文章将变为无分类状态。',
     deleteConfirmTag: '确定删除标签「{t}」吗？相关标签关联将被移除。',
@@ -512,6 +524,12 @@ export const adminEn: AdminTexts = {
     batchSkipped: '{n} skipped (no permission or missing)',
     tagsPlaceholder: 'Tags, comma separated',
     name: 'Name',
+    author: 'Author',
+    allAuthors: 'All authors',
+    sortNewest: 'Newest',
+    sortOldest: 'Oldest',
+    sortViews: 'Most viewed',
+    pageSizeLabel: 'Per page',
     postCount: 'Posts',
     deleteConfirmCat: 'Delete category "{t}"? Posts in this category will become uncategorized.',
     deleteConfirmTag: 'Delete tag "{t}"? Tag associations will be removed.',

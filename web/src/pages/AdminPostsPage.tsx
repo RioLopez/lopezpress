@@ -4,8 +4,8 @@ import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { useNav } from '../core/router'
 import { useDebounce } from '../core/debounce'
-import { listPostsPaged, listCategories, listTags, deletePost, batchPosts, banPost, importMarkdown, errMessage } from '../core/api'
-import type { PostStatus, Category, Tag } from '../core/types'
+import { listPostsPaged, listCategories, listTags, listUsers, deletePost, batchPosts, banPost, importMarkdown, errMessage } from '../core/api'
+import type { PostStatus, Category, Tag, UserWithDisabled } from '../core/types'
 import { Pagination } from '../ui/Pagination'
 import { TableState } from '../ui/TableState'
 import { useQuery } from '../core/useQuery'
@@ -18,8 +18,20 @@ import { orderCategories, categoryOptionLabel } from '../core/taxonomy'
 // so a partial permission failure comes back as `skipped`, not as a 500.
 
 // The admin table keeps its own page size: it is a work surface, not the
-// public reading list, so it must not follow site_config.page_size.
-const ADMIN_PAGE_SIZE = 20
+// public reading list, so it must not follow site_config.page_size. Small
+// sizes are the default on purpose — this list is read a few rows at a time,
+// and a 100-row page is a scroll hunt, not an overview.
+const PAGE_SIZES = [5, 10, 20]
+const DEFAULT_PAGE_SIZE = 10
+
+// Sort is expressed as one choice because sort and order always move
+// together: "oldest" is created_at + asc, "most viewed" is views + desc.
+const SORTS = [
+  { key: 'new', sort: 'created_at', order: 'desc' },
+  { key: 'old', sort: 'created_at', order: 'asc' },
+  { key: 'views', sort: 'views', order: 'desc' },
+] as const
+type SortKey = (typeof SORTS)[number]['key']
 
 const STATUSES: PostStatus[] = ['published', 'private', 'pending', 'rejected', 'banned']
 
@@ -34,8 +46,12 @@ export function AdminPostsPage() {
   const [category, setCategory] = useState<number | null>(null)
   const [tag, setTag] = useState<string>('')
   const [search, setSearch] = useState('')
+  const [author, setAuthor] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('new')
+  const [size, setSize] = useState(DEFAULT_PAGE_SIZE)
   const [categories, setCategories] = useState<Category[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [users, setUsers] = useState<UserWithDisabled[]>([])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [tagInput, setTagInput] = useState('')
@@ -45,34 +61,43 @@ export function AdminPostsPage() {
   const debouncedSearch = useDebounce(search, 300)
   const isRootUser = isRoot(user?.role)
 
+  const sortSpec = SORTS.find((s) => s.key === sortKey) ?? SORTS[0]
+
   const { data, loading, reload } = useQuery(
     () =>
       listPostsPaged({
         status: status || undefined,
         q: debouncedSearch || undefined,
         page,
-        size: ADMIN_PAGE_SIZE,
+        size,
         category: category == null ? undefined : String(category),
         tag: tag || undefined,
+        author: author || undefined,
+        sort: sortSpec.sort,
+        order: sortSpec.order,
       }),
-    [status, debouncedSearch, page, category, tag],
+    [status, debouncedSearch, page, size, category, tag, author, sortKey],
     { onError: (e) => pushToast('error', errMessage(e, t('admin.failed'))) },
   )
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => {})
     listTags().then(setTags).catch(() => {})
+    // The author filter needs ids, not names: ?author= is matched against
+    // posts.author_id on the server.
+    listUsers().then(setUsers).catch(() => {})
   }, [])
 
   const items = data?.items ?? []
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size || ADMIN_PAGE_SIZE)))
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size || size)))
   const allSelected = items.length > 0 && items.every((p) => selected.has(p.id))
 
-  // Selection is per-response: a filter or page change invalidates it, which
-  // prevents "silently acting on rows the admin can no longer see".
+  // Selection is per-response: a filter, sort, page-size or page change
+  // invalidates it, which prevents "silently acting on rows the admin can no
+  // longer see".
   useEffect(() => {
     setSelected(new Set())
-  }, [page, status, debouncedSearch, category, tag])
+  }, [page, status, debouncedSearch, category, tag, author, sortKey, size])
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -213,6 +238,40 @@ export function AdminPostsPage() {
             <option key={tg.id} value={tg.name}>{tg.name}</option>
           ))}
         </select>
+        <select
+          value={author}
+          onInput={(e) => {
+            setAuthor((e.target as HTMLSelectElement).value)
+            setPage(1)
+          }}
+        >
+          <option value="">{t('admin.allAuthors')}</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.username}</option>
+          ))}
+        </select>
+        <select
+          value={sortKey}
+          onInput={(e) => {
+            setSortKey((e.target as HTMLSelectElement).value as SortKey)
+            setPage(1)
+          }}
+        >
+          <option value="new">{t('admin.sortNewest')}</option>
+          <option value="old">{t('admin.sortOldest')}</option>
+          <option value="views">{t('admin.sortViews')}</option>
+        </select>
+        <select
+          value={String(size)}
+          onInput={(e) => {
+            setSize(Number((e.target as HTMLSelectElement).value))
+            setPage(1)
+          }}
+        >
+          {PAGE_SIZES.map((n) => (
+            <option key={n} value={String(n)}>{t('admin.pageSizeLabel')} {n}</option>
+          ))}
+        </select>
       </div>
 
       <div class="admin-form">
@@ -300,6 +359,7 @@ export function AdminPostsPage() {
                 </th>
                 <th>{t('admin.name')}</th>
                 <th>{t('admin.status')}</th>
+                <th>{t('admin.author')}</th>
                 <th>{t('list.categoryLabel')}</th>
                 <th class="num">{t('list.views')}</th>
                 <th>{t('admin.time')}</th>
@@ -327,6 +387,7 @@ export function AdminPostsPage() {
                       {t(`admin.statusLabel.${p.status}`)}
                     </span>
                   </td>
+                  <td class="muted">{p.author?.display_name || p.author?.username || '—'}</td>
                   <td>{p.category?.name || '—'}</td>
                   <td class="num">{p.view_count}</td>
                   <td class="muted">{new Date(p.created_at).toLocaleDateString(localeTag)}</td>

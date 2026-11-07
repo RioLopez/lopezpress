@@ -3,6 +3,12 @@
 export type SiteTexts = {
   site: {
     title: string
+    navBasic: string
+    navContent: string
+    navUsers: string
+    navMedia: string
+    navMail: string
+    navBackup: string
     basic: string
     siteName: string
     siteTitle: string
@@ -133,6 +139,12 @@ export type SiteTexts = {
 export const siteZh: SiteTexts = {
   site: {
     title: '站点设置',
+    navBasic: '基本',
+    navContent: '内容与显示',
+    navUsers: '用户与注册',
+    navMedia: '媒体与存储',
+    navMail: '邮件',
+    navBackup: '备份',
     basic: '基本信息',
     siteName: '站点名称',
     siteTitle: '浏览器标题',
@@ -256,6 +268,12 @@ export const siteZh: SiteTexts = {
 export const siteEn: SiteTexts = {
   site: {
     title: 'Site Settings',
+    navBasic: 'Basics',
+    navContent: 'Content & display',
+    navUsers: 'Users & sign-up',
+    navMedia: 'Media & storage',
+    navMail: 'Email',
+    navBackup: 'Backup',
     basic: 'Basic info',
     siteName: 'Site name',
     siteTitle: 'Browser title',
