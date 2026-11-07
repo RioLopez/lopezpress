@@ -248,6 +248,17 @@ func RestoreTrash(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// PurgeTrash permanently deletes one soft-deleted post the caller may manage.
+// DELETE /api/trash/{id} (auth, admin)
+func PurgeTrash(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := svc.PurgeTrash(r.Context(), userFromContext(r), id); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // EmptyTrash permanently deletes every soft-deleted post the caller may manage.
 // POST /api/trash/empty (auth, admin)
 func EmptyTrash(w http.ResponseWriter, r *http.Request) {

@@ -468,6 +468,11 @@ export const listTrash = () =>
 export const restoreTrash = (id: string) =>
   request<void>(`/api/trash/${id}/restore`, { method: 'POST' })
 
+// Single-row permanent delete. Before this, the only way to remove one post
+// for good was "empty the trash", which also destroys every other row in it.
+export const purgeTrash = (id: string) =>
+  request<void>(`/api/trash/${id}`, { method: 'DELETE' })
+
 export const emptyTrash = () =>
   request<{ deleted: number }>('/api/trash/empty', { method: 'POST' })
 

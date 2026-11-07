@@ -178,6 +178,7 @@ var routes = []route{
 	{method: "GET", path: "/api/trash", auth: authRequired, roles: adminRoles, handler: handlers.ListTrash},
 	{method: "POST", path: "/api/trash/empty", auth: authRequired, roles: adminRoles, handler: handlers.EmptyTrash},
 	{method: "POST", path: "/api/trash/{id}/restore", auth: authRequired, roles: adminRoles, handler: handlers.RestoreTrash},
+	{method: "DELETE", path: "/api/trash/{id}", auth: authRequired, roles: adminRoles, handler: handlers.PurgeTrash},
 
 	// ---- Root-only: backup export / download / import / snapshot restore ----
 	// The export JSON embeds bcrypt password hashes and the snapshots are raw

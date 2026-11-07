@@ -127,6 +127,9 @@ export type AdminTexts = {
     restore: string
     restored: string
     restoreConfirm: string
+    trashPurge: string
+    trashPurged: string
+    trashPurgeConfirm: string
     emptyTrash: string
     emptyTrashBtn: string
     emptyTrashConfirm: string
@@ -370,6 +373,9 @@ export const adminZh: AdminTexts = {
     restore: '恢复',
     restored: '已恢复',
     restoreConfirm: '确定要恢复「{title}」吗？',
+    trashPurge: '永久删除',
+    trashPurged: '已永久删除',
+    trashPurgeConfirm: '永久删除「{title}」？该操作不可恢复。',
     emptyTrash: '回收站是空的。',
     emptyTrashBtn: '清空回收站',
     emptyTrashConfirm: '确定清空回收站吗？回收站中的文章将被永久删除，无法恢复。',
@@ -608,6 +614,9 @@ export const adminEn: AdminTexts = {
     restore: 'Restore',
     restored: 'Restored',
     restoreConfirm: 'Restore “{title}”?',
+    trashPurge: 'Delete permanently',
+    trashPurged: 'Permanently deleted',
+    trashPurgeConfirm: 'Permanently delete “{title}”? This cannot be undone.',
     emptyTrash: 'Trash is empty.',
     emptyTrashBtn: 'Empty trash',
     emptyTrashConfirm: 'Empty the trash? Posts in the trash will be permanently deleted and cannot be recovered.',

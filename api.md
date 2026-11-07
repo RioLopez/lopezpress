@@ -8,7 +8,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 > **事实源**：`internal/router/router.go`。本文件是给人和 AI 看的索引 + 关键端点细节；
 > 两者不一致时以 router.go 为准，并请回来修正本文件。
-> 当前：**76 条路由**（`scripts/contract_check.py` 会核对前端调用是否都存在于后端）。
+> 当前：**85 条路由**（`scripts/contract_check.py` 会核对前端调用是否都存在于后端）。
 
 鉴权标记：
 
@@ -138,6 +138,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | DELETE | `/api/admin/banned/{id}` | root | 永久删除 |
 | GET | `/api/trash` | admin | 回收站。**按调用者可见范围过滤**：admin 只看到自己与普通用户的，root 看全部 |
 | POST | `/api/trash/{id}/restore` | admin | 恢复。目标属于 root/其他 admin 时 **403**（与 `DELETE /api/posts/{id}` 同一套规则） |
+| DELETE | `/api/trash/{id}` | admin | **单条永久删除**。权限同 restore；不受 7 天恢复窗口限制（窗口外的行已不可恢复，更不该不可删除）；删除后同事务清理孤儿图片台账并重算 `ref_count`；不是回收站里的行返回 400，已不存在返回 404 |
 | POST | `/api/trash/empty` | admin | 清空。**只清调用者有权管理的那些**，返回实际删除数 |
 | GET | `/api/admin/actions` | admin | 审计日志 |
 
@@ -314,6 +315,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 / 日期 | 变更 |
 |---|---|
+| 2026-11-07（1.0.17） | **M-10 回收站单条永久删除**。新增 `DELETE /api/trash/{id}`：权限与恢复一致（admin 不能删 root/其他 admin 的行），不受 7 天恢复窗口限制，删除与图片台账清理在同一事务内；重复删除 404、非回收站行 400。回收站页每行新增「永久删除」按钮（二次确认）。**前端仅新增调用，其余契约不变** |
 | 2026-11-07（1.0.16） | **接管修复第三轮：三项渗透发现闭环，版本 1.0.16**。① **X-01/F-01**：`POST /api/auth/login` 现在要求 `Content-Type: application/json`（否则 **415**），并在带 `Origin` 时校验同源（跨站 **403**，`null` 源拒绝，无 Origin 的 API 客户端/curl 不受影响）——此前 `text/plain` 正文可免预检跨站提交，构成登录 CSRF ② **X-02/F-02**：`/feed`、`/sitemap.xml`、`/robots.txt` 在未配置 `site_url` 时增加 `Vary: Host` + `Cache-Control: no-cache`（配置后与 Host 无关），关闭共享缓存投毒前提 ③ **E-10**：邮箱验证码改为**先比对 HMAC、仅不匹配时条件扣额度**，正确的码不再消耗猜测次数；单次使用仍由条件 UPDATE 保证，5 次上限不变 ④ **X-04/F-06 复核不成立**：验证开启时 `PUT /api/auth/me` 改邮箱已 403（见第 79 轮），且写库前有大小写不敏感唯一性检查；关闭验证时直接改邮箱是既有产品行为，未放宽 ⑤ **`内部待办清单` 23→19 条**。**登录请求新增一项前置约束（Content-Type/Origin），其余契约不变** |
 | 2026-11-07 | **接管修复两处回归，版本 1.0.15**。① 通用限流器原先只读 `Authorization` 头，X1 把 SPA token 迁到 HttpOnly Cookie 后，登录态请求被误判匿名、按 IP 分桶并被全局匿名桶收费；现在限流器与 auth 中间件共用 `internal/httpx.ExtractToken`（cookie 优先、header 兜底），cookie 名只有一处定义 ② **F-09**：`PUT /api/admin/site-config` 的 root 分支未对 root-only 字段做缺省继承，只带 `page_size` 的部分 PUT 会静默关掉 `allow_register` 并清空 SMTP 配置；现在 `inheritSiteConfigRootOnly` 统一处理，显式传值仍生效（配额数值仍由服务层的「≤0 继承」负责）。两项都带负向验证过的回归测试。2026-11-06 外部渗透测试的 9 项中低危发现已筛入 `内部待办清单`（4 条排期 / 3 条暂缓 / F-09 已修）。**API 契约无变化** |
 | 2026-11-04~06 | **P0 / P1 / P2 安全加固**（4 个提交）。P0：`http.Server` 读写/空闲超时、备份导出对明文密钥的告警补全、CI 门禁 `.github/workflows/security-gate.yml`。P1：**X1** token 改存 `lp_token` HttpOnly + SameSite=Lax Cookie（`Authorization` 头保留给 API 客户端）、**X5** 文档 CSP 去掉 `unsafe-inline`（theme 脚本外置为 `dist/theme-init.js`）、**C1** `JWT_SECRET` 增加 128-bit 熵下限。P2：**D5** 全局匿名令牌桶（200 rps / burst 400）、**K2** 备份文件权限 `0o600`；R1 经实测确认 Go 1.26 不再发 `Server` 头，无需改动。真机资源复测数字回填 `内部安全基线` 第 3.1 节。**API 契约无变化** |

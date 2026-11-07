@@ -197,22 +197,7 @@ func (s *Service) EmptyTrash(ctx context.Context, me models.User) (int, error) {
 		}
 		removed = int(res.RowsAffected)
 
-		// Ledger cleanup is expressed as "edges pointing at a post row that no
-		// longer exists" rather than "edges for these ids". The two differ
-		// exactly when the scope predicate dropped a row at delete time, and in
-		// that case the id-list form would strip the edges of a post that
-		// survived. The subquery is raw SQL on purpose: it must see soft-deleted
-		// rows too (a trashed post can still be restored, so its edges stay).
-		const orphanEdges = "post_id <> '' AND post_id NOT IN (SELECT id FROM posts)"
-		var uploadIDs []string
-		if err := tx.Model(&models.UploadRef{}).Where(orphanEdges).
-			Pluck("upload_id", &uploadIDs).Error; err != nil {
-			return err
-		}
-		if err := tx.Where(orphanEdges).Delete(&models.UploadRef{}).Error; err != nil {
-			return err
-		}
-		return recountUploadRefsTx(tx, uploadIDs)
+		return purgeOrphanUploadRefsTx(tx)
 	})
 	if err != nil {
 		return 0, newErr(http.StatusInternalServerError, "failed to empty trash")
@@ -220,4 +205,71 @@ func (s *Service) EmptyTrash(ctx context.Context, me models.User) (int, error) {
 
 	s.audit(ctx, me, "empty_trash", "trash", "deleted="+strconv.Itoa(removed))
 	return removed, nil
+}
+
+// PurgeTrash permanently deletes one soft-deleted post the caller may manage.
+// It is the single-row form of EmptyTrash: same permission rule, same
+// transaction, same ledger cleanup, and deliberately no 7-day limit — a row
+// older than the restore window can no longer be restored, so refusing to
+// purge it would leave "an article nobody can resurrect and nobody can remove".
+//
+// The write carries deleted_at from the row we read, so a concurrent restore
+// turns into RowsAffected == 0 (409) instead of deleting a post that is back
+// on the site.
+func (s *Service) PurgeTrash(ctx context.Context, me models.User, id string) error {
+	var post models.Post
+	err := s.db.WithContext(ctx).Unscoped().Where("id = ?", id).First(&post).Error
+	if err != nil {
+		return newErr(http.StatusNotFound, "post not found")
+	}
+	// Permission before state, for the same reason as RestoreTrash: an admin
+	// must not be able to probe another author's ids through this endpoint.
+	if !s.mayManageAuthorOf(ctx, me, post.AuthorID) {
+		return newErr(http.StatusForbidden, "you do not have permission to manage this post")
+	}
+	if !post.DeletedAt.Valid {
+		return newErr(http.StatusBadRequest, "post is not in trash")
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		del := tx.Unscoped().Where("id = ? AND deleted_at = ?", id, post.DeletedAt.Time)
+		res := s.trashScope(del, me).Delete(&models.Post{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errLeftTrash
+		}
+		return purgeOrphanUploadRefsTx(tx)
+	})
+	if errors.Is(err, errLeftTrash) {
+		return newErr(http.StatusConflict, "this post is no longer in the trash")
+	}
+	if err != nil {
+		return newErr(http.StatusInternalServerError, "failed to purge post")
+	}
+	s.audit(ctx, me, "purge_post", "post:"+id, "title="+post.Title)
+	return nil
+}
+
+// purgeOrphanUploadRefsTx drops image-ledger edges whose post row is gone and
+// recounts the affected images, inside the caller's transaction.
+//
+// The predicate is "points at a post row that no longer exists" rather than
+// "belongs to these ids". The two differ exactly when the scope predicate
+// dropped a row at delete time, and the id-list form would then strip the edges
+// of a post that survived. The subquery must see soft-deleted rows too (GORM
+// adds no scope to raw SQL), which is correct: a trashed post can be restored,
+// so its edges stay until the row itself is gone.
+func purgeOrphanUploadRefsTx(tx *gorm.DB) error {
+	const orphanEdges = "post_id <> '' AND post_id NOT IN (SELECT id FROM posts)"
+	var uploadIDs []string
+	if err := tx.Model(&models.UploadRef{}).Where(orphanEdges).
+		Pluck("upload_id", &uploadIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Where(orphanEdges).Delete(&models.UploadRef{}).Error; err != nil {
+		return err
+	}
+	return recountUploadRefsTx(tx, uploadIDs)
 }

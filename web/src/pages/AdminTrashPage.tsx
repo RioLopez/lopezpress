@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { listTrash, restoreTrash, emptyTrash, errMessage } from '../core/api'
+import { listTrash, restoreTrash, purgeTrash, emptyTrash, errMessage } from '../core/api'
 import type { TrashPost } from '../core/types'
 import { fmtDate } from '../core/format'
 import { TableState } from '../ui/TableState'
@@ -24,6 +24,20 @@ export function AdminTrashPage() {
     try {
       await restoreTrash(p.id)
       pushToast('success', t('admin.restored'))
+      await reload()
+    } catch (e) {
+      pushToast('error', errMessage(e, t('admin.failed')))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const purge = async (p: TrashPost) => {
+    if (!(await confirmDialog(t('admin.trashPurgeConfirm', { title: p.title })))) return
+    setBusyId(p.id)
+    try {
+      await purgeTrash(p.id)
+      pushToast('success', t('admin.trashPurged'))
       await reload()
     } catch (e) {
       pushToast('error', errMessage(e, t('admin.failed')))
@@ -88,6 +102,13 @@ export function AdminTrashPage() {
                     onClick={() => restore(p)}
                   >
                     {t('admin.restore')}
+                  </button>
+                  <button
+                    class="btn btn-danger btn-sm"
+                    disabled={busyId === p.id}
+                    onClick={() => purge(p)}
+                  >
+                    {t('admin.trashPurge')}
                   </button>
                 </td>
               </tr>
