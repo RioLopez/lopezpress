@@ -210,6 +210,20 @@ export interface UploadFileInfo {
   created_at: string
 }
 
+// One edge of the image ledger, shown in the gallery detail sheet.
+export type UploadRefInfo = {
+  kind: 'body' | 'cover' | 'avatar' | 'site' | string
+  post_id: string
+  post_title: string
+  user_id: string
+  user_name: string
+}
+
+export type UploadBatchResult = {
+  affected: number
+  skipped: { name: string; reason: string }[]
+}
+
 // Storage counters. deleted_bytes is separate from live_bytes on purpose:
 // withdrawn files still occupy the disk.
 export interface UploadStats {

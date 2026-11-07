@@ -33,6 +33,8 @@ import type {
   UploadDeleteResult,
   UploadPage,
   UploadResult,
+  UploadRefInfo,
+  UploadBatchResult,
   UserPublic,
   UserStats,
   UserWithDisabled,
@@ -494,6 +496,7 @@ export const listUploads = (opts?: {
   owner?: string
   kind?: string
   status?: 'live' | 'deleted' | 'all'
+  ref_status?: 'used' | 'unused'
   page?: number
   size?: number
 }) => {
@@ -501,6 +504,7 @@ export const listUploads = (opts?: {
   if (opts?.owner) q.set('owner', opts.owner)
   if (opts?.kind) q.set('kind', opts.kind)
   if (opts?.status) q.set('status', opts.status)
+  if (opts?.ref_status) q.set('ref_status', opts.ref_status)
   if (opts?.page) q.set('page', String(opts.page))
   if (opts?.size) q.set('size', String(opts.size))
   const qs = q.toString()
@@ -530,6 +534,18 @@ export const retryUploadThumb = (name: string) =>
 // (M-9); the normal save/delete paths keep the ledger current.
 export const rebuildUploadRefs = () =>
   request<{ refs: number }>('/api/admin/uploads/rebuild-refs', { method: 'POST' })
+
+// Who references one image (detail sheet). Reads the same ledger the delete
+// warning uses, so the list and the count cannot disagree.
+export const listUploadRefs = (name: string) =>
+  request<UploadRefInfo[]>(`/api/uploads/${encodeURIComponent(name)}/refs`)
+
+// Bulk soft/hard delete, partial success: skipped rows carry their reason.
+export const batchDeleteUploads = (names: string[], hard: boolean) =>
+  request<UploadBatchResult>('/api/admin/uploads/batch-delete', {
+    method: 'POST',
+    body: JSON.stringify({ names, hard }),
+  })
 
 // --- my uploads (any signed-in author) ---
 // Scoped to the caller by the server: there is no `owner` parameter here on

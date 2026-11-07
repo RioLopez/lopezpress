@@ -1,5 +1,7 @@
 import { useI18n } from '../../../core/i18n'
 import { fmtBytes, fmtDate } from '../../../core/format'
+import { useQuery } from '../../../core/useQuery'
+import { listUploadRefs } from '../../../core/api'
 import type { UploadFileInfo } from '../../../core/types'
 
 type Props = {
@@ -16,6 +18,17 @@ type Props = {
 export function MediaDetail(p: Props) {
   const { t } = useI18n()
   const d = p.item
+  // Fetched per open: the ledger can change between visits, and a stale list
+  // is worse than one extra request behind a click.
+  const { data: refs, loading: refsLoading } = useQuery(
+    () => listUploadRefs(d.name),
+    [d.name],
+  )
+  const kindLabel: Record<string, string> = {
+    body: t('media.refKindBody'),
+    avatar: t('media.refKindAvatar'),
+    site: t('media.refKindSite'),
+  }
   return (
     <div class="modal-backdrop" onClick={p.onClose}>
       <div class="modal media-detail" onClick={(e) => e.stopPropagation()}>
@@ -40,6 +53,22 @@ export function MediaDetail(p: Props) {
           <dt>{t('media.sha256')}</dt>
           <dd class="media-mono media-hash">{d.sha256 || '—'}</dd>
         </dl>
+        <div class="media-refs">
+          <h4>{t('media.refsTitle')}</h4>
+          {refsLoading && <p class="muted">{t('common.loading')}</p>}
+          {!refsLoading && refs && refs.length > 0 && (
+            <ul>
+              {refs.map((r, i) => (
+                <li key={`${r.kind}-${r.post_id}-${r.user_id}-${i}`}>
+                  <span class="media-ref-kind">{kindLabel[r.kind] || r.kind}</span>
+                  {r.post_title && <span>{r.post_title}</span>}
+                  {r.user_name && <span class="muted"> · {r.user_name}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {!refsLoading && refs && refs.length === 0 && <p class="muted">{t('media.refsEmpty')}</p>}
+        </div>
         <div class="modal-foot">
           <button class="btn btn-ghost" onClick={p.onClose}>
             {t('media.close')}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -225,10 +226,11 @@ func parseUploadListQuery(w http.ResponseWriter, r *http.Request) (services.Uplo
 		return services.UploadListQuery{}, false
 	}
 	return services.UploadListQuery{
-		Kind:   strings.TrimSpace(vals.Get("kind")),
-		Status: strings.TrimSpace(vals.Get("status")),
-		Page:   nums[0],
-		Size:   nums[1],
+		Kind:      strings.TrimSpace(vals.Get("kind")),
+		Status:    strings.TrimSpace(vals.Get("status")),
+		RefStatus: strings.TrimSpace(vals.Get("ref_status")),
+		Page:      nums[0],
+		Size:      nums[1],
 	}, true
 }
 
@@ -255,6 +257,39 @@ func DeleteUpload(w http.ResponseWriter, r *http.Request) {
 // admin can destroy the file (and the references other articles may have).
 func DeleteMyUpload(w http.ResponseWriter, r *http.Request) {
 	out, err := svc.DeleteUpload(r.Context(), userFromContext(r), r.PathValue("name"), false)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListUploadRefs returns the articles / owners that still reference one image.
+// GET /api/uploads/{name}/refs  (auth, admin/root)
+//
+// The gallery detail sheet shows this before a hard delete, so "this will
+// break 3 articles" is not just a number but a list the operator can check.
+func ListUploadRefs(w http.ResponseWriter, r *http.Request) {
+	refs, err := svc.ListUploadRefs(r.Context(), userFromContext(r), r.PathValue("name"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, refs)
+}
+
+// BatchDeleteUploads applies soft/hard delete to many images in one request.
+// POST /api/admin/uploads/batch-delete  (auth, admin/root)
+//
+// Partial success by design: one bad name must not block the rest, and the
+// caller gets the per-name reason for every skip.
+func BatchDeleteUploads(w http.ResponseWriter, r *http.Request) {
+	var in services.UploadBatchInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	out, err := svc.BatchDeleteUploads(r.Context(), userFromContext(r), in)
 	if err != nil {
 		writeServiceError(w, err)
 		return

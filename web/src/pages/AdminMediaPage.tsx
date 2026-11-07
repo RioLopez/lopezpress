@@ -11,31 +11,31 @@ import {
   restoreUpload,
   retryUploadThumb,
   rebuildUploadRefs,
+  batchDeleteUploads,
   uploadImage,
   errMessage,
   errStatus,
 } from '../core/api'
 import { isRoot } from '../core/roles'
 import type { UploadFileInfo } from '../core/types'
+import { MediaHeader } from './admin/media/MediaHeader'
+import { MediaToolbar, type MediaView, type StatusFilter, type RefFilter } from './admin/media/MediaToolbar'
+import { MediaBulkBar } from './admin/media/MediaBulkBar'
 import { MediaGrid } from './admin/media/MediaGrid'
+import { MediaList } from './admin/media/MediaList'
 import { MediaDetail } from './admin/media/MediaDetail'
 
 const PAGE_SIZE = 24
 
-type StatusFilter = 'live' | 'deleted' | 'all'
-
-// Admin media library.
-//
-// This is the site owner's asset view, not a gallery for readers: every file
-// with its owner, size, geometry, source IP and — the part that actually
-// matters when deleting — how many articles still reference it.
+// Admin media library: the site owner's asset view, with per-file owner,
+// geometry and reference count.
 //
 // Two delete verbs, deliberately distinct:
-//   - Withdraw (soft): invisible and un-reusable, file stays, published
-//     articles keep rendering. Reversible.
-//   - Delete permanently (hard): removes the bytes. Allowed even when articles
-//     still embed the image, because moderating a bad picture must not require
-//     the consent of everyone who used it — but the count is shown first.
+//   - Withdraw (soft): invisible and un-reusable, file stays; articles using
+//     it keep rendering. Reversible.
+//   - Delete permanently (hard): removes the bytes even when articles embed
+//     the image — moderating a bad picture must not need their consent — but
+//     the count is shown first.
 export function AdminMediaPage() {
   const { t } = useI18n()
   const { pushToast } = useApp()
@@ -44,16 +44,27 @@ export function AdminMediaPage() {
 
   const [status, setStatus] = useState<StatusFilter>('live')
   const [kind, setKind] = useState('')
+  const [refStatus, setRefStatus] = useState<RefFilter>('')
+  const [view, setView] = useState<MediaView>('grid')
   const [page, setPage] = useState(1)
   const [detail, setDetail] = useState<UploadFileInfo | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [uploading, setUploading] = useState(false)
   const [rebuilding, setRebuilding] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const { data, loading, reload } = useQuery(
-    () => listUploads({ status, kind: kind || undefined, page, size: PAGE_SIZE }),
-    [status, kind, page],
+    () =>
+      listUploads({
+        status,
+        kind: kind || undefined,
+        ref_status: refStatus || undefined,
+        page,
+        size: PAGE_SIZE,
+      }),
+    [status, kind, refStatus, page],
     { onError: (e) => pushToast('error', errMessage(e, t('media.deleteFailed'))) },
   )
 
@@ -185,44 +196,59 @@ export function AdminMediaPage() {
     }
   }
 
+  const items = data?.items ?? []
+  const toggle = (name: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  const allSelected = items.length > 0 && items.every((i) => selected.has(i.name))
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const every = items.every((i) => next.has(i.name))
+      items.forEach((i) => (every ? next.delete(i.name) : next.add(i.name)))
+      return next
+    })
+
+  const bulkDelete = async (hard: boolean) => {
+    const names = [...selected]
+    if (names.length === 0) return
+    const msg = hard
+      ? t('media.bulkHardConfirm', { n: String(names.length) })
+      : t('media.bulkSoftConfirm', { n: String(names.length) })
+    if (!confirm(msg)) return
+    setBulkBusy(true)
+    try {
+      const r = await batchDeleteUploads(names, hard)
+      pushToast('info', t('media.bulkDone', { n: String(r.affected) }))
+      if (r.skipped.length > 0) {
+        pushToast('error', t('media.bulkSkipped', { n: String(r.skipped.length) }))
+      }
+      setSelected(new Set())
+      await reload()
+    } catch (e) {
+      pushToast('error', errMessage(e, t('media.deleteFailed')))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   const stats = data?.stats
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1
 
   return (
     <div class="admin-page">
-      <div class="media-head">
-        <div>
-          <h1>{t('media.title')}</h1>
-          <p class="muted">{t('media.sub')}</p>
-        </div>
-        <div class="media-head-actions">
-          <label class="btn btn-primary btn-sm">
-            {uploading
-              ? progress
-                ? `${progress.done}/${progress.total}`
-                : t('common.loading')
-              : t('media.upload')}
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              disabled={uploading}
-              onChange={(e) => {
-                const input = e.target as HTMLInputElement
-                const files = Array.from(input.files || [])
-                if (files.length) onUploadMany(files)
-                input.value = ''
-              }}
-            />
-          </label>
-          {isRootUser && (
-            <button class="btn btn-ghost btn-sm" disabled={rebuilding} onClick={rebuild}>
-              {rebuilding ? t('common.loading') : t('media.rebuildRefs')}
-            </button>
-          )}
-        </div>
-      </div>
+      <MediaHeader
+        uploading={uploading}
+        progress={progress}
+        isRootUser={isRootUser}
+        rebuilding={rebuilding}
+        onUploadMany={onUploadMany}
+        onRebuild={rebuild}
+      />
 
       {stats && data && (
         <div class="media-stats">
@@ -244,44 +270,52 @@ export function AdminMediaPage() {
         </div>
       )}
 
-      <div class="media-filters">
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus((e.target as HTMLSelectElement).value as StatusFilter)
-            setPage(1)
-          }}
-        >
-          <option value="live">{t('media.statusLive')}</option>
-          <option value="deleted">{t('media.statusDeleted')}</option>
-          <option value="all">{t('media.statusAll')}</option>
-        </select>
-        <select
-          value={kind}
-          onChange={(e) => {
-            setKind((e.target as HTMLSelectElement).value)
-            setPage(1)
-          }}
-        >
-          <option value="">{t('media.kindAll')}</option>
-          <option value="post">{t('media.kindPost')}</option>
-          <option value="avatar">{t('media.kindAvatar')}</option>
-          <option value="site">{t('media.kindSite')}</option>
-        </select>
-      </div>
+      <MediaToolbar
+        status={status}
+        kind={kind}
+        refStatus={refStatus}
+        view={view}
+        pageCount={items.length}
+        selectedCount={selected.size}
+        allSelected={allSelected}
+        onStatus={(v) => { setStatus(v); setPage(1) }}
+        onKind={(v) => { setKind(v); setPage(1) }}
+        onRefStatus={(v) => { setRefStatus(v); setPage(1) }}
+        onView={setView}
+        onToggleAll={toggleAll}
+      />
+
+      <MediaBulkBar
+        count={selected.size}
+        busy={bulkBusy}
+        onSoft={() => bulkDelete(false)}
+        onHard={() => bulkDelete(true)}
+        onClear={() => setSelected(new Set())}
+      />
 
       {loading && <p class="muted">{t('media.loading')}</p>}
-      {!loading && data && data.items.length === 0 && <p class="muted">{t('media.empty')}</p>}
+      {!loading && data && items.length === 0 && <p class="muted">{t('media.empty')}</p>}
 
-      {data && data.items.length > 0 && (
+      {items.length > 0 && view === 'grid' && (
         <MediaGrid
-          items={data.items}
+          items={items}
           busy={busy}
+          selected={selected}
+          onToggle={toggle}
           onOpen={setDetail}
           onWithdraw={withdraw}
           onPurge={purge}
           onRestore={restore}
           onRetryThumb={retryThumb}
+        />
+      )}
+      {items.length > 0 && view === 'list' && (
+        <MediaList
+          items={items}
+          busy={busy}
+          selected={selected}
+          onToggle={toggle}
+          onOpen={setDetail}
         />
       )}
 

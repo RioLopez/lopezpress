@@ -205,6 +205,8 @@ var routes = []route{
 	// Retry is an everyday library action; rebuilding every edge in one
 	// transaction is a root repair, so the two live on different gates.
 	{method: "POST", path: "/api/uploads/{name}/thumb-retry", auth: authRequired, roles: adminRoles, handler: handlers.RetryUploadThumb},
+	{method: "GET", path: "/api/uploads/{name}/refs", auth: authRequired, roles: adminRoles, handler: handlers.ListUploadRefs},
+	{method: "POST", path: "/api/admin/uploads/batch-delete", auth: authRequired, roles: adminRoles, handler: handlers.BatchDeleteUploads},
 	{method: "POST", path: "/api/admin/uploads/rebuild-refs", auth: authRequired, roles: rootRoles, handler: handlers.RebuildUploadRefs},
 }
 

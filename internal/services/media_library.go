@@ -113,6 +113,15 @@ func applyUploadFilter(db *gorm.DB, q UploadListQuery) *gorm.DB {
 	if q.Kind != "" {
 		db = db.Where("kind = ?", q.Kind)
 	}
+	// ref_count is the cached edge count, updated by the same transactions
+	// that write upload_refs; filtering on it is O(1) per row and matches what
+	// the gallery card shows.
+	switch q.RefStatus {
+	case "used":
+		db = db.Where("ref_count > 0")
+	case "unused":
+		db = db.Where("ref_count = 0")
+	}
 	return db
 }
 

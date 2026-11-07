@@ -658,8 +658,38 @@ type UploadListQuery struct {
 	Kind    string
 	// Status: "" (live only, the default), "deleted", or "all".
 	Status string
-	Page   int
-	Size   int
+	// RefStatus: "" (all), "used" (ref_count > 0), or "unused".
+	RefStatus string
+	Page      int
+	Size      int
+}
+
+// UploadBatchInput is one bulk delete from the media page (B3). Hard keeps
+// the single-item semantics: only admin/root may pass it, and it removes
+// bytes even when articles still embed the image.
+type UploadBatchInput struct {
+	Names []string
+	Hard  bool
+}
+
+type UploadBatchResult struct {
+	Affected int               `json:"affected"`
+	Skipped  []UploadBatchSkip `json:"skipped"`
+}
+
+type UploadBatchSkip struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// UploadRefInfo is one row of "who references this image", shown in the
+// gallery detail sheet. PostTitle is empty for avatar / site-branding edges.
+type UploadRefInfo struct {
+	Kind      string `json:"kind"`
+	PostID    string `json:"post_id"`
+	PostTitle string `json:"post_title"`
+	UserID    string `json:"user_id"`
+	UserName  string `json:"user_name"`
 }
 
 // UploadDeleteResult tells the caller what a delete actually did. AffectedRefs

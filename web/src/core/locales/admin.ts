@@ -300,6 +300,25 @@ export type AdminTexts = {
     rebuildConfirm: string
     rebuildDone: string
     rebuildFailed: string
+    viewGrid: string
+    viewList: string
+    refsFilterAll: string
+    refsUsed: string
+    refsUnused: string
+    selectedCount: string
+    selectAll: string
+    clearSelection: string
+    bulkSoftDelete: string
+    bulkHardDelete: string
+    bulkSoftConfirm: string
+    bulkHardConfirm: string
+    bulkDone: string
+    bulkSkipped: string
+    refsTitle: string
+    refsEmpty: string
+    refKindBody: string
+    refKindAvatar: string
+    refKindSite: string
     deleted: string
     deleteFailed: string
     close: string
@@ -594,6 +613,25 @@ export const adminZh: AdminTexts = {
     rebuildConfirm: '从文章正文/封面、头像、站点图标重算全部引用关系？这会覆盖现有台账，但可重复执行。',
     rebuildDone: '台账已重建，共 {n} 条引用',
     rebuildFailed: '重建引用台账失败',
+    viewGrid: '网格',
+    viewList: '列表',
+    refsFilterAll: '引用：全部',
+    refsUsed: '引用：已被使用',
+    refsUnused: '引用：无人使用',
+    selectedCount: '已选 {n} 张',
+    selectAll: '全选本页',
+    clearSelection: '清空选择',
+    bulkSoftDelete: '批量撤下',
+    bulkHardDelete: '批量彻底删除',
+    bulkSoftConfirm: '撤下选中的 {n} 张图片？它们会从图库消失，已引用文章仍可显示。',
+    bulkHardConfirm: '彻底删除选中的 {n} 张图片？文件会从磁盘移除，无法恢复，引用它们的文章将出现破图。',
+    bulkDone: '已处理 {n} 张',
+    bulkSkipped: '有 {n} 张未能处理（权限不足或文件不存在）',
+    refsTitle: '谁在引用这张图',
+    refsEmpty: '当前台账里没有任何引用',
+    refKindBody: '文章',
+    refKindAvatar: '头像',
+    refKindSite: '站点图标',
     deleted: '操作完成',
     deleteFailed: '操作失败',
     close: '关闭',
@@ -888,6 +926,25 @@ export const adminEn: AdminTexts = {
     rebuildConfirm: 'Recompute every reference from post bodies/covers, avatars and site icons? The ledger is rewritten; this is safe to repeat.',
     rebuildDone: 'Ledger rebuilt: {n} reference(s)',
     rebuildFailed: 'Rebuilding the ledger failed',
+    viewGrid: 'Grid',
+    viewList: 'List',
+    refsFilterAll: 'Refs: all',
+    refsUsed: 'Refs: in use',
+    refsUnused: 'Refs: unused',
+    selectedCount: '{n} selected',
+    selectAll: 'Select page',
+    clearSelection: 'Clear selection',
+    bulkSoftDelete: 'Withdraw selected',
+    bulkHardDelete: 'Delete selected',
+    bulkSoftConfirm: 'Withdraw {n} image(s)? They leave the library; articles already using them keep rendering.',
+    bulkHardConfirm: 'Permanently delete {n} image(s)? Files are removed from disk and cannot be recovered; articles using them will break.',
+    bulkDone: '{n} processed',
+    bulkSkipped: '{n} could not be processed (permission or missing file)',
+    refsTitle: 'Who references this image',
+    refsEmpty: 'The ledger has no references for this image',
+    refKindBody: 'Article',
+    refKindAvatar: 'Avatar',
+    refKindSite: 'Site icon',
     deleted: 'Done',
     deleteFailed: 'Action failed',
     close: 'Close',
