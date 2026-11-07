@@ -10,6 +10,7 @@ import "lopezpress/internal/models"
 func inheritAbsentSiteConfig(in map[string]any, cur models.SiteConfig, cfg *models.SiteConfig) {
 	inheritSiteConfigSwitches(in, cur, cfg)
 	inheritSiteConfigBranding(in, cur, cfg)
+	inheritSiteConfigRootOnly(in, cur, cfg)
 }
 
 // inheritSiteConfigSwitches keeps the availability/behaviour switches at their
@@ -80,5 +81,36 @@ func inheritSiteConfigBranding(in map[string]any, cur models.SiteConfig, cfg *mo
 	}
 	if _, ok := in["img_host_mode"]; !ok {
 		cfg.ImgHostMode = cur.ImgHostMode
+	}
+}
+
+// inheritSiteConfigRootOnly keeps root-only fields at their stored values when
+// the payload omits them. SiteConfigFromMap decodes an absent key as the zero
+// value, and the field-level authorisation in accounts.go only protects
+// non-root admins. Before this, a root PUT carrying just {"page_size":10}
+// silently switched allow_register off and blanked the SMTP host/port/user —
+// the defect the 2026-11-06 external review recorded as F-09. Explicitly
+// sending the key (even with a zero value) still applies it, so root can
+// deliberately close registration or clear a setting. Storage quotas are
+// deliberately absent here: services.applyStoragePolicy already inherits a
+// non-positive value, so duplicating that rule would be dead code.
+func inheritSiteConfigRootOnly(in map[string]any, cur models.SiteConfig, cfg *models.SiteConfig) {
+	if _, ok := in["allow_register"]; !ok {
+		cfg.AllowRegister = cur.AllowRegister
+	}
+	if _, ok := in["smtp_host"]; !ok {
+		cfg.SmtpHost = cur.SmtpHost
+	}
+	if _, ok := in["smtp_port"]; !ok {
+		cfg.SmtpPort = cur.SmtpPort
+	}
+	if _, ok := in["smtp_user"]; !ok {
+		cfg.SmtpUser = cur.SmtpUser
+	}
+	if _, ok := in["smtp_pass"]; !ok {
+		cfg.SmtpPass = cur.SmtpPass
+	}
+	if _, ok := in["img_host_token"]; !ok {
+		cfg.ImgHostToken = cur.ImgHostToken
 	}
 }

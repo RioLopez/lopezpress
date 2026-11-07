@@ -7,13 +7,13 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 
 	"lopezpress/internal/clientip"
+	"lopezpress/internal/httpx"
 )
 
 // Limiter is a token-bucket rate limiter keyed by "identity".
@@ -23,13 +23,16 @@ import (
 //   - unauthenticated requests -> the client IP (fallback), which honours
 //     X-Forwarded-For when the server sits behind a reverse proxy.
 //
-// The user ID comes from the bearer token, verified here, NOT from the request
+// The user ID comes from the session token, verified here, NOT from the request
 // context: this middleware is installed outside the mux (see router.Build), so
 // the JWT auth middleware has not run yet and the context never carries a user.
+// The token is read through httpx.ExtractToken — the same extractor the auth
+// middleware uses — so the HttpOnly cookie introduced by X1 counts too.
 // It used to read only the context, which meant the advertised "per-identity"
 // bucket was silently per-IP — an office behind one NAT shared a single
 // allowance and collected 429s from each other, while a token holder rotating
-// addresses was not throttled as an account at all.
+// addresses was not throttled as an account at all. Reading only the
+// Authorization header after X1 recreated exactly that bug for every SPA user.
 //
 // Each distinct identity gets its own *rate.Limiter with the configured
 // RPS and burst. When an identity exceeds its allowance the request is
@@ -114,8 +117,8 @@ func NewLimiter(cfg LimiterConfig) *Limiter {
 }
 
 // Middleware returns a standard-library middleware that enforces the
-// per-identity token bucket. A verified bearer token keys the bucket by user;
-// everything else falls back to the client IP.
+// per-identity token bucket. A verified session token (cookie or bearer)
+// keys the bucket by user; everything else falls back to the client IP.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Global anonymous backstop (D5): only requests with no verifiable
@@ -157,8 +160,8 @@ func write429(w http.ResponseWriter, retry int64) {
 }
 
 // isAnonymous reports whether the request carries no verifiable user identity:
-// no user-id in the context and no valid bearer token. Only such requests are
-// charged against the global anonymous bucket.
+// no user-id in the context and no valid session token (cookie or bearer).
+// Only such requests are charged against the global anonymous bucket.
 func (l *Limiter) isAnonymous(r *http.Request) bool {
 	if UserIDFrom(r.Context()) != "" {
 		return false
@@ -212,8 +215,15 @@ func (l *Limiter) SetTokenSecret(secret string) {
 	l.tokenSecret = secret
 }
 
-// tokenSubject verifies a bearer token and returns its subject (user id), or
-// "" when the header is absent, malformed, or signed with anything else.
+// tokenSubject verifies the session token and returns its subject (user id),
+// or "" when it is absent, malformed, or signed with anything else.
+//
+// The SPA sends its token only in the HttpOnly lp_token cookie (X1). Reading
+// just the Authorization header here would classify every signed-in browser
+// request as anonymous: per-account buckets silently became per-IP buckets
+// again, and the global anonymous cap started charging logged-in users.
+// httpx.ExtractToken is the shared extractor, so a cookie rename cannot drift
+// between the limiter and the auth middleware.
 //
 // This is verification only — no database, no token_version check, no
 // authorization decision. It runs before any handler precisely because the
@@ -227,11 +237,10 @@ func (l *Limiter) tokenSubject(r *http.Request) string {
 	if secret == "" {
 		return ""
 	}
-	header := r.Header.Get("Authorization")
-	if header == "" {
+	raw := httpx.ExtractToken(r)
+	if raw == "" {
 		return ""
 	}
-	raw := strings.TrimPrefix(header, "Bearer ")
 	t, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
 		if t.Method.Alg() != "HS256" {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])

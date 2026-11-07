@@ -4,12 +4,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"lopezpress/internal/httpx"
 )
 
 // authCookieName carries the JWT as an HttpOnly cookie so the SPA never has to
 // hold the token in JS-readable storage (localStorage), which is what made a
 // single XSS a full session compromise. See VERIFY_04 X1 / ATTACK_SURFACE_REPORT.
-const authCookieName = "lp_token"
+// The literal lives in httpx so the rate limiter (which runs before auth and
+// cannot import handlers) reads exactly the same name.
+const authCookieName = httpx.AuthCookieName
 
 // isTLS reports whether the request arrived over HTTPS, directly or behind a
 // trusted reverse proxy that sets X-Forwarded-Proto (the nginx A/B chain does).
@@ -56,16 +60,9 @@ func clearAuthCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, c)
 }
 
-// extractToken returns the bearer token from the request, preferring the
-// HttpOnly auth cookie (XSS-resistant) and falling back to the Authorization
-// header (kept for API clients and backward compatibility). Either is accepted.
+// extractToken is the handlers-side spelling of the shared extractor. The
+// limiter outside the mux uses httpx.ExtractToken directly; both must resolve
+// the same token or signed-in requests fall back to per-IP rate limiting.
 func extractToken(r *http.Request) string {
-	if c, err := r.Cookie(authCookieName); err == nil && c.Value != "" {
-		return c.Value
-	}
-	h := r.Header.Get("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimSpace(h[7:])
-	}
-	return strings.TrimSpace(h)
+	return httpx.ExtractToken(r)
 }
