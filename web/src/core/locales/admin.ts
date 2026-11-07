@@ -202,6 +202,28 @@ export type AdminTexts = {
     autoBackupRunDone: string
     recentPosts: string
     recentLogins: string
+    statViewsToday: string
+    statUsers: string
+    statStorage: string
+    contentTitle: string
+    contentEmpty: string
+    statusPublished: string
+    statusPending: string
+    statusDraft: string
+    statusPrivate: string
+    statusBanned: string
+    systemTitle: string
+    sysVersion: string
+    sysMedia: string
+    sysUsers: string
+    sysUsersDisabled: string
+    sysUsersNew: string
+    sysBackupOn: string
+    sysBackupOff: string
+    sysBackupFiles: string
+    actionsTitle: string
+    actionsEmpty: string
+    actionsMore: string
     // round 24: three-tier roles + review / ban vault
     roleRoot: string
     roleLocked: string
@@ -471,6 +493,28 @@ export const adminZh: AdminTexts = {
     autoBackupRunDone: '已生成快照：{file}',
     recentPosts: '最近文章',
     recentLogins: '最近登录',
+    statViewsToday: '今日阅读',
+    statUsers: '注册用户',
+    statStorage: '媒体占用',
+    contentTitle: '内容结构',
+    contentEmpty: '还没有任何文章',
+    statusPublished: '已发布',
+    statusPending: '待审核',
+    statusDraft: '草稿',
+    statusPrivate: '私密',
+    statusBanned: '封禁',
+    systemTitle: '系统状态',
+    sysVersion: '版本',
+    sysMedia: '媒体文件',
+    sysUsers: '用户',
+    sysUsersDisabled: '禁用账号',
+    sysUsersNew: '近 7 天新增',
+    sysBackupOn: '已开启',
+    sysBackupOff: '未开启',
+    sysBackupFiles: '快照文件',
+    actionsTitle: '最近操作',
+    actionsEmpty: '暂无操作记录',
+    actionsMore: '查看全部审计',
     roleRoot: '超级管理员',
     roleLocked: '该账号的角色不允许修改',
     rootOnly: '此页面仅限超级管理员访问。',
@@ -736,6 +780,28 @@ export const adminEn: AdminTexts = {
     autoBackupRunDone: 'Snapshot written: {file}',
     recentPosts: 'Recent posts',
     recentLogins: 'Recent logins',
+    statViewsToday: 'Views today',
+    statUsers: 'Registered users',
+    statStorage: 'Media storage',
+    contentTitle: 'Content breakdown',
+    contentEmpty: 'No posts yet',
+    statusPublished: 'Published',
+    statusPending: 'Pending review',
+    statusDraft: 'Drafts',
+    statusPrivate: 'Private',
+    statusBanned: 'Banned',
+    systemTitle: 'System status',
+    sysVersion: 'Version',
+    sysMedia: 'Media files',
+    sysUsers: 'Users',
+    sysUsersDisabled: 'Disabled accounts',
+    sysUsersNew: 'New in 7 days',
+    sysBackupOn: 'On',
+    sysBackupOff: 'Off',
+    sysBackupFiles: 'Snapshot files',
+    actionsTitle: 'Recent activity',
+    actionsEmpty: 'No operations recorded',
+    actionsMore: 'View full audit',
     roleRoot: 'Super admin',
     roleLocked: 'This account\'s role cannot be changed',
     rootOnly: 'This page is restricted to the super admin.',

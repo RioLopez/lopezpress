@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"lopezpress/internal/services"
+	"lopezpress/internal/version"
 )
 
 // Audit rows are written by the service layer, next to the write they describe
@@ -305,10 +306,13 @@ func GetAuthor(w http.ResponseWriter, r *http.Request) {
 // GetDashboard aggregates admin dashboard widgets.
 // GET /api/admin/dashboard (auth, admin)
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
-	data, err := svc.GetDashboard(r.Context())
+	data, err := svc.GetDashboard(r.Context(), userFromContext(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
+	// Build identity belongs to the binary, not the service layer: stamp it
+	// here so the overview can say which version is actually running.
+	data.AppVersion = version.Short()
 	writeJSON(w, http.StatusOK, data)
 }

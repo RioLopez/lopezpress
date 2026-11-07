@@ -5,6 +5,10 @@ import { useNav } from '../core/router'
 import type { DayViews } from '../core/types'
 import { fmtDate } from '../core/format'
 import { useQuery } from '../core/useQuery'
+import { StatCards } from './admin/dashboard/StatCards'
+import { ContentBreakdown } from './admin/dashboard/ContentBreakdown'
+import { SystemStatus } from './admin/dashboard/SystemStatus'
+import { RecentActions } from './admin/dashboard/RecentActions'
 
 // A 30-bar view chart drawn as inline SVG.
 //
@@ -62,20 +66,7 @@ export function AdminDashboardPage() {
       ) : (
         data && (
           <>
-            <div class="dash-cards">
-              <div class="dash-card">
-                <div class="dash-card-num">{data.posts_total}</div>
-                <div class="dash-card-label">{t('admin.statPosts')}</div>
-              </div>
-              <div class="dash-card">
-                <div class="dash-card-num">{data.views_total}</div>
-                <div class="dash-card-label">{t('admin.statViews')}</div>
-              </div>
-              <div class="dash-card">
-                <div class="dash-card-num">{data.pending_total}</div>
-                <div class="dash-card-label">{t('admin.statPending')}</div>
-              </div>
-            </div>
+            <StatCards data={data} />
 
             <section class="dash-block">
               <h3>{t('admin.trendTitle')}</h3>
@@ -86,6 +77,13 @@ export function AdminDashboardPage() {
               )}
               <p class="dash-hint">{t('admin.trendHint')}</p>
             </section>
+
+            <div class="dash-block-pair">
+              <ContentBreakdown counts={data.status_counts} />
+              <SystemStatus data={data} />
+            </div>
+
+            <RecentActions actions={data.recent_actions} />
 
             <div class="dash-cols">
               <section class="dash-col">

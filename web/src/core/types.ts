@@ -379,6 +379,22 @@ export interface TopPost {
   view_count: number
 }
 
+export interface StatusCounts {
+  published: number
+  pending: number
+  draft: number
+  private: number
+  // Root-only: omitted for plain admins (the ban vault is not theirs to see).
+  banned?: number
+}
+
+export interface AutoBackupStatus {
+  enabled: boolean
+  keep: number
+  last_at: string
+  files: number
+}
+
 export interface DashboardData {
   posts_total: number
   views_total: number
@@ -387,6 +403,18 @@ export interface DashboardData {
   top_posts: TopPost[]
   recent_posts: Post[]
   recent_logins: LoginLog[]
+  // Reading pulse and the state of the rest of the site.
+  views_today: number
+  views_7d: number
+  status_counts: StatusCounts
+  users_total: number
+  users_disabled: number
+  users_new_7d: number
+  media_live_count: number
+  media_live_bytes: number
+  app_version: string
+  auto_backup?: AutoBackupStatus
+  recent_actions: ActionLog[]
 }
 
 // --- admin audit trail: who did what on the site ---

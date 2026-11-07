@@ -480,6 +480,42 @@ type DashboardData struct {
 	TopPosts     []TopPost         `json:"top_posts"`
 	RecentPosts  []models.Post     `json:"recent_posts"`
 	RecentLogins []models.LoginLog `json:"recent_logins"`
+
+	// Reading pulse: "is today different from the last week?" answered without
+	// making the operator read the 30-day chart.
+	ViewsToday int64 `json:"views_today"`
+	Views7d    int64 `json:"views_7d"`
+	// StatusCounts is where the posts actually are (published / pending /
+	// draft / private; banned is root-only).
+	StatusCounts StatusCounts `json:"status_counts"`
+	// Accounts and storage are what runs out first on a small self-hosted box.
+	UsersTotal    int64 `json:"users_total"`
+	UsersDisabled int64 `json:"users_disabled"`
+	UsersNew7d    int64 `json:"users_new_7d"`
+	// MediaLiveCount / MediaLiveBytes count rows that are still visible; a
+	// soft-deleted upload keeps its bytes on disk but is not part of the
+	// library's usable storage.
+	MediaLiveCount int64 `json:"media_live_count"`
+	MediaLiveBytes int64 `json:"media_live_bytes"`
+	// AppVersion is stamped by the handler from internal/version; the service
+	// layer has no build identity.
+	AppVersion string `json:"app_version"`
+	// AutoBackup is root-only (the backup surface is root-only by design).
+	AutoBackup *AutoBackupStatus `json:"auto_backup,omitempty"`
+	// RecentActions mirrors the audit page's visibility: every admin sees the
+	// same trail the audit page shows them.
+	RecentActions []models.ActionLog `json:"recent_actions"`
+}
+
+// StatusCounts is the post-status breakdown on the dashboard.
+type StatusCounts struct {
+	Published int64 `json:"published"`
+	Pending   int64 `json:"pending"`
+	Draft     int64 `json:"draft"`
+	Private   int64 `json:"private"`
+	// Banned is nil for plain admins: the ban vault is root-only, and a count
+	// is still information about content they cannot see.
+	Banned *int64 `json:"banned,omitempty"`
 }
 
 // DayViews is one day of the view trend. Days with no reads are present with

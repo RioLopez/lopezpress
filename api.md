@@ -242,11 +242,29 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
   "view_trend": [{ "day": "2026-10-22", "views": 2 }],
   "top_posts": [{ "id": "…", "title": "…", "slug": "…", "view_count": 12 }],
   "recent_posts": [],
-  "recent_logins": []
+  "recent_logins": [],
+  "views_today": 2,
+  "views_7d": 9,
+  "status_counts": { "published": 9, "pending": 0, "draft": 1, "private": 3, "banned": 0 },
+  "users_total": 3,
+  "users_disabled": 0,
+  "users_new_7d": 1,
+  "media_live_count": 24,
+  "media_live_bytes": 3456789,
+  "app_version": "1.0.19+0000000",
+  "auto_backup": { "enabled": true, "keep": 3, "last_at": "2026-11-07T03:00:00Z", "files": 3 },
+  "recent_actions": []
 }
 ```
 
 `view_trend` **恒为 30 项**（无阅读的日子是 0，服务端补齐）。`recent_posts` 的 `body` 恒为空。
+
+- `views_today` / `views_7d` 与趋势同源（`post_views` 的去重日记录），不是 `view_count` 的求和。
+- `status_counts` 统计全部状态的可见文章；**`banned` 仅 root**（普通 admin 的响应里没有这个键，封禁库不属于他们的可见范围）。
+- `media_live_*` 只统计 `deleted_at IS NULL` 的图库行；软删图的字节仍占磁盘但不计入「可用媒体占用」。
+- `app_version` 由进程的构建身份写入（可能与磁盘上的 `VERSION` 文件不同，以实际运行的二进制为准）。
+- `auto_backup` 仅 root 返回；普通 admin 的响应里没有这个键。
+- `recent_actions` 与 `/api/admin/actions` 可见口径一致，取最近 5 条。
 
 ### `GET|POST /api/admin/backup/auto`
 
@@ -315,6 +333,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 / 日期 | 变更 |
 |---|---|
+| 2026-11-07（1.0.19） | **系统概览 / 仪表盘增强**。`GET /api/admin/dashboard` 的响应**只增不改**，新增 `views_today` / `views_7d`（与 30 天趋势同源的去重阅读）、`status_counts`（published / pending / draft / private，`banned` **仅 root**）、`users_total` / `users_disabled` / `users_new_7d`、`media_live_count` / `media_live_bytes`（`deleted_at IS NULL` 的图库行）、`app_version`（构建身份）、`auto_backup`（**仅 root**）、`recent_actions`（最近 5 条，口径同 `/api/admin/actions`）。前端仪表盘数字卡 3→6，新增「内容结构」「系统状态」「最近操作」三块，页面拆为 `pages/admin/dashboard/` 子组件。**其余契约不变**；`dashboard_test.go` 增加角色裁剪断言 |
 | 2026-11-07（1.0.18） | **P1-1 权限收口 + P1-2 用户管理页 + P1-3 角色管理页**。后端把 `roles.go` 之外仍在手写的角色判断统一收敛到 `IsRoot` / `IsAdmin` / `IsAdminOrRoot` / `canManageUser` / `canReviewPost`：用户管理（创建、改角色、禁用、删除、重置密码）全部读 `canManageUser`，审核与封禁库读 `IsAdminOrRoot` / `IsRoot`；`applyRoleChange` 明确「no-op 不需要权限、提升为 admin 仅 root」。**状态码与错误语义保持不变，API 契约无变化**。前端 `AdminUsersPage` 从 522 行降到 303 行，弹窗/筛选栏/表格拆到 `pages/admin/users/`；用户列表新增用户名/邮箱/昵称搜索、角色与状态筛选、5/10/20 每页分页（前端过滤，API 未新增参数）；新增 `/admin/roles` 角色页：三角色权限矩阵、人数与成员分布，只读展示，API 未新增参数 |
 | 2026-11-07（1.0.17） | **M-10 回收站单条永久删除**。新增 `DELETE /api/trash/{id}`：权限与恢复一致（admin 不能删 root/其他 admin 的行），不受 7 天恢复窗口限制，删除与图片台账清理在同一事务内；重复删除 404、非回收站行 400。回收站页每行新增「永久删除」按钮（二次确认）。**前端仅新增调用，其余契约不变** |
 | 2026-11-07（1.0.16） | **接管修复第三轮：三项渗透发现闭环，版本 1.0.16**。① **X-01/F-01**：`POST /api/auth/login` 现在要求 `Content-Type: application/json`（否则 **415**），并在带 `Origin` 时校验同源（跨站 **403**，`null` 源拒绝，无 Origin 的 API 客户端/curl 不受影响）——此前 `text/plain` 正文可免预检跨站提交，构成登录 CSRF ② **X-02/F-02**：`/feed`、`/sitemap.xml`、`/robots.txt` 在未配置 `site_url` 时增加 `Vary: Host` + `Cache-Control: no-cache`（配置后与 Host 无关），关闭共享缓存投毒前提 ③ **E-10**：邮箱验证码改为**先比对 HMAC、仅不匹配时条件扣额度**，正确的码不再消耗猜测次数；单次使用仍由条件 UPDATE 保证，5 次上限不变 ④ **X-04/F-06 复核不成立**：验证开启时 `PUT /api/auth/me` 改邮箱已 403（见第 79 轮），且写库前有大小写不敏感唯一性检查；关闭验证时直接改邮箱是既有产品行为，未放宽 ⑤ **`内部待办清单` 23→19 条**。**登录请求新增一项前置约束（Content-Type/Origin），其余契约不变** |

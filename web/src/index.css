@@ -1196,6 +1196,29 @@ tr.row-selected { transition: background .12s; }
 .dash-bar { fill: var(--primary); opacity: .85; transition: opacity .15s var(--ease); }
 .dash-bar:hover { opacity: 1; }
 .dash-bar--zero { fill: var(--border); opacity: 1; }
+/* Overview blocks: content breakdown + system facts. Two cards side by side
+   on laptop, stacked on phone (the existing responsive override collapses
+   .dash-cols the same way). */
+.dash-block-pair { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+.dash-block-pair > .dash-block { flex: 1; min-width: 280px; }
+.dash-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.dash-block-head h3 { margin: 0; }
+.dash-metrics { display: flex; flex-direction: column; gap: 10px; }
+.dash-metric { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.dash-metric-label { width: 72px; flex-shrink: 0; color: var(--text-muted); }
+.dash-metric-track { flex: 1; height: 8px; background: var(--surface-2); border: 1px solid var(--border); }
+.dash-metric-fill { display: block; height: 100%; background: var(--primary); transition: width .2s var(--ease); }
+.dash-metric-fill--published { background: var(--success); }
+.dash-metric-fill--pending { background: var(--primary); }
+.dash-metric-fill--draft { background: var(--text-muted); opacity: .55; }
+.dash-metric-fill--private { background: var(--text-muted); }
+.dash-metric-fill--banned { background: var(--danger); }
+.dash-metric-num { width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.dash-facts { display: flex; flex-direction: column; }
+.dash-fact { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.dash-fact:last-child { border-bottom: none; padding-bottom: 0; }
+.dash-fact-label { color: var(--text-muted); }
+.dash-fact-value { text-align: right; font-variant-numeric: tabular-nums; word-break: break-all; }
 .dash-hint { margin: 10px 0 0; font-size: 12px; color: var(--text-muted); }
 
 /* Spec 35: related posts + breadcrumb on the reader page. */
