@@ -235,14 +235,14 @@ func (s *Service) requireSMTP(ctx context.Context) error {
 // verifyEmailCode consumes a code. A nil error means "this code was correct and
 // is now spent".
 //
-// Both the guess budget and the single-use guarantee are enforced with
-// conditional UPDATEs and a RowsAffected check, not with a read-then-write
-// sequence. The old shape was "SELECT the row → look at attempts → compare the
-// hash → UPDATE", and every concurrent request passed the same checks before
-// any of them wrote: R2-05 measured the 5-guess limit degrading to 19 under 50
-// concurrent submissions, and R4-02 used the same window to spend one correct
-// code twice (two password resets from a single intercepted mail, the second
-// one winning).
+// A correct code spends no guess from the budget (E-10). The old sequence
+// charged an attempt before comparing hashes, so two concurrent *correct*
+// submissions could burn two of the five slots — and a double-click could
+// exhaust the budget and void the code it had just accepted. The hash is
+// compared first; only a mismatch spends a unit. The guess ceiling and the
+// single-use guarantee still rest on conditional UPDATEs plus RowsAffected,
+// which is what stopped R2-05's 5-guess limit from degrading to 19 under load
+// and R4-02's double-spend of one intercepted mail.
 func (s *Service) verifyEmailCode(ctx context.Context, email, purpose, code string) error {
 	email = normalizeEmail(email)
 	code = strings.TrimSpace(code)
@@ -257,11 +257,49 @@ func (s *Service) verifyEmailCode(ctx context.Context, email, purpose, code stri
 		return newErr(http.StatusBadRequest, "no valid code for this address; request a new one")
 	}
 
-	// Step 1 — spend one attempt atomically. The WHERE clause carries the
-	// whole guard: unspent, unexpired, and still inside the guess budget. If
-	// any of those is false the update matches zero rows, so a request that
-	// raced past the same check cannot spend a second attempt.
 	now := time.Now()
+	if !row.ExpiresAt.After(now) {
+		return newErr(http.StatusBadRequest, "the code has expired; request a new one")
+	}
+	if row.Attempts >= EmailCodeMaxAttempts {
+		// Burn it: the row stays unspent but unreachable, so the visitor must
+		// ask for a new one and the counter cannot keep climbing.
+		s.db.WithContext(ctx).Model(&models.EmailCode{}).Where("id = ?", row.ID).
+			Update("used_at", now)
+		return newErr(http.StatusBadRequest, "too many attempts; request a new code")
+	}
+
+	// Step 1 — compare. An attempt is NOT spent here: a correct code never
+	// pays for a guess.
+	if !hmac.Equal([]byte(s.hashCode(email, purpose, code)), []byte(row.CodeHash)) {
+		return s.spendWrongGuess(ctx, row, now)
+	}
+
+	// Step 2 — consume. Two callers that both matched still race here, and
+	// only one can move used_at off NULL; the loser is told the code is spent
+	// instead of silently completing a second reset.
+	return s.consumeEmailCode(ctx, row.ID, now)
+}
+
+// consumeEmailCode marks a matched code as spent. A zero RowsAffected means
+// another request won the race, so the caller is told it is already used.
+func (s *Service) consumeEmailCode(ctx context.Context, id int64, now time.Time) error {
+	consume := s.db.WithContext(ctx).Model(&models.EmailCode{}).
+		Where("id = ? AND used_at IS NULL", id).
+		Update("used_at", now)
+	if consume.Error != nil {
+		return newErr(http.StatusInternalServerError, "failed to consume code")
+	}
+	if consume.RowsAffected == 0 {
+		return newErr(http.StatusBadRequest, "this code has already been used; request a new one")
+	}
+	return nil
+}
+
+// spendWrongGuess charges one attempt for a mismatched code. The WHERE clause
+// carries the whole guard — unspent, unexpired, still inside the budget — so a
+// request that raced past the same check cannot spend a second attempt.
+func (s *Service) spendWrongGuess(ctx context.Context, row models.EmailCode, now time.Time) error {
 	spend := s.db.WithContext(ctx).Model(&models.EmailCode{}).
 		Where("id = ? AND used_at IS NULL AND expires_at > ? AND attempts < ?",
 			row.ID, now, EmailCodeMaxAttempts).
@@ -280,8 +318,6 @@ func (s *Service) verifyEmailCode(ctx context.Context, email, purpose, code stri
 				return newErr(http.StatusBadRequest, "this code has already been used; request a new one")
 			}
 			if live.Attempts >= EmailCodeMaxAttempts {
-				// Burn it: the row stays unspent but unreachable, so the visitor
-				// must ask for a new one and the counter cannot keep climbing.
 				s.db.WithContext(ctx).Model(&models.EmailCode{}).Where("id = ?", row.ID).
 					Update("used_at", now)
 				return newErr(http.StatusBadRequest, "too many attempts; request a new code")
@@ -290,26 +326,7 @@ func (s *Service) verifyEmailCode(ctx context.Context, email, purpose, code stri
 		}
 		return newErr(http.StatusBadRequest, "no valid code for this address; request a new one")
 	}
-
-	// Step 2 — compare the hash. The attempt is already spent either way, so a
-	// wrong guess costs one unit and nothing else.
-	if !hmac.Equal([]byte(s.hashCode(email, purpose, code)), []byte(row.CodeHash)) {
-		return newErr(http.StatusBadRequest, "incorrect verification code")
-	}
-
-	// Step 3 — consume. Two concurrent requests that both matched the hash
-	// still race here, and only one can move used_at off NULL; the loser is
-	// told the code is spent instead of silently completing a second reset.
-	consume := s.db.WithContext(ctx).Model(&models.EmailCode{}).
-		Where("id = ? AND used_at IS NULL", row.ID).
-		Update("used_at", now)
-	if consume.Error != nil {
-		return newErr(http.StatusInternalServerError, "failed to consume code")
-	}
-	if consume.RowsAffected == 0 {
-		return newErr(http.StatusBadRequest, "this code has already been used; request a new one")
-	}
-	return nil
+	return newErr(http.StatusBadRequest, "incorrect verification code")
 }
 
 // pruneEmailCodes drops rows past retention. Called opportunistically on issue

@@ -69,6 +69,7 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := feedBaseURL(r, cfg.SiteURL)
+	markHostDerived(w, cfg.SiteURL)
 	title := cfg.SiteTitle
 	if title == "" {
 		title = cfg.SiteName
@@ -130,6 +131,7 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := feedBaseURL(r, cfg.SiteURL)
+	markHostDerived(w, cfg.SiteURL)
 	urls := []sitemapURL{
 		{Loc: base + "/", ChangeFreq: "daily", Priority: "1.0"},
 		{Loc: base + "/archive", ChangeFreq: "weekly", Priority: "0.5"},
@@ -167,11 +169,8 @@ func Sitemap(w http.ResponseWriter, r *http.Request) {
 // With no usable site_url the base is derived from the request, honouring
 // X-Forwarded-Proto behind the reverse proxy.
 func feedBaseURL(r *http.Request, siteURL string) string {
-	if u := strings.TrimSpace(siteURL); u != "" {
-		if parsed, err := url.Parse(u); err == nil && parsed.Host != "" &&
-			(parsed.Scheme == "http" || parsed.Scheme == "https") {
-			return parsed.Scheme + "://" + parsed.Host
-		}
+	if base := siteOrigin(siteURL); base != "" {
+		return base
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -181,6 +180,35 @@ func feedBaseURL(r *http.Request, siteURL string) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+// siteOrigin reduces a configured site_url to a bare scheme://host[:port], or
+// "" when the value is absent or unusable.
+func siteOrigin(siteURL string) string {
+	if u := strings.TrimSpace(siteURL); u != "" {
+		if parsed, err := url.Parse(u); err == nil && parsed.Host != "" &&
+			(parsed.Scheme == "http" || parsed.Scheme == "https") {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	return ""
+}
+
+// markHostDerived tells shared caches that the response URLs depend on the
+// request's Host header whenever no site_url is configured (F-02 / X-02).
+//
+// With a configured site_url the body is identical for every Host, so caching
+// is safe. Without one, a forged `Host: evil.example` rewrites every <loc>,
+// and a proxy that caches one response per URL — not per Host — would hand
+// those URLs to real visitors. Vary: Host plus no-cache removes the poisoning
+// path; the durable fix is still to configure site_url, which is why its
+// absence is called out here rather than papered over.
+func markHostDerived(w http.ResponseWriter, siteURL string) {
+	if siteOrigin(siteURL) != "" {
+		return
+	}
+	w.Header().Add("Vary", "Host")
+	w.Header().Set("Cache-Control", "no-cache")
 }
 
 // feedExcerpt turns markdown-ish body text into a short plain-text snippet
@@ -257,11 +285,14 @@ func permalink(base, slug, id string) string {
 func Robots(w http.ResponseWriter, r *http.Request) {
 	cfg, err := svc.GetSiteConfig(r.Context(), false)
 	base := feedBaseURL(r, "")
+	siteURL := ""
 	locked := false
 	if err == nil {
-		base = feedBaseURL(r, cfg.SiteURL)
+		siteURL = cfg.SiteURL
+		base = feedBaseURL(r, siteURL)
 		locked = !cfg.PublicRead
 	}
+	markHostDerived(w, siteURL)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	if locked {
 		_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))

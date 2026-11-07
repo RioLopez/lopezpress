@@ -20,6 +20,18 @@ import (
 // shaped differently from the service DTO it feeds. Keeping that divergence in
 // one place stops it from spreading into services.LoginInput.
 func Login(w http.ResponseWriter, r *http.Request) {
+	// A cross-site caller must be refused before the password is compared:
+	// text/plain bodies are CORS-safelisted (no preflight) and the JSON decoder
+	// happily reads them, so leaving the type unchecked made a login-CSRF
+	// possible (F-01 / X-01).
+	if !isJSONContentType(r) {
+		writeError(w, http.StatusUnsupportedMediaType, "content-type must be application/json")
+		return
+	}
+	if !sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "cross-origin login is not allowed")
+		return
+	}
 	ip := clientIP(r)
 
 	// The captcha fields are decoded here instead of being added to
