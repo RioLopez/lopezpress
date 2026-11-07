@@ -93,7 +93,7 @@ nginx 里**正则优先于普通前缀**，写 `location /uploads/` 会被那条
 
 `client_max_body_size` 必须 ≥ 后端 `upload_max_image`（当前 nginx 32m / 后端 20MB）。
 
-## 5. 本机部署（Windows）
+## 5. 本机开发（Linux）
 
 `.env` 最小集（参照 `.env.example`）：
 
@@ -115,10 +115,10 @@ BACKUP_DIR=data/backups
 
 | 模式 | 怎么起 |
 |---|---|
-| 一键（推荐） | 双击 `LopezPress.bat`（幂等，自动开浏览器） |
-| 后端 | `./bin/lopezpress.exe` |
-| 前端开发（热更新 + `/api` 代理） | `cd web && npx vite` → `http://localhost:5173` |
-| 生产模式（前后端同端口） | `npm run build` → 把 `web/dist` 复制成根目录 `dist/` → 起后端 → `http://localhost:8080` |
+| 一键（推荐） | `scripts/dev.sh up`（隔离数据到 `data/dev/`，端口幂等） |
+| 后端 | `GOTOOLCHAIN=go1.26.10 go run ./cmd/server` |
+| 前端开发（热更新 + `/api` 代理） | `cd web && npm ci && npx vite` → `http://127.0.0.1:5173` |
+| 生产模式（前后端同端口） | `npm run build` → 把 `web/dist` 复制成根目录 `dist/` → 起后端 → `http://127.0.0.1:8080` |
 
 > 若 `dist/` 不存在，SPA 路由（`/create`、`/read/<id>`）需要 Nginx `try_files` 兜底；
 > 后端自己的 404 是 JSON，不是页面。

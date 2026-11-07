@@ -109,7 +109,7 @@ function vditorAssets(): Plugin {
   return {
     name: 'vditor-local-assets',
     // configResolved runs for `vite` and `vite build` alike, which also covers
-    // the launcher: LopezPress.bat calls vite.js directly and therefore never
+    // the launcher: scripts/dev.sh calls vite.js directly and therefore never
     // runs npm's "predev" hook.
     async configResolved() {
       await syncVditorAssets()
@@ -126,17 +126,19 @@ function vditorAssets(): Plugin {
 // /uploads MUST be proxied: uploaded images live in the Go server's upload
 // directory. Without this, Vite's SPA history fallback answers /uploads/*.png
 // with index.html, so every uploaded image renders broken in dev.
+const apiTarget = `http://127.0.0.1:${process.env.LP_API_PORT || '8080'}`
+
 export default defineConfig({
   plugins: [preact(), vditorAssets()],
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
-      '/health': { target: 'http://localhost:8080', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:8080', changeOrigin: true },
-      '/feed': { target: 'http://localhost:8080', changeOrigin: true },
-      '/sitemap.xml': { target: 'http://localhost:8080', changeOrigin: true },
-      '/robots.txt': { target: 'http://localhost:8080', changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true },
+      '/health': { target: apiTarget, changeOrigin: true },
+      '/uploads': { target: apiTarget, changeOrigin: true },
+      '/feed': { target: apiTarget, changeOrigin: true },
+      '/sitemap.xml': { target: apiTarget, changeOrigin: true },
+      '/robots.txt': { target: apiTarget, changeOrigin: true },
     },
   },
   build: {

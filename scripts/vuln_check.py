@@ -59,7 +59,7 @@ def find_govulncheck() -> str | None:
     ):
         if not candidate:
             continue
-        for name in ("govulncheck", "govulncheck.exe"):
+        for name in ("govulncheck",):
             p = Path(candidate) / name
             if p.is_file():
                 return str(p)
@@ -82,13 +82,12 @@ def go_on_path(env: dict[str, str]) -> dict[str, str] | None:
         str(Path.home() / "go-sdk" / "go" / "bin"),
         str(Path.home() / "sdk" / "go" / "bin"),
         str(Path.home() / "go" / "bin"),
-        r"C:\Program Files\Go\bin",
         "/usr/local/go/bin",
         "/usr/lib/go/bin",
     ):
         if not candidate:
             continue
-        if (Path(candidate) / "go.exe").is_file() or (Path(candidate) / "go").is_file():
+        if (Path(candidate) / "go").is_file():
             return dict(env, PATH=candidate + os.pathsep + env.get("PATH", ""))
     return None
 

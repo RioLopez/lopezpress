@@ -4,10 +4,10 @@
 
 基于 **Go 标准库（`net/http`）+ GORM + SQLite + Preact** 的内容型站点全栈项目，前后端分离。
 
-- 后端：Go 1.22+ 标准库 `ServeMux`（方法 + 通配路由），纯 Go SQLite 驱动（无需 CGO，可交叉编译）
+- 后端：Go **1.26.10** 标准库 `ServeMux`（方法 + 通配路由），纯 Go SQLite 驱动（无需 CGO，可交叉编译）
 - 前端：Preact + Vite + TypeScript（`web/`），构建为单页应用（SPA）
-- 鉴权：JWT（HS256，无状态）+ bcrypt 密码哈希
-- 限流：自写令牌桶中间件（用户ID优先 + IP 兜底，默认 **20 rps / burst 50**，`.env` 的 `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` 可调）+ 登录专用限流（IP/账号双桶 + 5 次失败锁）
+- 鉴权：JWT（HS256）+ bcrypt；浏览器端 token 存 **`lp_token` HttpOnly + SameSite=Lax Cookie**，`Authorization` 头保留给 API 客户端；`token_version` 支持服务端吊销
+- 限流：自写令牌桶中间件（按身份分桶，token 从 cookie 或 header 读，默认 **20 rps / burst 50**，`.env` 的 `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` 可调）+ 全局匿名桶（200 rps / burst 400，防 IP 轮换稀释）+ 登录专用限流（IP/账号双桶 + 5 次失败锁）
 
 ## 功能
 
@@ -54,45 +54,50 @@ lopezpress/
 │   ├── middleware/            # 自写中间件：Chain / Logger / CORS / Recover / 通用限流 / 登录限流
 │   ├── router/                # 路由装配（Go 1.22 ServeMux 方法+通配 + 中间件链）
 │   └── httpx/                 # 请求/响应小工具
-├── web/                       # 前端（Preact + Vite + TS）：22 个页面 + 9 个公共组件 + core 层（api/auth/i18n/router/theme/md/format）
+├── web/                       # 前端（Preact + Vite + TS）：27 个页面 + 个人中心子组件 + core 层（api/auth/i18n/router/theme/md/format/http）
 ├── deploy/                    # 部署脚本（systemd / Nginx / Docker Compose / 一键上传）
 ├── docs/                      # 2 份：待办清单 + 上线安全基线
-├── scripts/contract_check.py  # 前后端 method+path 契约自动核对
-├── LopezPress.bat             # 一键启动（Windows）：后端 + 前端，自动开浏览器
+├── scripts/
+│   ├── dev.sh                 # Linux 一键开发：后端 + 前端，数据隔离到 data/dev
+│   └── contract_check.py      # 前后端 method+path 契约自动核对
 ├── .env                       # 运行时配置（端口 / JWT / DB 路径 / 限流）
 └── go.mod
 ```
 
 > 启动命令：`go run ./cmd/server`，默认监听 `:8080`。
-> **一键启动（Windows）**：双击根目录 `LopezPress.bat` 即可同时拉起后端（:8080）和前端（:5173）并自动打开浏览器；支持 `status` / `stop` / `restart` / `dev` / `build` / `help` 子命令，已做端口幂等检测，避免重复启动。
-> **后端路由总量**：63 条（前端已接入 56 条，`scripts/contract_check.py` 可复核；未接入的 6 条为 `/`、`/health`、`/feed`、`/sitemap.xml`、`/uploads/` 静态服务与 `POST /api/admin/ban/{id}`）。
+> **一键启动（Linux，推荐）**：`scripts/dev.sh up` 同时拉起后端（:8080）和前端（:5173），并强制数据隔离到 `data/dev/`；支持 `up` / `down` / `restart` / `status` / `logs` / `build` / `gate` / `reset-root` / `help` 子命令，已做端口幂等检测。
+> **后端路由总量**：84 条（前端已接入 77 条，`scripts/contract_check.py` 可复核；未被前端调用的 6 条为 `/feed`、`/health`、`/health/ready`、`/robots.txt`、`/sitemap.xml`、`/uploads/`）。
 
 ## 快速开始（本地开发）
 
 ### 1. 安装 Go
 
-需要 Go 1.22+（标准库 `ServeMux` 方法通配路由特性）。
+需要 Go **1.26.10**（`go.mod` 声明的最低版本；标准库 `ServeMux` 方法通配路由特性）。
 
-```powershell
-winget install GoLang.Go   # 或手动安装后重开终端
+```bash
+go version                 # 需要 ≥ 1.26.10
+# 若发行版自带版本偏低，GOTOOLCHAIN 会在首次构建时自动下载 1.26.10：
+export GOTOOLCHAIN=go1.26.10
 go version
 ```
 
+> `scripts/dev.sh` 已固定 `GOTOOLCHAIN=go1.26.10`，手动跑测试时也建议带上该变量。
+
 ### 2. 启动后端
 
-```powershell
+```bash
 cd lopezpress
-go mod tidy
-go run ./cmd/server        # 默认监听 :8080
+GOTOOLCHAIN=go1.26.10 go mod tidy
+GOTOOLCHAIN=go1.26.10 go run ./cmd/server   # 默认监听 :8080
 ```
 
 首次运行会在 `data/app.db` 创建 SQLite 数据库并写入演示数据。
 
 ### 3. 启动前端
 
-```powershell
+```bash
 cd web
-npm install
+npm ci                    # 按 package-lock 安装，含 Linux 原生 rollup/esbuild
 npm run dev               # http://127.0.0.1:5173
 ```
 
@@ -100,7 +105,7 @@ npm run dev               # http://127.0.0.1:5173
 
 ### 4. 本地预览生产构建（可选）
 
-```powershell
+```bash
 cd web
 npm run build            # 产出 dist/（SPA）
 npm run preview          # http://127.0.0.1:4173，同样带 API 反代
@@ -112,19 +117,19 @@ npm run preview          # http://127.0.0.1:4173，同样带 API 反代
 
 默认值可直接运行。需要覆盖时（完整清单见 `.env.example` 与 `internal/config/config.go`）：
 
-```powershell
-$env:PORT="8080"
-$env:APP_ENV="dev"              # prod 时强制校验 JWT_SECRET 强度 + CORS 非 "*"
-$env:JWT_SECRET="change-me"     # prod 必须 ≥32 字节强随机，否则启动失败
-$env:JWT_EXPIRY_HOURS="24"
-$env:DB_PATH="data/app.db"
-$env:CORS_ORIGINS="*"           # prod 改为显式来源列表，逗号分隔
-$env:RATE_LIMIT_RPS="20"
-$env:RATE_LIMIT_BURST="50"
-$env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有
+```bash
+export PORT="8080"
+export APP_ENV="dev"              # prod 时强制校验 JWT_SECRET 强度 + CORS 非 "*"
+export JWT_SECRET="change-me"     # prod 必须 ≥32 字节、≥128bit 熵的强随机值，否则启动失败
+export JWT_EXPIRY_HOURS="24"
+export DB_PATH="data/app.db"
+export CORS_ORIGINS="*"           # prod 改为显式来源列表，逗号分隔
+export RATE_LIMIT_RPS="20"
+export RATE_LIMIT_BURST="50"
+export SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有
 ```
 
-> 生产部署务必：更换 `JWT_SECRET`（≥32 字节）、`APP_ENV=prod`、`CORS_ORIGINS` 显式列表、启用 HTTPS。**上线前请读 [`内部安全基线`](内部安全基线)**——它逐项写了防住了什么、还剩哪两件没做完、哪些风险是明确接受的。
+> 生产部署务必：更换 `JWT_SECRET`（≥32 字节且通过 128-bit 熵下限）、`APP_ENV=prod`、`CORS_ORIGINS` 显式列表、启用 HTTPS。**上线前请读 [`内部安全基线`](内部安全基线)**——它逐项写了防住了什么、还剩哪两件没做完、哪些风险是明确接受的。
 
 ## 演示账号
 
@@ -140,17 +145,19 @@ $env:SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有
 > - `POST /api/users/{id}/reset-password` **无法重置 root 密码**（admin 重置 root 会被 `canManageUser` 403 拦下）；
 > - root 忘记密码走**离线恢复**（HTTP 无路径，刻意如此）：
 >
-> ```bat
-> LopezPress.bat stop
-> lopezpress.exe -reset-root-password   :: 生成新随机密码并打印一次，同时吊销 root 所有旧会话
-> LopezPress.bat
+> ```bash
+> scripts/dev.sh down
+> scripts/dev.sh reset-root   # 生成新随机密码并打印一次，同时吊销 root 所有旧会话
+> scripts/dev.sh up
 > ```
+>
+> 若要对非隔离库执行，用 `DB_PATH=data/app.db ./data/dev/lopezpress -reset-root-password`（先 `scripts/dev.sh build` 产出二进制）。
 >
 > root 没有 HTTP 恢复路径是**刻意设计**：任何在线入口都会变成提权面。只能上机执行上面那条命令。
 
 ## 验证
 
-```powershell
+```bash
 # 健康检查
 curl http://localhost:8080/health
 
@@ -181,8 +188,8 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 - `tsconfig.json` 用 `jsx: "react-jsx"` + `jsxImportSource: "preact"`
 - `createContext` 来自顶层 `preact`；`useContext/useEffect/useState/useRef` 来自 `preact/hooks`
 - 子类型用 `ComponentChildren`（Preact 无 `Child` 类型）
-- token 存 `localStorage`，启动时用 `GET /api/auth/me` 重新校验有效性
-- 运行时依赖只有 `preact` / `wouter` / `marked` 三个（第 39 轮已清掉 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string` 四个零 import 残留）
+- token 存 `lp_token` HttpOnly Cookie（前端不持有 JWT，只留非敏感 `echo.session` 标记），启动时用 `GET /api/auth/me` 重新校验有效性；请求统一走 `core/http.ts`
+- 运行时依赖共 4 个：`preact` / `wouter` / `marked` / `vditor`。`vditor` 只被编辑器用到且走动态 `import()`，读者端不加载（第 39 轮已清掉 `@preact/signals`、`@preact/signals-core`、`preact-router`、`preact-render-to-string` 四个零 import 残留）
 
 ## 文档导航
 
@@ -207,4 +214,4 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 
 - 默认 SQLite（`glebarez/sqlite` 纯 Go 驱动，无需 CGO，可交叉编译到 Linux）。换 PostgreSQL/MySQL 仅需改 `config.InitDB` 的驱动。
 - JWT 无状态，但**已支持服务端吊销**：`User.token_version` 写入 token 的 `ver` claim，`POST /api/auth/logout-all` bump 版本使旧 token 全部 401（`POST /api/auth/logout` 仍是客户端信号，需要时可改用 logout-all）。
-- 生产环境务必：更换 `JWT_SECRET`（≥32 字节）、收紧 CORS、启用 HTTPS。
+- 生产环境务必：更换 `JWT_SECRET`（≥32 字节且通过 128-bit 熵下限）、收紧 CORS、启用 HTTPS。

@@ -8,12 +8,9 @@
 .workbuddy
 .vscode
 
-# --- Go build artifacts / local one-click binaries ---
+# --- Go build artifacts / local binaries ---
 /bin
-*.exe
-*.exe~
-lopezpress.exe
-lopezpress.exe~
+lopezpress
 backend.log
 
 # --- Node: never ship deps or a stale dist into the image ---
@@ -39,7 +36,6 @@ README.md
 # NOTE: only deploy/ one-level entries; deploy/docker/* is intentionally kept
 # because Dockerfile.web copies deploy/docker/nginx.conf into the image.
 deploy/*.sh
-deploy/*.ps1
 deploy/*.service
 deploy/*.env
 deploy/*.conf

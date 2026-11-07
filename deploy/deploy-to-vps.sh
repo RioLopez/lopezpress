@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy-to-vps.sh — 本地一键部署到 VPS
-# 在开发机（Windows 上在 Git Bash 或 PowerShell 的 bash 里跑；Linux 直接 bash）执行。
+# 在 Linux 开发机执行。
 # 用法：
 #   VPS_USER=root VPS_HOST=1.2.3.4 bash deploy/deploy-to-vps.sh
 # 可选：VPS_SSH_PORT=22、APP_DIR=/opt/lopezpress
