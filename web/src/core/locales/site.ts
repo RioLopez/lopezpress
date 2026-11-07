@@ -5,6 +5,7 @@ export type SiteTexts = {
     title: string
     navBasic: string
     navContent: string
+    navAppearance: string
     navUsers: string
     navMedia: string
     navMail: string
@@ -15,6 +16,15 @@ export type SiteTexts = {
     logo: string
     favicon: string
     footer: string
+    appearance: string
+    themeColor: string
+    themeDefault: string
+    themeCustom: string
+    themeColorHint: string
+    homeLayout: string
+    homeLayoutHint: string
+    layoutList: string
+    layoutCards: string
     icp: string
     friendLinks: string
     friendName: string
@@ -141,6 +151,7 @@ export const siteZh: SiteTexts = {
     title: '站点设置',
     navBasic: '基本',
     navContent: '内容与显示',
+    navAppearance: '外观',
     navUsers: '用户与注册',
     navMedia: '媒体与存储',
     navMail: '邮件',
@@ -151,6 +162,15 @@ export const siteZh: SiteTexts = {
     logo: '站点 Logo',
     favicon: 'Favicon',
     footer: '页脚版权文本',
+    appearance: '外观',
+    themeColor: '主题色',
+    themeDefault: '默认',
+    themeCustom: '自定义',
+    themeColorHint: '只影响强调色（按钮、链接、选中态）；清空即恢复内置配色。',
+    homeLayout: '首页布局',
+    homeLayoutHint: '列表更紧凑，适合纯文字博客；卡片更醒目，适合图文混排。',
+    layoutList: '列表',
+    layoutCards: '卡片',
     icp: '备案号',
     friendLinks: '友情链接',
     friendName: '名称',
@@ -270,6 +290,7 @@ export const siteEn: SiteTexts = {
     title: 'Site Settings',
     navBasic: 'Basics',
     navContent: 'Content & display',
+    navAppearance: 'Appearance',
     navUsers: 'Users & sign-up',
     navMedia: 'Media & storage',
     navMail: 'Email',
@@ -280,6 +301,15 @@ export const siteEn: SiteTexts = {
     logo: 'Logo',
     favicon: 'Favicon',
     footer: 'Footer copyright text',
+    appearance: 'Appearance',
+    themeColor: 'Accent colour',
+    themeDefault: 'Default',
+    themeCustom: 'Custom',
+    themeColorHint: 'Affects accent surfaces only (buttons, links, selection). Clear it to restore the built-in palette.',
+    homeLayout: 'Home layout',
+    homeLayoutHint: 'List is denser and suits text-first blogs; cards are bolder and suit mixed media.',
+    layoutList: 'List',
+    layoutCards: 'Cards',
     icp: 'ICP / license no.',
     friendLinks: 'Friend links',
     friendName: 'Name',

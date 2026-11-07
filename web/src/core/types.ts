@@ -314,6 +314,10 @@ export interface SiteConfigPublic {
   site_url: string
   site_description: string
   footer_text: string
+  // Appearance. theme_color is "#rrggbb" or "" (built-in palette);
+  // home_layout picks the list rendering mode ("list" | "cards").
+  theme_color: string
+  home_layout: 'list' | 'cards'
   icp_no: string
   friend_links: string // raw JSON array string
  // Posts per page on the public list (5/10/20/30, server-enforced).

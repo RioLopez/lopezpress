@@ -8,6 +8,7 @@ import { isRoot } from '../core/roles'
 import type { SiteConfigFull, FriendLink } from '../core/types'
 import { SiteBasicsSection } from './admin/site/SiteBasicsSection'
 import { SiteContentSection } from './admin/site/SiteContentSection'
+import { SiteAppearanceSection } from './admin/site/SiteAppearanceSection'
 import { SiteUsersSection } from './admin/site/SiteUsersSection'
 import { SiteMediaSection } from './admin/site/SiteMediaSection'
 import { SiteMailSection } from './admin/site/SiteMailSection'
@@ -16,7 +17,7 @@ import { SiteBackupSection } from './admin/site/SiteBackupSection'
 // The form is the same object it always was (one GET, one PUT); only the
 // presentation is split. Ten sections stacked in one column meant changing a
 // switch at the bottom started with scrolling past everything above it.
-type Group = 'basic' | 'content' | 'users' | 'media' | 'mail' | 'backup'
+type Group = 'basic' | 'content' | 'appearance' | 'users' | 'media' | 'mail' | 'backup'
 
 export function AdminSitePage() {
   const { t } = useI18n()
@@ -98,6 +99,7 @@ export function AdminSitePage() {
   const groups: { key: Group; label: string }[] = [
     { key: 'basic', label: t('site.navBasic') },
     { key: 'content', label: t('site.navContent') },
+    { key: 'appearance', label: t('site.navAppearance') },
     { key: 'users', label: t('site.navUsers') },
     { key: 'media', label: t('site.navMedia') },
     { key: 'mail', label: t('site.navMail') },
@@ -134,6 +136,7 @@ export function AdminSitePage() {
             />
           )}
           {group === 'content' && <SiteContentSection cfg={cfg} set={set} />}
+          {group === 'appearance' && <SiteAppearanceSection cfg={cfg} set={set} />}
           {group === 'users' && <SiteUsersSection cfg={cfg} set={set} isRootUser={isRootUser} />}
           {group === 'media' && <SiteMediaSection cfg={cfg} set={set} isRootUser={isRootUser} />}
           {group === 'mail' && (

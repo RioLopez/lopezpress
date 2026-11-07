@@ -10,6 +10,7 @@ import { Sidebar } from '../ui/Sidebar'
 import { Pagination } from '../ui/Pagination'
 import { useNavSearch } from '../core/router'
 import { useQuery } from '../core/useQuery'
+import { useSite } from '../core/site'
 import { isAdminOnly, isRoot } from '../core/roles'
 import { orderCategories, categoryOptionLabel, categoryLabel } from '../core/taxonomy'
 
@@ -53,6 +54,7 @@ export function ListPage() {
   const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
   const { t, locale } = useI18n()
+  const { config } = useSite()
   const [, urlSearch, navigate] = useNavSearch()
 
   // wouter's useLocation is pathname-only; the query string arrives as a
@@ -253,7 +255,7 @@ export function ListPage() {
                 {t('list.pageOf', { page: String(page), total: String(totalPagesNum) })}
                 &middot; {t('common.count', { from: String((page - 1) * size + 1), to: String((page - 1) * size + items.length), total: String(totalItems) })}
               </p>
-              <ul class="post-list">
+              <ul class={`post-list${config.home_layout === 'cards' ? ' post-list--cards' : ''}`}>
                 {items.map((p) => (
                   <li key={p.id} class="post-item" onClick={() => navigate(`/read/${p.id}`)}>
                     {/* The cover field existed (editor + model) but

@@ -25,11 +25,16 @@ type SiteConfig struct {
 	// copy, description is the one-line "what is this site" line.
 	SiteDescription string `gorm:"size:512" json:"site_description"`
 	FooterText      string `gorm:"type:text" json:"footer_text"`
-	IcpNo           string `gorm:"size:128" json:"icp_no"`
-	FriendLinks     string `gorm:"type:text" json:"friend_links"`
-	ImgHostMode     string `gorm:"size:16;default:'local'" json:"img_host_mode"`
-	ImgHostToken    string `gorm:"type:text" json:"img_host_token"`
-	AllowRegister   bool   `gorm:"default:false" json:"allow_register"`
+	// Appearance (B4). ThemeColor is "#rrggbb" or empty (empty = the built-in
+	// palette, so an operator can always get back to it without knowing the
+	// original hex). HomeLayout is "list" or "cards"; empty is read as "list".
+	ThemeColor    string `gorm:"size:16" json:"theme_color"`
+	HomeLayout    string `gorm:"size:16" json:"home_layout"`
+	IcpNo         string `gorm:"size:128" json:"icp_no"`
+	FriendLinks   string `gorm:"type:text" json:"friend_links"`
+	ImgHostMode   string `gorm:"size:16;default:'local'" json:"img_host_mode"`
+	ImgHostToken  string `gorm:"type:text" json:"img_host_token"`
+	AllowRegister bool   `gorm:"default:false" json:"allow_register"`
 	// PageSize is the number of posts per page on the public list page.
 	// Admin-configurable (5/10/20/30, default 10). The server — not the
 	// client — decides the page size so that ?page=N means the same thing for

@@ -73,6 +73,12 @@ func inheritSiteConfigBranding(in map[string]any, cur models.SiteConfig, cfg *mo
 	if _, ok := in["footer_text"]; !ok {
 		cfg.FooterText = cur.FooterText
 	}
+	if _, ok := in["theme_color"]; !ok {
+		cfg.ThemeColor = cur.ThemeColor
+	}
+	if _, ok := in["home_layout"]; !ok {
+		cfg.HomeLayout = cur.HomeLayout
+	}
 	if _, ok := in["icp_no"]; !ok {
 		cfg.IcpNo = cur.IcpNo
 	}

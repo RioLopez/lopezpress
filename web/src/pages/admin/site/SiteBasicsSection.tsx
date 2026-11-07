@@ -93,10 +93,6 @@ export function SiteBasicsSection({ cfg, set, uploading, onUpload, links, onLink
           />
         </div>
         <div class="settings-field">
-          <label>{t('site.footer')}</label>
-          <textarea value={cfg.footer_text} onInput={(e) => set('footer_text', (e.target as HTMLInputElement).value)} />
-        </div>
-        <div class="settings-field">
           <label>{t('site.icp')}</label>
           <input value={cfg.icp_no} onInput={(e) => set('icp_no', (e.target as HTMLInputElement).value)} />
         </div>

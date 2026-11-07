@@ -34,8 +34,13 @@ func GetSiteConfig(w http.ResponseWriter, r *http.Request) {
 		"site_url":         cfg.SiteURL,
 		"site_description": cfg.SiteDescription,
 		"footer_text":      cfg.FooterText,
-		"icp_no":           cfg.IcpNo,
-		"friend_links":     cfg.FriendLinks,
+		// Appearance. Both are presentation-only and safe to publish: the
+		// colour is a hex literal the CSS layer applies, and the layout picks
+		// between two rendering modes.
+		"theme_color":  cfg.ThemeColor,
+		"home_layout":  cfg.HomeLayout,
+		"icp_no":       cfg.IcpNo,
+		"friend_links": cfg.FriendLinks,
 		// The public list needs the server-decided page size so it
 		// can render ?page=N without ever sending `size` itself.
 		"page_size": cfg.PageSize,

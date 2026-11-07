@@ -26,6 +26,7 @@ func (s *Service) GetSiteConfig(ctx context.Context, admin bool) (models.SiteCon
 			cfg = models.SiteConfig{
 				ID: 1, SiteName: "LopezPress", SiteTitle: "LopezPress",
 				ImgHostMode: "local", AllowRegister: false, BackupKeep: 7,
+				ThemeColor: "#b8492c", HomeLayout: "list",
 			}
 			if err2 := s.db.WithContext(ctx).Create(&cfg).Error; err2 != nil {
 				return cfg, newErr(http.StatusInternalServerError, "failed to init site config")
@@ -52,15 +53,8 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	if err := s.db.WithContext(ctx).Where("id = ?", 1).First(&existing).Error; err != nil {
 		return models.SiteConfig{}, newErr(http.StatusInternalServerError, "failed to load site config")
 	}
-	existing.SiteName = in.SiteName
-	existing.SiteTitle = in.SiteTitle
-	existing.SiteLogo = in.SiteLogo
-	existing.SiteFavicon = in.SiteFavicon
-	existing.SiteURL = in.SiteURL
-	existing.SiteDescription = in.SiteDescription
-	existing.FooterText = in.FooterText
-	existing.IcpNo = in.IcpNo
-	existing.FriendLinks = in.FriendLinks
+	applySiteIdentity(&existing, in)
+	applyAppearancePolicy(&existing, in)
 	existing.ImgHostMode = in.ImgHostMode
 	existing.ImgHostToken = in.ImgHostToken
 	existing.AllowRegister = in.AllowRegister
@@ -97,6 +91,21 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	s.invalidatePublicRead()
 	s.audit(ctx, models.User{}, "update_site_config", "site_config", "")
 	return existing, nil
+}
+
+// applySiteIdentity merges the name/branding/copy fields. They all share one
+// trait: an identical field-by-field copy, so keeping the list here makes a
+// newly added identity field impossible to forget in the save path.
+func applySiteIdentity(dst *models.SiteConfig, in models.SiteConfig) {
+	dst.SiteName = in.SiteName
+	dst.SiteTitle = in.SiteTitle
+	dst.SiteLogo = in.SiteLogo
+	dst.SiteFavicon = in.SiteFavicon
+	dst.SiteURL = in.SiteURL
+	dst.SiteDescription = in.SiteDescription
+	dst.FooterText = in.FooterText
+	dst.IcpNo = in.IcpNo
+	dst.FriendLinks = in.FriendLinks
 }
 
 // saveSiteBrandingTx records the two branding slots as ledger edges. Split out
@@ -167,6 +176,8 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		SiteURL:         cfgStr(m, "site_url"),
 		SiteDescription: cfgStr(m, "site_description"),
 		FooterText:      cfgStr(m, "footer_text"),
+		ThemeColor:      cfgStr(m, "theme_color"),
+		HomeLayout:      cfgStr(m, "home_layout"),
 		IcpNo:           cfgStr(m, "icp_no"),
 		FriendLinks:     cfgStr(m, "friend_links"),
 		ImgHostMode:     mode,
@@ -243,55 +254,6 @@ func cfgInt64(m map[string]any, k string) int64 {
 	return 0
 }
 
-// maxLoginIdentifierLen bounds the identifier written to login_logs. The
-// column declares size:128 but SQLite does not enforce it, so without this
-// clamp a login attempt carrying a multi-megabyte "email" field stores the
-// whole string: R3-05 measured two such requests growing the database by
-// 53 MB and leaving a 26,214,407-byte row that made every login-history
-// query pull it back.
-const maxLoginIdentifierLen = 254
-
-// clampIdentifier trims an identifier to the log limit. Kept as a helper so
-// the login path and any future caller share one bound.
-func clampIdentifier(s string) string {
-	if len(s) <= maxLoginIdentifierLen {
-		return s
-	}
-	return s[:maxLoginIdentifierLen]
-}
-
-func (s *Service) RecordLogin(ctx context.Context, userID, identifier, ip, ua string, success bool) {
-	log := models.LoginLog{
-		UserID: userID, Identifier: clampIdentifier(identifier), IP: clampIdentifier(ip), UA: clampIdentifier(ua), Success: success,
-	}
-	if err := s.db.WithContext(ctx).Create(&log).Error; err != nil {
-		_ = err // non-fatal
-	}
-}
-
-// ListActions returns the most recent action_log rows (optionally filtered
-// by an actor). Admin endpoint — the route table enforces the role (P4).
-func (s *Service) ListActions(ctx context.Context, actorID string, limit int) ([]models.ActionLog, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	query := s.db.WithContext(ctx).Model(&models.ActionLog{})
-	if actorID != "" {
-		query = query.Where("actor_id = ?", actorID)
-	}
-	var out []models.ActionLog
-	if err := query.Order("created_at DESC, id DESC").Limit(limit).Find(&out).Error; err != nil {
-		return nil, newErr(http.StatusInternalServerError, "failed to load actions")
-	}
-	if out == nil {
-		out = []models.ActionLog{}
-	}
-	return out, nil
-}
-
 // --- user management (admin) ---
 
 // CreateUserInput is the decoded payload for POST /api/users.
@@ -344,5 +306,5 @@ func validateSiteConfig(in models.SiteConfig) error {
 	if err := validateBrandingURL(in.SiteFavicon, "site favicon"); err != nil {
 		return err
 	}
-	return nil
+	return validateAppearance(in)
 }

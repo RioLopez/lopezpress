@@ -157,9 +157,9 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | POST | `/api/users/{id}/reset-password` | admin | 重置密码（`canManageUser` 守卫）。重置后 bump 目标 `token_version`，其所有旧会话立即失效 |
 | DELETE | `/api/users/{id}` | admin | 删除 |
 | GET | `/api/users/{id}/logins` | admin | 该用户登录记录。目标为 root 时仅 root 可读（403） |
-| GET | `/api/site-config` | 公开 | 公开配置（品牌、`page_size`、`public_read`） |
+| GET | `/api/site-config` | 公开 | 公开配置（品牌、`footer_text`、`theme_color`、`home_layout`、`page_size`、`public_read`） |
 | GET | `/api/admin/site-config` | admin | 全量配置。非 root 的 `smtp_pass`/`img_host_token` 一律返回空串 |
-| PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`（字段级授权）；`friend_links[].url` 必须是 http(s)，否则 400；`site_url` 必须是不带路径的**裸 origin**（`scheme://host[:port]`），带 path/query/fragment 一律 400——它是 `/feed` 与 `/sitemap.xml` 里绝对链接的前缀，带 `/admin` 这类路径会让每篇文章链接都变成 404 |
+| PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`（字段级授权）；`friend_links[].url` 必须是 http(s)，否则 400；`site_url` 必须是不带路径的**裸 origin**（`scheme://host[:port]`），带 path/query/fragment 一律 400——它是 `/feed` 与 `/sitemap.xml` 里绝对链接的前缀，带 `/admin` 这类路径会让每篇文章链接都变成 404；`theme_color` 只接受 `#rrggbb`（空串 = 恢复内置配色），`home_layout` 只接受 `list`/`cards` |
 | POST | `/api/admin/mail/test` | admin | 测试邮件 |
 | POST | `/api/backup` | **root** | 导出 JSON 备份（含 bcrypt 哈希，故仅 root） |
 | POST | `/api/backup/import` | **root** | 导入：先 `?dry_run=1` 预检，应用需载荷带 `confirm:"REPLACE-ALL-DATA"` |
