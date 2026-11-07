@@ -35,10 +35,10 @@ func (s *Service) mayManageAuthorOf(ctx context.Context, me models.User, authorI
 	if authorID == me.ID {
 		return true
 	}
-	if me.Role == models.RoleRoot {
+	if IsRoot(me) {
 		return true
 	}
-	if me.Role != models.RoleAdmin {
+	if !IsAdminOrRoot(me) {
 		return false
 	}
 	var author models.User
@@ -53,7 +53,7 @@ func (s *Service) mayManageAuthorOf(ctx context.Context, me models.User, authorI
 // mirrors mayManageAuthorOf in SQL so listing and acting cannot drift apart:
 // an admin sees their own deleted posts plus plain users', and nothing else.
 func (s *Service) trashScope(q *gorm.DB, me models.User) *gorm.DB {
-	if me.Role == models.RoleRoot {
+	if IsRoot(me) {
 		return q
 	}
 	plainUsers := s.db.Model(&models.User{}).Select("id").Where("role = ?", models.RoleUser)

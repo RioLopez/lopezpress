@@ -30,6 +30,7 @@ const NAV: NavItem[] = [
   { to: '/admin/banned', label: 'admin.banVaultTitle', group: 'nav.groupContent', rootOnly: true },
   { to: '/admin/media', label: 'media.title', group: 'nav.groupContent' },
   { to: '/admin/users', label: 'admin.usersTitle', group: 'nav.groupUsers' },
+  { to: '/admin/roles', label: 'admin.rolesTitle', group: 'nav.groupUsers' },
   { to: '/admin/site', label: 'site.title', group: 'nav.groupSystem' },
   { to: '/admin/backup', label: 'admin.backupTitle', group: 'nav.groupSystem' },
   { to: '/admin/audit', label: 'audit.title', group: 'nav.groupSystem' },

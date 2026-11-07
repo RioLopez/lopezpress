@@ -25,7 +25,7 @@ import (
 // reject   -> status "rejected", ReviewNote/ReviewedBy/ReviewedAt recorded.
 func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, in ReviewPostInput) (models.Post, error) {
 	// Only admins / root can act on the review queue.
-	if actor.Role != models.RoleAdmin && actor.Role != models.RoleRoot {
+	if !IsAdminOrRoot(actor) {
 		return models.Post{}, newErr(http.StatusForbidden, "only an admin or the root can review")
 	}
 	switch in.Action {
@@ -131,7 +131,7 @@ func (s *Service) ReviewPost(ctx context.Context, actor models.User, id string, 
 // out of scope. The post is retained (soft) with status "banned" and is
 // visible to root only.
 func (s *Service) BanPost(ctx context.Context, actor models.User, id string) (models.Post, error) {
-	if actor.Role != models.RoleRoot {
+	if !IsRoot(actor) {
 		return models.Post{}, newErr(http.StatusForbidden, "only the root can ban a post")
 	}
 	var post models.Post
@@ -181,7 +181,7 @@ func (s *Service) BanPost(ctx context.Context, actor models.User, id string) (mo
 // it re-enters the normal review flow, and the note is preserved so the
 // author knows what to fix.
 func (s *Service) SendBackPost(ctx context.Context, actor models.User, id, note string) (models.Post, error) {
-	if actor.Role != models.RoleRoot {
+	if !IsRoot(actor) {
 		return models.Post{}, newErr(http.StatusForbidden, "only the root can send a post back")
 	}
 	var post models.Post
@@ -230,7 +230,7 @@ func (s *Service) SendBackPost(ctx context.Context, actor models.User, id, note 
 // ListBanned returns every post currently in the banned vault (status
 // "banned"), root-only. Author + relations are preloaded for the vault UI.
 func (s *Service) ListBanned(ctx context.Context, actor models.User) ([]models.Post, error) {
-	if actor.Role != models.RoleRoot {
+	if !IsRoot(actor) {
 		return nil, newErr(http.StatusForbidden, "only the root can view the banned vault")
 	}
 	var posts []models.Post
@@ -250,13 +250,13 @@ func (s *Service) ListBanned(ctx context.Context, actor models.User) ([]models.P
 // reviewer may act on. For root, all pending posts; for a plain admin, only
 // pending posts authored by plain users.
 func (s *Service) ListPending(ctx context.Context, actor models.User) ([]models.Post, error) {
-	if actor.Role != models.RoleAdmin && actor.Role != models.RoleRoot {
+	if !IsAdminOrRoot(actor) {
 		return nil, newErr(http.StatusForbidden, "only an admin or the root can list the review queue")
 	}
 	query := s.db.WithContext(ctx).Model(&models.Post{}).
 		Where("posts.status = ?", models.PostPending).
 		Preload("Author").Preload("Category").Preload("Tags")
-	if actor.Role == models.RoleAdmin {
+	if !IsRoot(actor) {
 		// Admins see only pending posts by plain users (their own and other
 		// admins' posts require root review and are not in an admin's queue).
 		query = query.Joins("JOIN users AS author ON author.id = posts.author_id").
@@ -276,7 +276,7 @@ func (s *Service) ListPending(ctx context.Context, actor models.User) ([]models.
 // DeleteBannedPermanently purges a banned post from the vault (hard delete,
 // root-only). This is the final "删除" disposition from the banned vault.
 func (s *Service) DeleteBannedPermanently(ctx context.Context, actor models.User, id string) error {
-	if actor.Role != models.RoleRoot {
+	if !IsRoot(actor) {
 		return newErr(http.StatusForbidden, "only the root can permanently delete a banned post")
 	}
 	var post models.Post

@@ -28,6 +28,7 @@ import { AdminCategoriesPage } from './pages/AdminCategoriesPage'
 import { AdminPostsPage } from './pages/AdminPostsPage'
 import { AdminTagsPage } from './pages/AdminTagsPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
+import { AdminRolesPage } from './pages/AdminRolesPage'
 import { AdminBackupPage } from './pages/AdminBackupPage'
 import { AdminMediaPage } from './pages/AdminMediaPage'
 import { AdminTrashPage } from './pages/AdminTrashPage'
@@ -173,6 +174,10 @@ function AppView() {
       <Route
         path="/admin/users"
         component={() => <AdminGuarded><AdminUsersPage /></AdminGuarded>}
+      />
+      <Route
+        path="/admin/roles"
+        component={() => <AdminGuarded><AdminRolesPage /></AdminGuarded>}
       />
       <Route
         path="/admin/site"

@@ -76,6 +76,10 @@ export type AdminTexts = {
     confirmDisable: string
     confirmEnable: string
     emptyUsers: string
+    searchUsers: string
+    allRoles: string
+    allStatuses: string
+    noMatchingUsers: string
     selectAll: string
     selectedCount: string
     batchEnable: string
@@ -145,6 +149,26 @@ export type AdminTexts = {
     newRole: string
     roleAdmin: string
     roleUser: string
+    rolesTitle: string
+    rolesSub: string
+    roleRootDesc: string
+    roleAdminDesc: string
+    roleUserDesc: string
+    roleMembers: string
+    noRoleMembers: string
+    roleMatrixTitle: string
+    roleMatrixNote: string
+    roleMatrixCapability: string
+    capPublish: string
+    capReview: string
+    capEditOthers: string
+    capEditPeers: string
+    capTrash: string
+    capManageUsers: string
+    capManageAdmins: string
+    capBanVault: string
+    capRootSite: string
+    capImportBackup: string
     resetPwd: string
     resetPwdTitle: string
     resetPwdConfirm: string
@@ -324,6 +348,10 @@ export const adminZh: AdminTexts = {
     confirmDisable: '确定禁用用户「{t}」吗？禁用后该账号无法登录。',
     confirmEnable: '确定启用用户「{t}」吗？',
     emptyUsers: '暂无用户。',
+    searchUsers: '搜索用户名、邮箱或昵称',
+    allRoles: '全部角色',
+    allStatuses: '全部状态',
+    noMatchingUsers: '没有匹配的用户。',
     selectAll: '全选',
     selectedCount: '已选 {n} 个用户',
     batchEnable: '批量启用',
@@ -390,6 +418,26 @@ export const adminZh: AdminTexts = {
     newRole: '角色',
     roleAdmin: '管理员',
     roleUser: '普通用户',
+    rolesTitle: '角色管理',
+    rolesSub: '三个固定角色的权限边界与成员分布。',
+    roleRootDesc: '唯一超级管理员，拥有全部权限；不可通过 API 创建或删除。',
+    roleAdminDesc: '站点管理员，负责内容审核、用户管理与站点配置；不能管理 root 或其他 admin。',
+    roleUserDesc: '普通作者，默认只能发布私密文章，公开文章需审核。',
+    roleMembers: '成员',
+    noRoleMembers: '暂无成员。',
+    roleMatrixTitle: '权限矩阵',
+    roleMatrixNote: '所有角色的共同能力：阅读公开文章、撰写私密文章、编辑/删除自己的文章。',
+    roleMatrixCapability: '能力',
+    capPublish: '直接发布文章（免审核）',
+    capReview: '审核他人文章',
+    capEditOthers: '编辑/删除普通作者的文章',
+    capEditPeers: '编辑/删除 admin 或 root 的文章',
+    capTrash: '恢复/清空回收站',
+    capManageUsers: '管理普通用户',
+    capManageAdmins: '管理 admin 账号',
+    capBanVault: '查看封禁库',
+    capRootSite: '修改 root 专属站点项',
+    capImportBackup: '导入备份（覆盖全库）',
     resetPwd: '重置密码',
     resetPwdTitle: '重置密码',
     resetPwdConfirm: '确定将「{t}」的密码重置为新密码？',
@@ -565,6 +613,10 @@ export const adminEn: AdminTexts = {
     confirmDisable: 'Disable user "{t}"? They will not be able to sign in.',
     confirmEnable: 'Enable user "{t}"?',
     emptyUsers: 'No users.',
+    searchUsers: 'Search username, email, or display name',
+    allRoles: 'All roles',
+    allStatuses: 'All statuses',
+    noMatchingUsers: 'No matching users.',
     selectAll: 'Select all',
     selectedCount: '{n} user(s) selected',
     batchEnable: 'Enable selected',
@@ -631,6 +683,26 @@ export const adminEn: AdminTexts = {
     newRole: 'Role',
     roleAdmin: 'Admin',
     roleUser: 'User',
+    rolesTitle: 'Roles',
+    rolesSub: 'Boundaries and membership for the three fixed roles.',
+    roleRootDesc: 'The single super-admin. Full authority; cannot be created or deleted through the API.',
+    roleAdminDesc: 'Site administrator: content review, user management, and site settings. Cannot manage root or other admins.',
+    roleUserDesc: 'Regular author. Publishing requires review; private posts do not.',
+    roleMembers: 'Members',
+    noRoleMembers: 'No members.',
+    roleMatrixTitle: 'Permission matrix',
+    roleMatrixNote: 'Shared by every role: read public posts, write private posts, and edit/delete your own posts.',
+    roleMatrixCapability: 'Capability',
+    capPublish: 'Publish without review',
+    capReview: 'Review others\' posts',
+    capEditOthers: 'Edit/delete a regular author\'s posts',
+    capEditPeers: 'Edit/delete an admin\'s or root\'s posts',
+    capTrash: 'Restore/purge trash',
+    capManageUsers: 'Manage regular users',
+    capManageAdmins: 'Manage admin accounts',
+    capBanVault: 'View the ban vault',
+    capRootSite: 'Change root-only site settings',
+    capImportBackup: 'Import a backup (replaces all data)',
     resetPwd: 'Reset password',
     resetPwdTitle: 'Reset password',
     resetPwdConfirm: 'Reset the password for "{t}" to the new value?',

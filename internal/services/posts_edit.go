@@ -31,28 +31,16 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// pulled into the vault the author must not be able to keep editing it
 	// (nor mutate it field-by-field through this endpoint). Root keeps full
 	// editorial access so corrections remain possible.
-	if post.Status == models.PostBanned && me.Role != models.RoleRoot {
+	if post.Status == models.PostBanned && !IsRoot(me) {
 		return models.Post{}, newErr(http.StatusForbidden, "banned posts can only be edited by the root")
 	}
 	// Edit permission: the author, or an admin/root who may manage the target.
 	// A plain admin may NOT edit another admin's or root's post. A plain user
 	// may only edit their own posts — anyone else (including another plain
-	// user) is forbidden.
-	if post.AuthorID != me.ID {
-		if me.Role == models.RoleRoot {
-			// root may edit anyone's content.
-		} else if me.Role == models.RoleAdmin {
-			var author models.User
-			if err := s.db.WithContext(ctx).Where("id = ?", post.AuthorID).First(&author).Error; err != nil {
-				return models.Post{}, newErr(http.StatusForbidden, "you can only edit your own posts")
-			}
-			if author.Role != models.RoleUser {
-				return models.Post{}, newErr(http.StatusForbidden, "you can only edit your own posts")
-			}
-		} else {
-			// A plain user may not edit anyone else's post.
-			return models.Post{}, newErr(http.StatusForbidden, "you can only edit your own posts")
-		}
+	// user) is forbidden. Same predicate as delete/restore/purge, so it reads
+	// the shared helper rather than restating the hierarchy with a lookup.
+	if !s.mayManageAuthorOf(ctx, me, post.AuthorID) {
+		return models.Post{}, newErr(http.StatusForbidden, "you can only edit your own posts")
 	}
 
 	// R5-05: a reviewer is not an author.
@@ -75,7 +63,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// author's URL to different content. Leaving it out of the first version of
 	// this check was an omission, not a decision — a URL is as much the
 	// author's as the text is.
-	if post.AuthorID != me.ID && me.Role == models.RoleAdmin {
+	if post.AuthorID != me.ID && IsAdmin(me) {
 		if in.Title != "" || in.Body != "" || in.Cover != nil || in.Slug != "" {
 			return models.Post{}, newErr(http.StatusForbidden,
 				"only the author or the root can change a post's title, body, cover or slug; "+
@@ -290,22 +278,11 @@ func (s *Service) DeletePost(ctx context.Context, me models.User, id string) err
 	}
 	// Delete permission: the author, or an admin/root who may manage the target.
 	// A plain admin may NOT delete another admin's or root's post. A plain user
-	// may only delete their own posts.
-	if post.AuthorID != me.ID {
-		if me.Role == models.RoleRoot {
-			// root may delete anyone's content.
-		} else if me.Role == models.RoleAdmin {
-			var author models.User
-			if err := s.db.WithContext(ctx).Where("id = ?", post.AuthorID).First(&author).Error; err != nil {
-				return newErr(http.StatusForbidden, "you can only delete your own posts")
-			}
-			if author.Role != models.RoleUser {
-				return newErr(http.StatusForbidden, "you can only delete your own posts")
-			}
-		} else {
-			// A plain user may not delete anyone else's post.
-			return newErr(http.StatusForbidden, "you can only delete your own posts")
-		}
+	// may only delete their own posts. This is the same predicate the trash uses
+	// for restore/purge, so it reads mayManageAuthorOf instead of restating the
+	// hierarchy with a second author lookup.
+	if !s.mayManageAuthorOf(ctx, me, post.AuthorID) {
+		return newErr(http.StatusForbidden, "you can only delete your own posts")
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// R4-11: the soft delete is the claim, so it carries the state

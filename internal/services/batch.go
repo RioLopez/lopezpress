@@ -55,7 +55,7 @@ func (s *Service) BatchUpdatePosts(ctx context.Context, actor models.User, in Ba
 	}
 	// Publishing is root-only in the single-item path too; failing the whole
 	// batch up front is clearer than returning N identical skips.
-	if in.Action == BatchPublish && actor.Role != models.RoleRoot {
+	if in.Action == BatchPublish && !IsRoot(actor) {
 		return BatchPostResult{}, newErr(http.StatusForbidden, "only the root can publish posts")
 	}
 

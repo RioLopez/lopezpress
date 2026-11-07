@@ -41,7 +41,7 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	// Resolve the initial status by role.
 	var status string
 	switch {
-	case user.Role == models.RoleRoot:
+	case IsRoot(user):
 		// Root publishes or keeps private as requested.
 		switch in.Status {
 		case models.PostPrivate:

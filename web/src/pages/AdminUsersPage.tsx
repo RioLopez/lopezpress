@@ -2,22 +2,33 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { passwordProblem } from '../core/password'
-import { listUsers, setUserDisabled, updateUser, createUser, resetPassword, deleteUser, listUserLogins, batchSetUserDisabled, errMessage } from '../core/api'
+import { listUsers, setUserDisabled, updateUser, deleteUser, listUserLogins, batchSetUserDisabled, errMessage } from '../core/api'
 import type { LoginLog, UserWithDisabled } from '../core/types'
-import { fmtDate } from '../core/format'
-import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
+import { Pagination } from '../ui/Pagination'
 import { useQuery } from '../core/useQuery'
 import { isRoot, isAdminOnly } from '../core/roles'
+import { CreateUserModal } from './admin/users/CreateUserModal'
+import { ResetPasswordModal } from './admin/users/ResetPasswordModal'
+import { LoginHistoryModal } from './admin/users/LoginHistoryModal'
+import { UserFilters } from './admin/users/UserFilters'
+import { UserTable } from './admin/users/UserTable'
 
 export function AdminUsersPage() {
   const { user } = useAuth()
   const { pushToast, confirmDialog } = useApp()
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchBusy, setBatchBusy] = useState(false)
+
+  // List controls: search + role/status filters + page size. The API returns
+  // every account, so filtering and paging happen here — no contract change.
+  const [query, setQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(10)
 
   // Modals / drawer state.
   const [createOpen, setCreateOpen] = useState(false)
@@ -43,9 +54,28 @@ export function AdminUsersPage() {
     })
   }, [data])
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return users.filter((u) => {
+      if (roleFilter && u.role !== roleFilter) return false
+      if (statusFilter === 'active' && u.disabled) return false
+      if (statusFilter === 'disabled' && !u.disabled) return false
+      if (!q) return true
+      return (
+        u.username.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.display_name || '').toLowerCase().includes(q)
+      )
+    })
+  }, [users, query, roleFilter, statusFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / size))
+  const currentPage = Math.min(page, totalPages)
+  const pageRows = filtered.slice((currentPage - 1) * size, currentPage * size)
+
   const allSelected = useMemo(
-    () => (data?.length ?? 0) > 0 && (data ?? []).every((u) => selected.has(u.id)),
-    [data, selected],
+    () => filtered.length > 0 && filtered.every((u) => selected.has(u.id)),
+    [filtered, selected],
   )
 
   const toggleSelect = (id: string, on: boolean) => {
@@ -58,7 +88,7 @@ export function AdminUsersPage() {
   }
 
   const toggleSelectAll = (on: boolean) => {
-    setSelected(on ? new Set(users.map((u) => u.id)) : new Set())
+    setSelected(on ? new Set(filtered.map((u) => u.id)) : new Set())
   }
 
   const me = user!
@@ -176,6 +206,29 @@ export function AdminUsersPage() {
         </button>
       </div>
 
+      <UserFilters
+        query={query}
+        roleFilter={roleFilter}
+        statusFilter={statusFilter}
+        size={size}
+        onQuery={(v) => {
+          setQuery(v)
+          setPage(1)
+        }}
+        onRole={(v) => {
+          setRoleFilter(v)
+          setPage(1)
+        }}
+        onStatus={(v) => {
+          setStatusFilter(v)
+          setPage(1)
+        }}
+        onSize={(v) => {
+          setSize(v)
+          setPage(1)
+        }}
+      />
+
       {selectedCount > 0 && (
         <div class="admin-batchbar">
           <span class="admin-batchbar-count">
@@ -199,106 +252,25 @@ export function AdminUsersPage() {
         </div>
       )}
 
-      <TableState loading={loading} isEmpty={users.length === 0} loadingText={t('common.loading')} emptyText={t('admin.emptyUsers')}>
-        <div class="table-scroll">
-        <table class="admin-table users-table">
-          <thead>
-            <tr>
-              <th class="col-select">
-                <input
-                  type="checkbox"
-                  aria-label={t('admin.selectAll')}
-                  title={t('admin.selectAll')}
-                  checked={allSelected}
-                  onChange={(e) => toggleSelectAll((e.target as HTMLInputElement).checked)}
-                />
-              </th>
-              <th>{t('admin.username')}</th>
-              <th>{t('admin.role')}</th>
-              <th>{t('admin.status')}</th>
-              <th>{t('admin.lastLoginIp')}</th>
-              <th>{t('admin.lastLoginAt')}</th>
-              <th class="actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} class={selected.has(u.id) ? 'row-selected' : undefined}>
-                <td class="col-select">
-                  <input
-                    type="checkbox"
-                    aria-label={u.username}
-                    checked={selected.has(u.id)}
-                    onChange={(e) => toggleSelect(u.id, (e.target as HTMLInputElement).checked)}
-                  />
-                </td>
-                <td>
-                  <div class="admin-user-cell">
-                    <span class="admin-user-name">
-                      {u.display_name || u.username}
-                      {u.display_name && <span class="muted"> ({u.username})</span>}
-                    </span>
-                    <span class="muted">{u.email}</span>
-                    <span class="muted">{t('list.author')}: {fmtDate(u.created_at, locale)}</span>
-                  </div>
-                </td>
-                <td>
-                  {isRoot(u.role) ? (
-                    <span class="badge-root">root</span>
-                  ) : (
-                    <select
-                      class="role-select"
-                      value={u.role}
-                      disabled={!canManage(u) || busyId === u.id}
-                      onChange={(e) => changeRole(u, (e.target as HTMLSelectElement).value)}
-                    >
-                      <option value="user">{t('admin.roleUser')}</option>
-                      {isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
-                      {isAdminOnly(u.role) && !isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
-                    </select>
-                  )}
-                </td>
-                <td>
-                  <span class={`post-status post-status-${u.disabled ? 'draft' : 'published'}`}>
-                    {u.disabled ? t('admin.disabled') : t('admin.active')}
-                  </span>
-                </td>
-                <td class="mono-cell">{u.last_login_ip || '—'}</td>
-                <td class="muted">{fmtDate(u.last_login_at, locale)}</td>
-                <td class="actions">
-                  {/* The root account's login trail is root-only on the
-                      server: an admin could otherwise profile where the
-                      super-admin signs in from. Hide the entry instead of
-                      offering a button that 403s. */}
-                  {(isRoot(user?.role) || u.role !== 'root') && (
-                    <button class="btn btn-sm btn-ghost" disabled={busyId === u.id} onClick={() => openLogs(u)}>
-                      {t('admin.loginHistory')}
-                    </button>
-                  )}
-                  <button class="btn btn-sm btn-ghost" disabled={busyId === u.id} onClick={() => setResetTarget(u)}>
-                    {t('admin.resetPwd')}
-                  </button>
-                  <button
-                    class={`btn btn-sm ${u.disabled ? 'btn-primary' : 'btn-danger'}`}
-                    disabled={!canManage(u) || busyId === u.id}
-                    onClick={() => toggle(u, !u.disabled)}
-                  >
-                    {u.disabled ? t('admin.enable') : t('admin.disable')}
-                  </button>
-                  <button
-                    class="btn btn-sm btn-danger"
-                    disabled={!canManage(u) || busyId === u.id}
-                    onClick={() => doDelete(u)}
-                  >
-                    {t('admin.deleteUser')}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
+      <TableState loading={loading} isEmpty={filtered.length === 0} loadingText={t('common.loading')} emptyText={users.length === 0 ? t('admin.emptyUsers') : t('admin.noMatchingUsers')}>
+        <UserTable
+          rows={pageRows}
+          selected={selected}
+          allSelected={allSelected}
+          busyId={busyId}
+          viewerIsRoot={isRootUser}
+          canManage={canManage}
+          onSelectAll={toggleSelectAll}
+          onSelect={toggleSelect}
+          onChangeRole={changeRole}
+          onToggle={toggle}
+          onDelete={doDelete}
+          onLogs={openLogs}
+          onReset={setResetTarget}
+        />
       </TableState>
+
+      <Pagination page={currentPage} totalPages={totalPages} onPage={setPage} />
 
       {createOpen && (
         <CreateUserModal
@@ -327,199 +299,5 @@ export function AdminUsersPage() {
         />
       )}
     </div>
-  )
-}
-
-function CreateUserModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void
-  onCreated: () => void
-}) {
-  const { pushToast } = useApp()
-  const { t } = useI18n()
-  const { user } = useAuth()
-  const isRootUser = isRoot(user?.role)
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState('user')
-  const [busy, setBusy] = useState(false)
-
-  const submit = async () => {
-    if (!username.trim() || !email.trim() || !password) {
-      pushToast('error', t('auth.empty'))
-      return
-    }
-    const problem = passwordProblem(password)
-    if (problem) {
-      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
-      return
-    }
-    setBusy(true)
-    try {
-      await createUser({ username: username.trim(), email: email.trim(), password, role })
-      pushToast('success', t('admin.saved'))
-      onCreated()
-    } catch (e) {
-      pushToast('error', errMessage(e, t('admin.failed')))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Modal
-      title={t('admin.newUser')}
-      onClose={onClose}
-      footer={
-        <>
-          <button class="btn btn-ghost" onClick={onClose}>{t('editor.cancel')}</button>
-          <button class="btn btn-primary" disabled={busy} onClick={submit}>
-            {busy ? '…' : t('editor.save')}
-          </button>
-        </>
-      }
-    >
-      <div class="settings-field">
-        <label>{t('admin.newUsername')}</label>
-        <input value={username} onInput={(e) => setUsername((e.target as HTMLInputElement).value)} />
-      </div>
-      <div class="settings-field">
-        <label>{t('admin.newEmail')}</label>
-        <input type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
-      </div>
-      <div class="settings-field">
-        <label>{t('admin.newPassword')}</label>
-        <input
-          type="text"
-          value={password}
-          onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-        />
-      </div>
-      <div class="settings-field">
-        <label>{t('admin.newRole')}</label>
-        <select value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
-          <option value="user">{t('admin.roleUser')}</option>
-          {/* Only root may provision admins; admins create plain users. */}
-          {isRootUser && <option value="admin">{t('admin.roleAdmin')}</option>}
-        </select>
-      </div>
-    </Modal>
-  )
-}
-
-function ResetPasswordModal({
-  user,
-  onClose,
-  onDone,
-}: {
-  user: UserWithDisabled
-  onClose: () => void
-  onDone: () => void
-}) {
-  const { pushToast, confirmDialog } = useApp()
-  const { t } = useI18n()
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const submit = async () => {
-    const problem = passwordProblem(password)
-    if (problem) {
-      pushToast('error', t(problem === 'long' ? 'auth.passwordTooLong' : 'auth.passwordTooShort'))
-      return
-    }
-    if (!(await confirmDialog(t('admin.resetPwdConfirm', { t: user.username })))) return
-    setBusy(true)
-    try {
-      await resetPassword(user.id, password)
-      pushToast('success', t('admin.saved'))
-      onDone()
-    } catch (e) {
-      pushToast('error', errMessage(e, t('admin.failed')))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Modal
-      title={`${t('admin.resetPwdTitle')} — ${user.username}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button class="btn btn-ghost" onClick={onClose}>{t('editor.cancel')}</button>
-          <button class="btn btn-primary" disabled={busy} onClick={submit}>
-            {busy ? '…' : t('editor.save')}
-          </button>
-        </>
-      }
-    >
-      <div class="settings-field">
-        <label>{t('admin.newPassword')}</label>
-        <input
-          type="text"
-          placeholder={t('admin.newPwdPlaceholder')}
-          value={password}
-          onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
-      </div>
-    </Modal>
-  )
-}
-
-function LoginHistoryModal({
-  user,
-  logs,
-  loading,
-  onClose,
-}: {
-  user: UserWithDisabled
-  logs: LoginLog[]
-  loading: boolean
-  onClose: () => void
-}) {
-  const { t, locale } = useI18n()
-
-  return (
-    <Modal
-      wide
-      title={`${t('admin.loginHistory')} — ${user.username}`}
-      onClose={onClose}
-      footer={<button class="btn btn-ghost" onClick={onClose}>{t('editor.cancel')}</button>}
-    >
-      {loading ? (
-        <p class="muted">{t('common.loading')}</p>
-      ) : logs.length === 0 ? (
-        <p class="muted">{t('admin.noLogs')}</p>
-      ) : (
-        <table class="admin-table login-log-table">
-          <thead>
-            <tr>
-              <th>{t('admin.loginTime')}</th>
-              <th>{t('admin.loginIp')}</th>
-              <th>{t('admin.loginOk')}</th>
-              <th>UA</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((l) => (
-              <tr key={l.id}>
-                <td class="muted">{fmtDate(l.created_at, locale)}</td>
-                <td class="mono-cell">{l.ip}</td>
-                <td>
-                  <span class={`post-status post-status-${l.success ? 'published' : 'draft'}`}>
-                    {l.success ? t('admin.loginOk') : t('admin.loginFail')}
-                  </span>
-                </td>
-                <td class="muted ua-cell" title={l.ua}>{l.ua}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Modal>
   )
 }

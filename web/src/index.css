@@ -133,6 +133,10 @@ html, body {
 .badge-root {
   font-size: 10px; padding: 2px 6px; background: var(--danger); color: #fff;
 }
+.badge-user {
+  font-size: 10px; padding: 2px 6px; background: var(--surface-2); color: var(--text-muted);
+  border: 1px solid var(--border);
+}
 
 .main { flex: 1; padding: 32px 20px; max-width: 840px; width: 100%; margin: 0 auto; }
 .main--wide { max-width: 1120px; }
@@ -1177,6 +1181,17 @@ tr.row-selected { transition: background .12s; }
    fill is a theme variable, so dark mode follows automatically. */
 .dash-block { margin: 22px 0 6px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .dash-block h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+/* Roles page: capability matrix + member chips. */
+.role-matrix td:not(:first-child) { text-align: center; width: 88px; }
+.role-matrix-yes { color: var(--success); font-weight: 700; }
+.role-matrix-no { color: var(--text-muted); }
+.role-members-block { margin-top: 18px; }
+.role-members-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.role-member-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.role-member {
+  font-size: 12px; padding: 3px 9px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
 .dash-chart-svg { display: block; width: 100%; height: 110px; overflow: visible; }
 .dash-bar { fill: var(--primary); opacity: .85; transition: opacity .15s var(--ease); }
 .dash-bar:hover { opacity: 1; }

@@ -61,7 +61,7 @@ func (s *Service) ListUsers(ctx context.Context, actor models.User) ([]UserWithD
 			LastLoginAt: u.LastLoginAt,
 			CreatedAt:   u.CreatedAt,
 		}
-		if hideRootDetails && u.Role == models.RoleRoot {
+		if hideRootDetails && IsRoot(u) {
 			row.Email = ""
 			row.LastLoginIP = ""
 		}
@@ -79,16 +79,11 @@ func (s *Service) SetUserDisabled(ctx context.Context, actor models.User, id str
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		return models.User{}, newErr(http.StatusNotFound, "user not found")
 	}
-	if id == actor.ID {
-		return models.User{}, newErr(http.StatusForbidden, "cannot disable your own account")
-	}
-	// The unique root account is never disableable.
-	if user.Role == models.RoleRoot {
-		return models.User{}, newErr(http.StatusForbidden, "the root account cannot be disabled")
-	}
-	// A plain admin cannot toggle an admin account.
-	if actor.Role == models.RoleAdmin && user.Role == models.RoleAdmin {
-		return models.User{}, newErr(http.StatusForbidden, "only the root can disable an admin")
+	// Self, the root, and admin-vs-admin are all canManageUser's rules; this
+	// status switch had restated them by hand, which is how one door can end up
+	// accepting an operation the other refuses.
+	if !canManageUser(actor, user) {
+		return models.User{}, newErr(http.StatusForbidden, "you do not have permission to change this account's status")
 	}
 	if user.Disabled == disabled {
 		return user, nil // no-op

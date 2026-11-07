@@ -36,7 +36,7 @@ func canSeePost(user models.User, post models.Post) bool {
 		// Banned vault: only root sees it. The author is excluded on purpose:
 		// a ban is a take-down, and showing the author their content back
 		// would defeat it.
-		return user.Role == models.RoleRoot
+		return IsRoot(user)
 	case models.PostPrivate, models.PostDraft, models.PostPending, models.PostRejected:
 		return post.AuthorID == user.ID || IsAdminOrRoot(user)
 	default:

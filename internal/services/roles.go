@@ -20,6 +20,9 @@ import (
 // IsRoot reports whether u is the single super-admin.
 func IsRoot(u models.User) bool { return u.Role == models.RoleRoot }
 
+// IsAdmin reports whether u is a plain admin (never the root).
+func IsAdmin(u models.User) bool { return u.Role == models.RoleAdmin }
+
 // IsAdminOrRoot reports whether u is an admin or the root.
 func IsAdminOrRoot(u models.User) bool {
 	return u.Role == models.RoleAdmin || u.Role == models.RoleRoot

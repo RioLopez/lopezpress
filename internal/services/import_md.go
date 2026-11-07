@@ -184,7 +184,7 @@ func (s *Service) ImportMarkdown(ctx context.Context, actor models.User, files [
 		// directly, everyone else lands in the review queue. This build has no
 		// draft state, so a "draft: true" front matter is simply ignored.
 		status := models.PostPending
-		if actor.Role == models.RoleRoot {
+		if IsRoot(actor) {
 			status = models.PostPublished
 		}
 

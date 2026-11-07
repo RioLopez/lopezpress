@@ -110,7 +110,7 @@ func (s *Service) RestoreRevision(ctx context.Context, user models.User, postID 
 // editing the body directly. So writes are author-or-root only, matching
 // UpdatePost, while reads stay open to an admin.
 func (s *Service) assertCanWriteContent(user models.User, post models.Post) error {
-	if post.AuthorID == user.ID || user.Role == models.RoleRoot {
+	if post.AuthorID == user.ID || IsRoot(user) {
 		return nil
 	}
 	return newErr(http.StatusForbidden,
@@ -138,7 +138,7 @@ func (s *Service) assertCanReadHistory(ctx context.Context, user models.User, po
 		return newErr(http.StatusNotFound, "post not found")
 	}
 	// Root is the recovery path and stays bounded only by visibility above.
-	if user.Role == models.RoleRoot {
+	if IsRoot(user) {
 		return nil
 	}
 	// A reviewer reads the history of a plain user's post — that is what

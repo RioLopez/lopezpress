@@ -51,7 +51,7 @@ func (s *Service) CreateUser(ctx context.Context, actor models.User, in CreateUs
 		role = models.RoleUser
 	case models.RoleAdmin:
 		// Only a root may elevate to admin.
-		if actor.Role != models.RoleRoot {
+		if !IsRoot(actor) {
 			return models.User{}, newErr(http.StatusForbidden, "only the root can create an admin")
 		}
 		role = models.RoleAdmin
@@ -141,27 +141,20 @@ func applyRoleChange(user *models.User, actor models.User, newRole string) error
 	if newRole != models.RoleAdmin && newRole != models.RoleUser {
 		return newErr(http.StatusBadRequest, "invalid role")
 	}
-	// Protect the unique root: no demotion, no retarget.
-	if user.Role == models.RoleRoot {
-		return newErr(http.StatusForbidden, "the root account cannot be demoted")
+	// A no-op must not require authority: the profile form re-sends the current
+	// role, so "save my name" would otherwise need rights to change one's own
+	// role just to leave it where it is.
+	if newRole == user.Role {
+		return nil
 	}
-	// Hierarchical privilege checks.
-	switch {
-	case newRole == models.RoleAdmin:
-		// Granting admin is a root-only power.
-		if actor.Role != models.RoleRoot {
-			return newErr(http.StatusForbidden, "only the root can promote to admin")
-		}
-	case actor.Role == models.RoleAdmin:
-		// A plain admin may manage plain users only — never an admin.
-		if user.Role == models.RoleAdmin {
-			return newErr(http.StatusForbidden, "admin cannot modify another admin")
-		}
+	// The hierarchy is canManageUser's: root is untouchable, an admin may only
+	// touch plain users, and nobody retargets themselves.
+	if !canManageUser(actor, *user) {
+		return newErr(http.StatusForbidden, "you do not have permission to change this user's role")
 	}
-	// Self-demotion guard: an admin demoting their own account below admin
-	// would break recovery; root is already protected above.
-	if user.ID == actor.ID && newRole != actor.Role {
-		return newErr(http.StatusForbidden, "cannot change your own role")
+	// The one rule canManageUser does not encode: granting admin is root-only.
+	if newRole == models.RoleAdmin && !IsRoot(actor) {
+		return newErr(http.StatusForbidden, "only the root can promote to admin")
 	}
 	user.Role = newRole
 	return nil
@@ -283,13 +276,12 @@ func (s *Service) DeleteUser(ctx context.Context, actor models.User, id string) 
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		return newErr(http.StatusNotFound, "user not found")
 	}
-	// The unique root account is undeletable.
-	if user.Role == models.RoleRoot {
-		return newErr(http.StatusForbidden, "the root account cannot be deleted")
-	}
-	// A plain admin cannot delete another admin (or root).
-	if user.Role == models.RoleAdmin && actor.Role != models.RoleRoot {
-		return newErr(http.StatusForbidden, "only the root can delete an admin")
+	// The hierarchy (root undeletable, admin only reachable by root) is exactly
+	// canManageUser's rule set. Restating it here is how the two doors drifted
+	// apart in the first place; this path now reads the same authority as
+	// update / disable / reset-password.
+	if !canManageUser(actor, user) {
+		return newErr(http.StatusForbidden, "you do not have permission to delete this account")
 	}
 	// Preserve the last-admin invariant for admin accounts.
 	if user.Role == models.RoleAdmin {

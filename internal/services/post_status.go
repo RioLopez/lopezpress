@@ -31,7 +31,7 @@ import (
 // this function only decides the resulting status.
 func resolveStatusChange(post *models.Post, me models.User, requested string, contentChanged bool) {
 	isAuthor := post.AuthorID == me.ID
-	isRoot := me.Role == models.RoleRoot
+	isRoot := IsRoot(me)
 
 	switch requested {
 	case models.PostPrivate:
@@ -46,7 +46,7 @@ func resolveStatusChange(post *models.Post, me models.User, requested string, co
 			// A withdrawn submission carries no verdict: keeping the old note
 			// would show a rejection reason on a post no longer under review.
 			post.ReviewNote = ""
-		case me.Role == models.RoleAdmin && post.Status == models.PostPublished:
+		case IsAdmin(me) && post.Status == models.PostPublished:
 			post.Status = models.PostPrivate
 		}
 

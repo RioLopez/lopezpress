@@ -91,11 +91,11 @@ func (s *Service) ListPostsPage(ctx context.Context, user models.User, q ListPos
 		// not visibility: a signed-in member sees their own unpublished work
 		// in their personal center without being an operator.
 		switch {
-		case user.Role == models.RoleRoot:
+		case IsRoot(user):
 			// root: the moderation view — every post, including the banned
 			// vault and every author's private posts. No status filter at all.
 			// (Banned rows are root-only, and root is who this branch is for.)
-		case user.Role == models.RoleAdmin:
+		case IsAdmin(user):
 			// admin: everything except the banned vault (root-only). Private
 			// posts are included: an admin reads them to handle reports, but
 			// cannot rewrite their words (see UpdatePost's R5-05 guard).

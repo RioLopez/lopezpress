@@ -24,7 +24,7 @@ func (s *Service) ListUserLogins(ctx context.Context, actor models.User, id stri
 	if err := s.db.WithContext(ctx).Select("id, role").Where("id = ?", id).First(&target).Error; err != nil {
 		return nil, newErr(http.StatusNotFound, "user not found")
 	}
-	if target.Role == models.RoleRoot && !IsRoot(actor) {
+	if IsRoot(target) && !IsRoot(actor) {
 		return nil, newErr(http.StatusForbidden, "only the root can view the root account's login history")
 	}
 	var logs []models.LoginLog
