@@ -223,6 +223,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 { "affected": 7, "skipped": [{ "id": "uuid3", "reason": "forbidden" }] }
 ```
 
+`publish` 的门槛与审核队列对齐（`services.canPublish`）：root 可发布任意文章；admin 只能发布普通用户的文章，admin/root 自己的文章仍为 root-only（越权条目记为 `skipped` 而非整批失败）。
+
 ### `POST /api/admin/import/markdown`
 
 `multipart/form-data`，字段 `files`（可多个）。限额：单文件 2 MB / 总计 24 MB / 最多 200 个。

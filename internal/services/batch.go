@@ -53,10 +53,12 @@ func (s *Service) BatchUpdatePosts(ctx context.Context, actor models.User, in Ba
 	if (in.Action == BatchAddTags || in.Action == BatchRemoveTags) && len(in.Tags) == 0 {
 		return BatchPostResult{}, newErr(http.StatusBadRequest, "tags is required")
 	}
-	// Publishing is root-only in the single-item path too; failing the whole
-	// batch up front is clearer than returning N identical skips.
-	if in.Action == BatchPublish && !IsRoot(actor) {
-		return BatchPostResult{}, newErr(http.StatusForbidden, "only the root can publish posts")
+	// Publishing is gated per author by canPublish (the same rule the review
+	// queue uses), so the up-front check only rejects callers who can never
+	// publish anything. Per-row denials are reported as skips below instead of
+	// failing the whole batch.
+	if in.Action == BatchPublish && !IsAdminOrRoot(actor) {
+		return BatchPostResult{}, newErr(http.StatusForbidden, "only an admin or the root can publish posts")
 	}
 
 	res := BatchPostResult{Skipped: []BatchSkip{}}
@@ -87,6 +89,20 @@ func (s *Service) BatchUpdatePosts(ctx context.Context, actor models.User, in Ba
 func (s *Service) applyBatchOne(ctx context.Context, actor models.User, id string, in BatchPostInput) error {
 	switch in.Action {
 	case BatchPublish:
+		// The edit already authorised the actor for this post's author, but
+		// publishing has its own gate: check it before UpdatePost so a denial
+		// becomes an explicit skip reason instead of a silent status no-op.
+		var post models.Post
+		if err := s.db.WithContext(ctx).Select("id", "author_id").Where("id = ?", id).First(&post).Error; err != nil {
+			return newErr(http.StatusNotFound, "post not found")
+		}
+		var author models.User
+		// A missing author means canPublish sees an empty role and answers
+		// root-only, the conservative reading.
+		_ = s.db.WithContext(ctx).Select("role").Where("id = ?", post.AuthorID).First(&author).Error
+		if !canPublish(actor, author) {
+			return newErr(http.StatusForbidden, "only the root can publish posts by admins or the root")
+		}
 		_, err := s.UpdatePost(ctx, actor, id, UpdatePostInput{Status: models.PostPublished})
 		return err
 	case BatchPrivate:

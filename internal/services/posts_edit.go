@@ -114,10 +114,16 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// fixed its category would make the console unusable.
 	contentChanged := next.Title != post.Title || next.Body != post.Body ||
 		(in.Cover != nil && *in.Cover != post.Cover)
+	// May this caller publish this post outright? Same rule as the review
+	// queue (canPublish): root anything, admin only plain users' posts. The
+	// edit permission above already refused an admin touching an admin's or
+	// root's post, so "admin editing someone else's post" can only mean a
+	// plain user's — no extra author lookup needed.
+	mayPublish := IsRoot(me) || (IsAdmin(me) && post.AuthorID != me.ID)
 	// Status is decided in one place; see post_status.go for the rule, why the
 	// previous inline switch made "私密" mean "pending", and why a live post
 	// whose words changed has to go back through review.
-	resolveStatusChange(&next, me, in.Status, contentChanged)
+	resolveStatusChange(&next, me, in.Status, contentChanged, mayPublish)
 	if next.Title != post.Title || next.Body != post.Body || next.Status != originalStatus {
 		s.snapshotRevision(ctx, post, me.ID)
 	}

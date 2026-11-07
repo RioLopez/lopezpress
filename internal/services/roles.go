@@ -72,3 +72,28 @@ func canReviewPost(actor, author models.User, post models.Post) bool {
 		return false
 	}
 }
+
+// canPublish reports whether actor may make a post authored by `author`
+// publicly readable in one step, without a separate approval call.
+//
+// It deliberately mirrors canReviewPost: approving a post and batch-publishing
+// it produce the same outcome, so they must not have different gates. The
+// previous asymmetry (review approve allowed admins, batch publish was
+// root-only) meant an admin could publish a plain user's post one at a time
+// but not in bulk.
+//
+// Rules:
+//   - root may publish anything.
+//   - admin may publish plain users' posts only — never an admin's or root's.
+//   - a plain user never gets this shortcut; their "make it public" request
+//     still enters the review queue.
+func canPublish(actor, author models.User) bool {
+	switch actor.Role {
+	case models.RoleRoot:
+		return true
+	case models.RoleAdmin:
+		return author.Role == models.RoleUser
+	default:
+		return false
+	}
+}
