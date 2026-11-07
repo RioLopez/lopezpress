@@ -161,6 +161,11 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/admin/site-config` | admin | 全量配置。非 root 的 `smtp_pass`/`img_host_token` 一律返回空串 |
 | PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`（字段级授权）；`friend_links[].url` 必须是 http(s)，否则 400；`site_url` 必须是不带路径的**裸 origin**（`scheme://host[:port]`），带 path/query/fragment 一律 400——它是 `/feed` 与 `/sitemap.xml` 里绝对链接的前缀，带 `/admin` 这类路径会让每篇文章链接都变成 404；`theme_color` 只接受 `#rrggbb`（空串 = 恢复内置配色），`home_layout` 只接受 `list`/`cards` |
 | POST | `/api/admin/mail/test` | admin | 测试邮件 |
+| GET | `/api/admin/menus` | admin | 后台侧边栏全部行（含隐藏项），按 `sort,id` 排序。每行含 `key`（内置项稳定标识）/ `label_key`（i18n 键）/ `label`（覆盖文案）/ `group_key` / `root_only` / `visible` |
+| POST | `/api/admin/menus` | root | 新增自定义链接：`{"label","path","group_key"}`。`path` 必须以单个 `/` 开头（`//`、`http(s)://`、含空白一律 400）；`group_key` ∈ `content\|users\|system\|""` |
+| POST | `/api/admin/menus/reorder` | root | `{"ids":[...]}`，必须列出**全部**菜单项且不重复，否则 400；按数组顺序重写 `sort` |
+| PUT | `/api/admin/menus/{id}` | root | 内置项只接受 `label`（空串 = 回落 i18n）与 `visible`，`path`/`group_key` 被忽略；自定义项可改 `label`/`path`/`group_key`/`visible` |
+| DELETE | `/api/admin/menus/{id}` | root | 仅自定义链接可删；内置项返回 400（只能隐藏，避免丢失页面入口与角色门） |
 | POST | `/api/backup` | **root** | 导出 JSON 备份（含 bcrypt 哈希，故仅 root） |
 | POST | `/api/backup/import` | **root** | 导入：先 `?dry_run=1` 预检，应用需载荷带 `confirm:"REPLACE-ALL-DATA"` |
 | GET | `/api/backup/download` | **root** | 下载备份文件（JSON 与 `auto-*.db` 快照均含密码哈希） |

@@ -255,6 +255,28 @@ export type AdminTexts = {
     deleteBanned: string
     deleteBannedConfirm: string
   },
+  // Sidebar menu manager (B5). Built-in rows can be renamed/hidden; only
+  // operator-added links can be deleted.
+  menuAdmin: {
+    title: string
+    sub: string
+    add: string
+    label: string
+    labelPlaceholder: string
+    pathPlaceholder: string
+    group: string
+    groupNone: string
+    custom: string
+    builtinHint: string
+    hide: string
+    show: string
+    save: string
+    saved: string
+    saveFailed: string
+    deleteConfirm: string
+    empty: string
+    orderHint: string
+  },
  // Image library: the site-wide asset view. Admins see every
   // upload, who owns it, and what still references it.
   media: {
@@ -570,6 +592,26 @@ export const adminZh: AdminTexts = {
     deleteBanned: '永久删除',
     deleteBannedConfirm: '确定永久删除「{t}」吗？该操作不可撤销。',
   },
+  menuAdmin: {
+    title: '菜单管理',
+    sub: '后台侧边栏的名称、顺序与显隐。内置项可以改名或隐藏，但不能删除——它们对应真实页面；自定义链接可以删除。',
+    add: '添加链接',
+    label: '名称',
+    labelPlaceholder: '例如「工具箱」',
+    pathPlaceholder: '/admin/tools',
+    group: '分组',
+    groupNone: '不分组',
+    custom: '自定义',
+    builtinHint: '内置路由不可修改',
+    hide: '隐藏',
+    show: '显示',
+    save: '保存',
+    saved: '菜单已更新',
+    saveFailed: '菜单保存失败',
+    deleteConfirm: '删除这个链接？',
+    empty: '还没有菜单项',
+    orderHint: '用上下箭头调整顺序；隐藏只影响侧边栏，页面仍可直接访问。',
+  },
   media: {
     title: '图片库',
     sub: '全站图片资产：谁传的、什么时候、多大、被哪些文章引用。只有管理员能看到。',
@@ -882,6 +924,26 @@ export const adminEn: AdminTexts = {
     banPostConfirm: 'A banned post is visible to you only. Continue?',
     deleteBanned: 'Delete permanently',
     deleteBannedConfirm: 'Permanently delete "{t}"? This cannot be undone.',
+  },
+  menuAdmin: {
+    title: 'Menu',
+    sub: 'Names, order and visibility of the admin sidebar. Built-in rows can be renamed or hidden but not deleted — each is a real page; custom links can be deleted.',
+    add: 'Add link',
+    label: 'Label',
+    labelPlaceholder: 'e.g. "Toolbox"',
+    pathPlaceholder: '/admin/tools',
+    group: 'Group',
+    groupNone: 'Ungrouped',
+    custom: 'Custom',
+    builtinHint: 'Built-in route, not editable',
+    hide: 'Hide',
+    show: 'Show',
+    save: 'Save',
+    saved: 'Menu updated',
+    saveFailed: 'Saving the menu failed',
+    deleteConfirm: 'Delete this link?',
+    empty: 'No menu items yet',
+    orderHint: 'Use the arrows to reorder. Hiding an item only removes it from the sidebar; the page stays reachable by URL.',
   },
   media: {
     title: 'Media library',

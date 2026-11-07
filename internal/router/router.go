@@ -162,6 +162,15 @@ var routes = []route{
 	{method: "GET", path: "/api/admin/actions", auth: authRequired, roles: adminRoles, handler: handlers.ListActions},
 	{method: "POST", path: "/api/admin/mail/test", auth: authRequired, roles: adminRoles, handler: handlers.SendTestMail},
 
+	// ---- Sidebar menu (B5) ----
+	// Reading is admin-wide because every admin renders the sidebar; writing is
+	// root-only because one edit changes the navigation of every other admin.
+	{method: "GET", path: "/api/admin/menus", auth: authRequired, roles: adminRoles, handler: handlers.ListMenuItems},
+	{method: "POST", path: "/api/admin/menus", auth: authRequired, roles: rootRoles, handler: handlers.CreateMenuItem},
+	{method: "POST", path: "/api/admin/menus/reorder", auth: authRequired, roles: rootRoles, handler: handlers.ReorderMenuItems},
+	{method: "PUT", path: "/api/admin/menus/{id}", auth: authRequired, roles: rootRoles, handler: handlers.UpdateMenuItem},
+	{method: "DELETE", path: "/api/admin/menus/{id}", auth: authRequired, roles: rootRoles, handler: handlers.DeleteMenuItem},
+
 	// ---- Admin (admin|root): content moderation queue ----
 	{method: "GET", path: "/api/admin/pending", auth: authRequired, roles: adminRoles, handler: handlers.ListPending},
 	{method: "POST", path: "/api/admin/posts/batch", auth: authRequired, roles: adminRoles, handler: handlers.BatchUpdatePosts},

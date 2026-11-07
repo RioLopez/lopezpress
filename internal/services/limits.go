@@ -94,6 +94,13 @@ const (
 	// ceiling is useless without it: 10,000 legal 64-character names is a
 	// 640 KB tag list, and the anonymous /api/tags endpoint returns all of it.
 	MaxTagsPerPost = 20
+
+	// MaxMenuLabelLen / MaxMenuPathLen bound the two free-text fields of a
+	// sidebar row (B5). Both are returned to every admin who renders the
+	// console, so an unbounded label or path would ride along in that payload
+	// exactly like an unbounded post title did (R3-07).
+	MaxMenuLabelLen = 64
+	MaxMenuPathLen  = 256
 )
 
 // ValidatePostContent checks the two content fields of a post write. It is the

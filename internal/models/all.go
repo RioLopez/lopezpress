@@ -12,6 +12,6 @@ func All() []interface{} {
 	return []interface{}{
 		&User{}, &Post{}, &PostRevision{}, &Category{}, &Tag{}, &PostTag{},
 		&PostView{}, &SiteConfig{}, &LoginLog{}, &ActionLog{}, &SchemaMigration{},
-		&UploadFile{}, &UploadRef{}, &EmailCode{},
+		&UploadFile{}, &UploadRef{}, &EmailCode{}, &MenuItem{},
 	}
 }

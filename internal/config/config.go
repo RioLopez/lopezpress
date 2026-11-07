@@ -458,6 +458,7 @@ func InitDB(cfg *Config) (*gorm.DB, string, error) {
 	seedPresetCategories(db)
 	seededPwd := seedDemoData(db, cfg.AdminInitialPassword)
 	seedSiteConfig(db)
+	seedMenuItems(db)
 	// Adopt whatever is already on disk into the upload metadata
 	// table. Must run after AutoMigrate created upload_files on a fresh DB,
 	// and it is idempotent so a restart is a single SELECT.

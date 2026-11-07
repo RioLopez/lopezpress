@@ -18,6 +18,7 @@ import type {
   DashboardData,
   ListPostsQuery,
   LoginLog,
+  MenuItem,
   Post,
   PostNav,
   Revision,
@@ -561,3 +562,20 @@ export const deleteMyUpload = (name: string) =>
 // site-config img_host_token). The browser uploads through /api/upload, which
 // the backend proxies to SM.MS with the secret — the token never reaches the
 // client. `uploadImage` above is the single safe path.
+
+// --- admin: sidebar menu (B5) ---
+export const listAdminMenus = () => request<MenuItem[]>('/api/admin/menus')
+
+export const createMenuItem = (b: { label: string; path: string; group_key: string }) =>
+  request<MenuItem>('/api/admin/menus', { method: 'POST', body: JSON.stringify(b) })
+
+export const updateMenuItem = (
+  id: number,
+  b: { label: string; path?: string; group_key?: string; visible?: boolean },
+) => request<MenuItem>(`/api/admin/menus/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+
+export const deleteMenuItem = (id: number) =>
+  request<void>(`/api/admin/menus/${id}`, { method: 'DELETE' })
+
+export const reorderMenuItems = (ids: number[]) =>
+  request<MenuItem[]>('/api/admin/menus/reorder', { method: 'POST', body: JSON.stringify({ ids }) })

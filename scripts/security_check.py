@@ -268,6 +268,7 @@ def check_field_ceilings():
         "confirm": "fixed phrase", "authormode": "enum", "kind": "enum",
         "img_host_mode": "enum", "snapshotfile": "server-generated name",
         "target": "enum", "action": "enum", "decision": "enum",
+        "groupkey": "enum",
         "status": "enum", "sortby": "enum", "order": "enum",
         # Slug is bounded by Slugify() (slugMaxRunes = 80), which every write
         # path passes through before the value reaches the row.

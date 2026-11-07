@@ -718,3 +718,21 @@ type ViewResult struct {
 	ViewCount int64  `json:"view_count"`
 	Reason    string `json:"reason,omitempty"`
 }
+
+// MenuItemInput is the writable half of a sidebar row. Path and GroupKey are
+// ignored for built-in rows: their route is what the rest of the admin UI
+// (breadcrumbs, role gate) navigates to, so editing it would leave a link that
+// points at nothing.
+type MenuItemInput struct {
+	Label    string `json:"label"`
+	Path     string `json:"path"`
+	GroupKey string `json:"group_key"`
+	Visible  *bool  `json:"visible"`
+}
+
+// MenuReorderInput carries the whole sidebar in its new order. The service
+// refuses a partial list so a failed request cannot leave items sharing an
+// index.
+type MenuReorderInput struct {
+	IDs []int64 `json:"ids"`
+}

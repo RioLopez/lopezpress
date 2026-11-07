@@ -35,6 +35,7 @@ import { AdminTrashPage } from './pages/AdminTrashPage'
 import { AdminAuditPage } from './pages/AdminAuditPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
 import { AdminSitePage } from './pages/AdminSitePage'
+import { AdminMenusPage } from './pages/AdminMenusPage'
 import { AuthorPage } from './pages/AuthorPage'
 import { AdminReviewPage } from './pages/AdminReviewPage'
 import { AdminBanVaultPage } from './pages/AdminBanVaultPage'
@@ -182,6 +183,12 @@ function AppView() {
       <Route
         path="/admin/site"
         component={() => <AdminGuarded><AdminSitePage /></AdminGuarded>}
+      />
+      {/* Sidebar manager: root-only, because one edit changes every admin's
+          navigation. */}
+      <Route
+        path="/admin/menus"
+        component={() => <AdminGuarded roles={['root']}><AdminMenusPage /></AdminGuarded>}
       />
       <Route
         path="/admin/media"

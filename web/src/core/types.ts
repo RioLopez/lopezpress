@@ -494,3 +494,18 @@ export interface TrashPost {
 
 // --- reading experience settings ---
 export type FontSize = 'small' | 'medium' | 'large' | 'xlarge'
+
+// --- admin: sidebar menu (B5) ---
+// A built-in row has `key` and `label_key` (i18n), a custom row has a literal
+// `label`. `path` is always site-relative.
+export interface MenuItem {
+  id: number
+  key: string
+  label_key: string
+  label: string
+  path: string
+  group_key: string
+  root_only: boolean
+  visible: boolean
+  sort: number
+}
