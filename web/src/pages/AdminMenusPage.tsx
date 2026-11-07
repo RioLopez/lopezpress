@@ -37,7 +37,7 @@ export function AdminMenusPage() {
     try {
       setRows(await listAdminMenus())
     } catch (e) {
-      pushToast('error', errMessage(e, t('admin.menuAdmin.saveFailed')))
+      pushToast('error', errMessage(e, t('menuAdmin.saveFailed')))
     } finally {
       setLoading(false)
     }
@@ -54,7 +54,7 @@ export function AdminMenusPage() {
       apply(res && Array.isArray(res) ? res : await listAdminMenus())
       pushToast('success', done)
     } catch (e) {
-      pushToast('error', errMessage(e, t('admin.menuAdmin.saveFailed')))
+      pushToast('error', errMessage(e, t('menuAdmin.saveFailed')))
     } finally {
       setBusy(false)
     }
@@ -65,12 +65,12 @@ export function AdminMenusPage() {
     if (target < 0 || target >= rows.length) return
     const ordered = [...rows]
     ;[ordered[index], ordered[target]] = [ordered[target], ordered[index]]
-    run(() => reorderMenuItems(ordered.map((r) => r.id)), t('admin.menuAdmin.saved'))
+    run(() => reorderMenuItems(ordered.map((r) => r.id)), t('menuAdmin.saved'))
   }
 
   const remove = async (row: MenuItem) => {
-    if (!(await confirmDialog(t('admin.menuAdmin.deleteConfirm')))) return
-    run(() => deleteMenuItem(row.id), t('admin.menuAdmin.saved'))
+    if (!(await confirmDialog(t('menuAdmin.deleteConfirm')))) return
+    run(() => deleteMenuItem(row.id), t('menuAdmin.saved'))
   }
 
   const add = () => {
@@ -80,18 +80,18 @@ export function AdminMenusPage() {
       setLabel('')
       setPath('')
       return listAdminMenus()
-    }, t('admin.menuAdmin.saved'))
+    }, t('menuAdmin.saved'))
   }
 
   return (
     <div class="admin-page">
-      <h1>{t('admin.menuAdmin.title')}</h1>
-      <p class="muted">{t('admin.menuAdmin.sub')}</p>
+      <h1>{t('menuAdmin.title')}</h1>
+      <p class="muted">{t('menuAdmin.sub')}</p>
 
       {loading ? (
         <p class="muted">{t('common.loading')}</p>
       ) : rows.length === 0 ? (
-        <p class="muted">{t('admin.menuAdmin.empty')}</p>
+        <p class="muted">{t('menuAdmin.empty')}</p>
       ) : (
         <div class="menu-list">
           {rows.map((row, i) => (
@@ -102,7 +102,7 @@ export function AdminMenusPage() {
               total={rows.length}
               busy={busy}
               onMove={(dir) => move(i, dir)}
-              onSave={(patch) => run(() => updateMenuItem(row.id, patch), t('admin.menuAdmin.saved'))}
+              onSave={(patch) => run(() => updateMenuItem(row.id, patch), t('menuAdmin.saved'))}
               onToggle={() =>
                 run(
                   () =>
@@ -112,7 +112,7 @@ export function AdminMenusPage() {
                       group_key: row.group_key,
                       visible: !row.visible,
                     }),
-                  t('admin.menuAdmin.saved'),
+                  t('menuAdmin.saved'),
                 )
               }
               onDelete={() => remove(row)}
@@ -121,32 +121,32 @@ export function AdminMenusPage() {
         </div>
       )}
 
-      <p class="muted menu-order-hint">{t('admin.menuAdmin.orderHint')}</p>
+      <p class="muted menu-order-hint">{t('menuAdmin.orderHint')}</p>
 
       <section class="settings-section menu-add">
-        <h3>{t('admin.menuAdmin.add')}</h3>
+        <h3>{t('menuAdmin.add')}</h3>
         <div class="menu-add-row">
           <input
             value={label}
-            placeholder={t('admin.menuAdmin.labelPlaceholder')}
+            placeholder={t('menuAdmin.labelPlaceholder')}
             maxLength={64}
             onInput={(e) => setLabel((e.target as HTMLInputElement).value)}
           />
           <input
             value={path}
-            placeholder={t('admin.menuAdmin.pathPlaceholder')}
+            placeholder={t('menuAdmin.pathPlaceholder')}
             maxLength={256}
             onInput={(e) => setPath((e.target as HTMLInputElement).value)}
           />
           <select value={group} onChange={(e) => setGroup((e.target as HTMLSelectElement).value)}>
             {MENU_GROUPS.map((g) => (
               <option key={g || 'none'} value={g}>
-                {g ? groupLabel(g, t) : t('admin.menuAdmin.groupNone')}
+                {g ? groupLabel(g, t) : t('menuAdmin.groupNone')}
               </option>
             ))}
           </select>
           <button class="btn btn-primary btn-sm" disabled={busy} onClick={add}>
-            {t('admin.menuAdmin.add')}
+            {t('menuAdmin.add')}
           </button>
         </div>
       </section>

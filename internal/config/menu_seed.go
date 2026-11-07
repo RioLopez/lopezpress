@@ -22,7 +22,7 @@ var menuSeeds = []models.MenuItem{
 	{Key: "users", LabelKey: "admin.usersTitle", Path: "/admin/users", GroupKey: "users", Sort: 80},
 	{Key: "roles", LabelKey: "admin.rolesTitle", Path: "/admin/roles", GroupKey: "users", Sort: 90},
 	{Key: "site", LabelKey: "site.title", Path: "/admin/site", GroupKey: "system", Sort: 100},
-	{Key: "menus", LabelKey: "admin.menuAdmin.title", Path: "/admin/menus", GroupKey: "system", RootOnly: true, Sort: 110},
+	{Key: "menus", LabelKey: "menuAdmin.title", Path: "/admin/menus", GroupKey: "system", RootOnly: true, Sort: 110},
 	{Key: "backup", LabelKey: "admin.backupTitle", Path: "/admin/backup", GroupKey: "system", Sort: 120},
 	{Key: "audit", LabelKey: "audit.title", Path: "/admin/audit", GroupKey: "system", Sort: 130},
 }

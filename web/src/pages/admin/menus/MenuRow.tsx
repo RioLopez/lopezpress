@@ -64,7 +64,7 @@ export function MenuRow({ row, index, total, busy, onMove, onSave, onToggle, onD
           {custom ? (
             <input
               value={path}
-              placeholder={t('admin.menuAdmin.pathPlaceholder')}
+              placeholder={t('menuAdmin.pathPlaceholder')}
               maxLength={256}
               onInput={(e) => setPath((e.target as HTMLInputElement).value)}
             />
@@ -78,28 +78,28 @@ export function MenuRow({ row, index, total, busy, onMove, onSave, onToggle, onD
           >
             {MENU_GROUPS.map((g) => (
               <option key={g || 'none'} value={g}>
-                {g ? groupLabel(g, t) : t('admin.menuAdmin.groupNone')}
+                {g ? groupLabel(g, t) : t('menuAdmin.groupNone')}
               </option>
             ))}
           </select>
           {custom ? (
-            <span class="menu-tag">{t('admin.menuAdmin.custom')}</span>
+            <span class="menu-tag">{t('menuAdmin.custom')}</span>
           ) : (
-            <span class="muted menu-row-hint">{t('admin.menuAdmin.builtinHint')}</span>
+            <span class="muted menu-row-hint">{t('menuAdmin.builtinHint')}</span>
           )}
         </div>
       </div>
 
       <div class="menu-row-actions">
         <button class="btn btn-ghost btn-sm" disabled={busy} onClick={onToggle}>
-          {row.visible ? t('admin.menuAdmin.hide') : t('admin.menuAdmin.show')}
+          {row.visible ? t('menuAdmin.hide') : t('menuAdmin.show')}
         </button>
         <button
           class="btn btn-primary btn-sm"
           disabled={busy || !dirty}
           onClick={() => onSave({ label, path, group_key: group })}
         >
-          {t('admin.menuAdmin.save')}
+          {t('menuAdmin.save')}
         </button>
         {custom && (
           <button class="btn btn-danger btn-sm" disabled={busy} onClick={onDelete}>

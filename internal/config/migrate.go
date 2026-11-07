@@ -130,6 +130,17 @@ var migrations = []migration{
 		}
 		return db.Exec(`UPDATE posts SET status = 'private' WHERE status = 'draft'`).Error
 	}},
+	// 0017: appearance settings (B4). AutoMigrate never touches an existing
+	// table on this driver, so a database created before B4 kept a
+	// site_configs table without these columns — the first save then answered
+	// 500 (observed on the dev copy). home_layout is back-filled to "list";
+	// theme_color stays empty, which is the documented "built-in palette"
+	// value and matches what those rows rendered before B4 existed.
+	{version: "0017_add_appearance", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
+		{name: "footer_text", ddl: "ALTER TABLE site_configs ADD COLUMN footer_text TEXT"},
+		{name: "theme_color", ddl: "ALTER TABLE site_configs ADD COLUMN theme_color VARCHAR(16)"},
+		{name: "home_layout", ddl: "ALTER TABLE site_configs ADD COLUMN home_layout VARCHAR(16)"},
+	}, `UPDATE site_configs SET home_layout = 'list' WHERE home_layout IS NULL OR home_layout = ''`)},
 }
 
 // disambiguateDuplicateSlugs rewrites colliding slugs so a unique index can be
@@ -215,39 +226,6 @@ func apply(db *gorm.DB, m migration) error {
 
 func recordMigration(db *gorm.DB, version string) error {
 	return db.Create(&models.SchemaMigration{Version: version, AppliedAt: time.Now()}).Error
-}
-
-// columnSpec pairs a column name (for the existence probe) with the full
-// ALTER TABLE ... ADD COLUMN statement.
-type columnSpec struct {
-	name string
-	ddl  string
-}
-
-// ensureColumns builds an "up" function that adds the given columns to an
-// existing table, then runs the idempotent `after` SQL (indexes / backfills).
-// On a fresh database (table not yet created) it is a no-op: AutoMigrate
-// creates the full table afterwards.
-func ensureColumns(model interface{}, cols []columnSpec, after ...string) func(*gorm.DB) error {
-	return func(db *gorm.DB) error {
-		if !db.Migrator().HasTable(model) {
-			return nil
-		}
-		for _, c := range cols {
-			if db.Migrator().HasColumn(model, c.name) {
-				continue
-			}
-			if err := db.Exec(c.ddl).Error; err != nil {
-				return fmt.Errorf("add %s: %w", c.name, err)
-			}
-		}
-		for _, s := range after {
-			if err := db.Exec(s).Error; err != nil {
-				return fmt.Errorf("post-migration: %w", err)
-			}
-		}
-		return nil
-	}
 }
 
 // dropScheduledAt removes posts.scheduled_at on databases that still carry it.

@@ -35,6 +35,10 @@ func (s *Service) GetSiteConfig(ctx context.Context, admin bool) (models.SiteCon
 		}
 		return cfg, newErr(http.StatusInternalServerError, "failed to load site config")
 	}
+	// A row written before B4 has an empty home_layout (the column did not
+	// exist). Read it as the default so the admin select and the typed public
+	// contract never see an empty enum.
+	cfg.HomeLayout = normalizeHomeLayout(cfg.HomeLayout)
 	return cfg, nil
 }
 

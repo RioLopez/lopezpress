@@ -16,7 +16,7 @@ export const FALLBACK_MENU: MenuItem[] = [
   { id: -9, key: 'users', label_key: 'admin.usersTitle', label: '', path: '/admin/users', group_key: 'users', root_only: false, visible: true, sort: 80 },
   { id: -10, key: 'roles', label_key: 'admin.rolesTitle', label: '', path: '/admin/roles', group_key: 'users', root_only: false, visible: true, sort: 90 },
   { id: -11, key: 'site', label_key: 'site.title', label: '', path: '/admin/site', group_key: 'system', root_only: false, visible: true, sort: 100 },
-  { id: -12, key: 'menus', label_key: 'admin.menuAdmin.title', label: '', path: '/admin/menus', group_key: 'system', root_only: true, visible: true, sort: 110 },
+  { id: -12, key: 'menus', label_key: 'menuAdmin.title', label: '', path: '/admin/menus', group_key: 'system', root_only: true, visible: true, sort: 110 },
   { id: -13, key: 'backup', label_key: 'admin.backupTitle', label: '', path: '/admin/backup', group_key: 'system', root_only: false, visible: true, sort: 120 },
   { id: -14, key: 'audit', label_key: 'audit.title', label: '', path: '/admin/audit', group_key: 'system', root_only: false, visible: true, sort: 130 },
 ]
