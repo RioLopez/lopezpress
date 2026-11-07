@@ -201,6 +201,11 @@ var routes = []route{
 	{method: "GET", path: "/api/uploads", auth: authRequired, roles: adminRoles, handler: handlers.ListUploads},
 	{method: "DELETE", path: "/api/uploads/{name}", auth: authRequired, roles: adminRoles, handler: handlers.DeleteUpload},
 	{method: "POST", path: "/api/uploads/{name}/restore", auth: authRequired, roles: adminRoles, handler: handlers.RestoreUpload},
+	// Manual thumbnail retry (M-8) and full ledger reconciliation (M-9).
+	// Retry is an everyday library action; rebuilding every edge in one
+	// transaction is a root repair, so the two live on different gates.
+	{method: "POST", path: "/api/uploads/{name}/thumb-retry", auth: authRequired, roles: adminRoles, handler: handlers.RetryUploadThumb},
+	{method: "POST", path: "/api/admin/uploads/rebuild-refs", auth: authRequired, roles: rootRoles, handler: handlers.RebuildUploadRefs},
 }
 
 // New builds the composed http.Handler:

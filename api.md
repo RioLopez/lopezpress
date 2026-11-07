@@ -119,9 +119,11 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | POST | `/api/upload` | 登录 | 上传图片 → `{id, name, url, size, width, height, mime, kind, deduped, remote}`。`kind` 为 `post`（默认，≤5 MB）/ `avatar`（≤512 KB）。扩展名白名单 **+ magic bytes 内容校验**，HTML 伪装成 `.png` 返回 400。**相同字节只存一份**，第二次上传返回 `deduped:true` 并指向已有行（不计配额、不写盘）。**每账号限流** 20 张/分、200 张/时（突发 5），超限返回 **429** + `Retry-After`，拒绝发生在解析 body 之前 |
 | GET | `/api/me/uploads` | 登录 | **本人**的上传（分页 24，`?kind=&status=&page=&size=`），附 `stats` 与配额用量。普通用户唯一的图库入口 |
 | DELETE | `/api/me/uploads/{name}` | 登录 | 撤下本人的图（**软删**：文件仍服务已发布文章，但脱离图库、不可再被去重复用）。站长关掉「用户可删自己的图」时返回 403 |
-| GET | `/api/uploads` | **admin** | 全站图库（`?owner=&kind=&status=live\|deleted\|all&page=&size=`）。每行带 `thumb_url`（后台队列生成的 480px 缩略图，未生成时为空串，客户端回落 `url`） |
+| GET | `/api/uploads` | **admin** | 全站图库（`?owner=&kind=&status=live\|deleted\|all&page=&size=`）。每行带 `thumb_url`（后台队列生成的 480px 缩略图，未生成时为空串，客户端回落 `url`）与 `thumb_status` / `thumb_attempts`（`pending\|ready\|skip\|failed`；失败自动重试一次，`failed` 时可走 `thumb-retry`） |
 | DELETE | `/api/uploads/{name}` | **admin** | 软删（默认）或**硬删**（`?hard=1`，连文件与缩略图一起删，即使文章仍在引用；响应 `affected_refs` 告知破坏了几个引用）。`affected_refs` 来自 `upload_refs` 台账，涵盖正文、封面、头像、站点 logo/favicon 四种来源；**它只是告知，不阻止删除**——撤下一张违规图不应需要引用者的同意 |
 | POST | `/api/uploads/{name}/restore` | **admin** | 恢复已撤下的图。若期间有人上传了相同字节，返回 409（唯一索引不允许两条活跃记录） |
+| POST | `/api/uploads/{name}/thumb-retry` | **admin** | 重新排队生成缩略图（M-8）。后台队列对失败图自动重试一次；两次仍失败才进入终态 `failed`，此接口把 `thumb_status` 重置为 `pending` 并清零 `thumb_attempts`。已 `ready` 的图与已撤下的图返回 400 |
+| POST | `/api/admin/uploads/rebuild-refs` | **root** | 从正文、封面、头像、站点 logo/favicon 重算全部 `upload_refs` 与 `ref_count`（M-9）。仅 `root`；正常经 API 的保存/删除已自动维护台账，此接口用于“有人直接改库”后的对账，可重复执行。响应 `{"refs": N}` |
 
 ### 1.6 后台 — 内容
 

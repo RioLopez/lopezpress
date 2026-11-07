@@ -1,7 +1,10 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"strconv"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -87,6 +90,29 @@ func rebuildUploadRefsTx(tx *gorm.DB) error {
 	// reference and would otherwise keep a stale number.
 	return tx.Model(&models.UploadFile{}).Where("1 = 1").Update("ref_count",
 		gorm.Expr("(SELECT COUNT(*) FROM upload_refs WHERE upload_refs.upload_id = upload_files.id)")).Error
+}
+
+// RebuildUploadRefs is the manual reconciliation entry point exposed on the
+// admin media page (M-9). The incremental ledger is only written through the
+// post/user/site APIs; a direct database edit leaves it stale, and this lets
+// the root recompute it from the four source-of-truth locations without shell
+// access. Root-only: it rewrites every edge in one transaction.
+func (s *Service) RebuildUploadRefs(ctx context.Context, actor models.User) (int64, error) {
+	if !IsRoot(actor) {
+		return 0, newErr(http.StatusForbidden, "only the root can rebuild the image ledger")
+	}
+	var refs int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rebuildUploadRefsTx(tx); err != nil {
+			return err
+		}
+		return tx.Model(&models.UploadRef{}).Count(&refs).Error
+	})
+	if err != nil {
+		return 0, newErr(http.StatusInternalServerError, "failed to rebuild the image ledger")
+	}
+	s.audit(ctx, actor, "rebuild_upload_refs", "uploads", "refs="+strconv.FormatInt(refs, 10))
+	return refs, nil
 }
 
 // libraryNameIndexTx returns name → id for every image in the library, read

@@ -594,25 +594,30 @@ type UploadResult struct {
 // OwnerName, OriginalName, IP and Sha256 are admin-visible metadata; none of
 // them ever appears in the URL, which is just /uploads/<opaque-id>.<ext>.
 type UploadFileInfo struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	URL          string     `json:"url"`
-	ThumbURL     string     `json:"thumb_url"`
-	Size         int64      `json:"size"`
-	Width        int        `json:"width"`
-	Height       int        `json:"height"`
-	Mime         string     `json:"mime"`
-	Kind         string     `json:"kind"`
-	OwnerID      string     `json:"owner_id"`
-	OwnerName    string     `json:"owner_name"`
-	OriginalName string     `json:"original_name"`
-	IP           string     `json:"ip"`
-	Sha256       string     `json:"sha256"`
-	RefCount     int        `json:"ref_count"`
-	Legacy       bool       `json:"legacy"`
-	Deleted      bool       `json:"deleted"`
-	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	ThumbURL     string `json:"thumb_url"`
+	Size         int64  `json:"size"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	Mime         string `json:"mime"`
+	Kind         string `json:"kind"`
+	OwnerID      string `json:"owner_id"`
+	OwnerName    string `json:"owner_name"`
+	OriginalName string `json:"original_name"`
+	IP           string `json:"ip"`
+	Sha256       string `json:"sha256"`
+	// ThumbStatus lets the gallery offer a retry only on the rows that need
+	// one. ThumbAttempts is exposed for the same reason: a "failed" row shows
+	// how many automatic attempts already happened.
+	ThumbStatus   string     `json:"thumb_status"`
+	ThumbAttempts int        `json:"thumb_attempts"`
+	RefCount      int        `json:"ref_count"`
+	Legacy        bool       `json:"legacy"`
+	Deleted       bool       `json:"deleted"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // UploadStats are the storage counters shown above the gallery.

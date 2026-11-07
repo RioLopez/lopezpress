@@ -160,31 +160,25 @@ func (s *Service) buildThumb(ctx context.Context, id string) {
 
 	data, err := os.ReadFile(filepath.Join(s.uploadDir(), row.Name))
 	if err != nil {
-		s.markThumb(ctx, id, ThumbStatusFailed, "")
+		s.failThumb(ctx, row)
 		return
 	}
 
 	out, ext, status := renderThumb(data)
+	if status == ThumbStatusFailed {
+		s.failThumb(ctx, row)
+		return
+	}
 	if status != ThumbStatusReady {
-		s.markThumb(ctx, id, status, "")
+		s.markThumb(ctx, id, status, "", row.ThumbAttempts)
 		return
 	}
 	name := row.ID + "_t" + ext
 	if err := s.writeUploadFile(name, out); err != nil {
-		s.markThumb(ctx, id, ThumbStatusFailed, "")
+		s.failThumb(ctx, row)
 		return
 	}
-	s.markThumb(ctx, id, ThumbStatusReady, name)
-}
-
-// markThumb records the outcome. Errors are ignored on purpose: the column is
-// an optimisation hint, and failing to update it must never fail the upload or
-// the delete that triggered it.
-func (s *Service) markThumb(ctx context.Context, id, status, name string) {
-	if err := s.db.WithContext(ctx).Model(&models.UploadFile{}).Where("id = ?", id).
-		Updates(map[string]any{"thumb_status": status, "thumb_name": name}).Error; err != nil {
-		log.Printf("WARN thumbnail queue: cannot record %s for %s: %v", status, id, err)
-	}
+	s.markThumb(ctx, id, ThumbStatusReady, name, 0)
 }
 
 // renderThumb is the pure part: bytes in, bytes out. It returns a status

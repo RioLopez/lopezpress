@@ -271,3 +271,25 @@ func RestoreUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "restored"})
 }
+
+// RetryUploadThumb re-queues one image whose thumbnail render failed.
+// POST /api/uploads/{name}/thumb-retry  (auth, admin/root)
+func RetryUploadThumb(w http.ResponseWriter, r *http.Request) {
+	if err := svc.RetryUploadThumb(r.Context(), userFromContext(r), r.PathValue("name")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "queued"})
+}
+
+// RebuildUploadRefs recomputes the whole image ledger from posts, avatars and
+// site branding. Root-only because it rewrites every edge in one transaction.
+// POST /api/admin/uploads/rebuild-refs  (auth, root)
+func RebuildUploadRefs(w http.ResponseWriter, r *http.Request) {
+	refs, err := svc.RebuildUploadRefs(r.Context(), userFromContext(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"refs": refs})
+}

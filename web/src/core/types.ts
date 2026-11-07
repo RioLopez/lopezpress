@@ -199,6 +199,10 @@ export interface UploadFileInfo {
   original_name: string
   ip: string
   sha256: string
+  // Thumbnail pipeline state. "failed" is the only state that offers a manual
+  // retry: the worker already tried twice on its own.
+  thumb_status: '' | 'pending' | 'ready' | 'skip' | 'failed'
+  thumb_attempts: number
   ref_count: number
   legacy: boolean
   deleted: boolean

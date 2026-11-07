@@ -52,6 +52,11 @@ type UploadFile struct {
 	// "failed" = gave up (the list falls back to the original).
 	ThumbName   string `gorm:"size:160" json:"thumb_name"`
 	ThumbStatus string `gorm:"size:16" json:"thumb_status"`
+	// ThumbAttempts counts failed renders. The worker retries once on its
+	// own; from the second failure the row is terminal and only an admin's
+	// manual retry resets it. Without this counter a corrupt file would
+	// either loop forever or give up without a single second look.
+	ThumbAttempts int `gorm:"not null;default:0" json:"thumb_attempts"`
 	// DeletedAt / DeletedBy record WHO withdrew the image. A soft delete is
 	// the owner's action ("I don't want this on the site any more") and is
 	// reversible by an admin; a hard delete removes the file.

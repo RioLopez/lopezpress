@@ -2127,6 +2127,7 @@ html { -webkit-text-size-adjust: 100%; }
 
 /* --- Spec 36: image library (admin media page + "my images") ---------- */
 .media-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.media-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .media-stats { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 12px 0 4px; font-size: 13px; color: var(--text-muted); }
 .media-stat-warn { color: var(--danger); }
 .media-filters { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }

@@ -1,18 +1,24 @@
 import { useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
+import { useAuth } from '../core/auth'
 import { useQuery } from '../core/useQuery'
-import { fmtBytes, fmtDate } from '../core/format'
+import { fmtBytes } from '../core/format'
 import {
   listUploads,
   deleteUpload,
   purgeUpload,
   restoreUpload,
+  retryUploadThumb,
+  rebuildUploadRefs,
   uploadImage,
   errMessage,
   errStatus,
 } from '../core/api'
+import { isRoot } from '../core/roles'
 import type { UploadFileInfo } from '../core/types'
+import { MediaGrid } from './admin/media/MediaGrid'
+import { MediaDetail } from './admin/media/MediaDetail'
 
 const PAGE_SIZE = 24
 
@@ -33,6 +39,8 @@ type StatusFilter = 'live' | 'deleted' | 'all'
 export function AdminMediaPage() {
   const { t } = useI18n()
   const { pushToast } = useApp()
+  const { user } = useAuth()
+  const isRootUser = isRoot(user?.role)
 
   const [status, setStatus] = useState<StatusFilter>('live')
   const [kind, setKind] = useState('')
@@ -40,6 +48,7 @@ export function AdminMediaPage() {
   const [detail, setDetail] = useState<UploadFileInfo | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const { data, loading, reload } = useQuery(
@@ -146,6 +155,36 @@ export function AdminMediaPage() {
     }
   }
 
+  // The worker retries once by itself; this is the escape hatch for a row that
+  // already reached "failed" with a file the operator knows was replaced.
+  const retryThumb = async (item: UploadFileInfo) => {
+    setBusy(item.name)
+    try {
+      await retryUploadThumb(item.name)
+      await after(t('media.thumbQueued'))
+    } catch (e) {
+      pushToast('error', errMessage(e, t('media.thumbRetryFailed')))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // M-9: rebuild every reference edge from posts / avatars / branding. Root
+  // only, and deliberately behind a confirm — it rewrites the whole ledger.
+  const rebuild = async () => {
+    if (!confirm(t('media.rebuildConfirm'))) return
+    setRebuilding(true)
+    try {
+      const r = await rebuildUploadRefs()
+      pushToast('info', t('media.rebuildDone', { n: String(r.refs) }))
+      await reload()
+    } catch (e) {
+      pushToast('error', errMessage(e, t('media.rebuildFailed')))
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
   const stats = data?.stats
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1
 
@@ -156,26 +195,33 @@ export function AdminMediaPage() {
           <h1>{t('media.title')}</h1>
           <p class="muted">{t('media.sub')}</p>
         </div>
-        <label class="btn btn-primary btn-sm">
-          {uploading
-            ? progress
-              ? `${progress.done}/${progress.total}`
-              : t('common.loading')
-            : t('media.upload')}
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            disabled={uploading}
-            onChange={(e) => {
-              const input = e.target as HTMLInputElement
-              const files = Array.from(input.files || [])
-              if (files.length) onUploadMany(files)
-              input.value = ''
-            }}
-          />
-        </label>
+        <div class="media-head-actions">
+          <label class="btn btn-primary btn-sm">
+            {uploading
+              ? progress
+                ? `${progress.done}/${progress.total}`
+                : t('common.loading')
+              : t('media.upload')}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              disabled={uploading}
+              onChange={(e) => {
+                const input = e.target as HTMLInputElement
+                const files = Array.from(input.files || [])
+                if (files.length) onUploadMany(files)
+                input.value = ''
+              }}
+            />
+          </label>
+          {isRootUser && (
+            <button class="btn btn-ghost btn-sm" disabled={rebuilding} onClick={rebuild}>
+              {rebuilding ? t('common.loading') : t('media.rebuildRefs')}
+            </button>
+          )}
+        </div>
       </div>
 
       {stats && data && (
@@ -228,42 +274,15 @@ export function AdminMediaPage() {
       {!loading && data && data.items.length === 0 && <p class="muted">{t('media.empty')}</p>}
 
       {data && data.items.length > 0 && (
-        <div class="image-grid media-grid">
-          {data.items.map((it) => (
-            <div class={`image-card${it.deleted ? ' image-card--deleted' : ''}`} key={it.name}>
-              <button class="image-card-thumb" onClick={() => setDetail(it)} title={t('media.detail')}>
-                <img src={it.thumb_url || it.url} alt={it.original_name || it.name} loading="lazy" />
-              </button>
-              <div class="image-card-meta">
-                <span>{fmtBytes(it.size)}</span>
-                <span title={t('media.refs')}>
-                  {it.ref_count > 0 ? `↩ ${it.ref_count}` : '—'}
-                </span>
-              </div>
-              <div class="image-card-actions">
-                {it.deleted ? (
-                  <>
-                    <button class="btn btn-ghost btn-sm" disabled={busy === it.name} onClick={() => restore(it)}>
-                      {t('media.restore')}
-                    </button>
-                    <button class="btn btn-ghost btn-sm" disabled={busy === it.name} onClick={() => purge(it)}>
-                      {t('media.purge')}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button class="btn btn-ghost btn-sm" disabled={busy === it.name} onClick={() => withdraw(it)}>
-                      {t('media.withdraw')}
-                    </button>
-                    <button class="btn btn-ghost btn-sm" disabled={busy === it.name} onClick={() => purge(it)}>
-                      {t('media.purge')}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <MediaGrid
+          items={data.items}
+          busy={busy}
+          onOpen={setDetail}
+          onWithdraw={withdraw}
+          onPurge={purge}
+          onRestore={restore}
+          onRetryThumb={retryThumb}
+        />
       )}
 
       {data && data.total > data.size && (
@@ -283,45 +302,14 @@ export function AdminMediaPage() {
       )}
 
       {detail && (
-        <div class="modal-backdrop" onClick={() => setDetail(null)}>
-          <div class="modal media-detail" onClick={(e) => e.stopPropagation()}>
-            <img src={detail.url} alt="" class="media-detail-img" />
-            <dl class="media-detail-list">
-              <dt>{t('media.uploaded')}</dt>
-              <dd>{fmtDate(detail.created_at)}</dd>
-              <dt>{t('media.owner')}</dt>
-              <dd>{detail.owner_name || t('media.ownerLegacy')}</dd>
-              <dt>{t('media.dimensions')}</dt>
-              <dd>
-                {detail.width > 0 ? `${detail.width} × ${detail.height}` : '—'}
-                {' · '}
-                {fmtBytes(detail.size)}
-              </dd>
-              <dt>{t('media.refs')}</dt>
-              <dd>{detail.ref_count > 0 ? detail.ref_count : t('media.refsNone')}</dd>
-              <dt>{t('media.originalName')}</dt>
-              <dd class="media-mono">{detail.original_name || '—'}</dd>
-              <dt>{t('media.sourceIp')}</dt>
-              <dd class="media-mono">{detail.ip || '—'}</dd>
-              <dt>{t('media.sha256')}</dt>
-              <dd class="media-mono media-hash">{detail.sha256 || '—'}</dd>
-            </dl>
-            <div class="modal-foot">
-              <button class="btn btn-ghost" onClick={() => setDetail(null)}>
-                {t('media.close')}
-              </button>
-              {detail.deleted ? (
-                <button class="btn btn-primary" disabled={busy === detail.name} onClick={() => restore(detail)}>
-                  {t('media.restore')}
-                </button>
-              ) : (
-                <button class="btn btn-primary" disabled={busy === detail.name} onClick={() => withdraw(detail)}>
-                  {t('media.withdraw')}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <MediaDetail
+          item={detail}
+          busy={busy}
+          onClose={() => setDetail(null)}
+          onWithdraw={withdraw}
+          onRestore={restore}
+          onRetryThumb={retryThumb}
+        />
       )}
     </div>
   )

@@ -205,6 +205,7 @@ func uploadFileInfo(f models.UploadFile, ownerName string) UploadFileInfo {
 		Size: f.Size, Width: f.Width, Height: f.Height, Mime: f.Mime,
 		Kind: f.Kind, OwnerID: f.OwnerID, OwnerName: ownerName,
 		OriginalName: f.OriginalName, IP: f.IP, Sha256: f.Sha256,
+		ThumbStatus: f.ThumbStatus, ThumbAttempts: f.ThumbAttempts,
 		RefCount: f.RefCount, Legacy: f.Legacy,
 		Deleted: f.DeletedAt != nil, DeletedAt: f.DeletedAt,
 		CreatedAt: f.CreatedAt,

@@ -293,6 +293,13 @@ export type AdminTexts = {
     purge: string
     purgeConfirm: string
     purgeWithRefs: string
+    thumbRetry: string
+    thumbQueued: string
+    thumbRetryFailed: string
+    rebuildRefs: string
+    rebuildConfirm: string
+    rebuildDone: string
+    rebuildFailed: string
     deleted: string
     deleteFailed: string
     close: string
@@ -580,6 +587,13 @@ export const adminZh: AdminTexts = {
     purge: '彻底删除',
     purgeConfirm: '彻底删除这张图片？文件将从磁盘移除，无法恢复。',
     purgeWithRefs: '这张图片正被 {n} 篇文章引用，彻底删除后那些文章会出现破图。确定继续？',
+    thumbRetry: '重试缩略图',
+    thumbQueued: '已重新排入缩略图队列',
+    thumbRetryFailed: '缩略图重试失败',
+    rebuildRefs: '重建引用台账',
+    rebuildConfirm: '从文章正文/封面、头像、站点图标重算全部引用关系？这会覆盖现有台账，但可重复执行。',
+    rebuildDone: '台账已重建，共 {n} 条引用',
+    rebuildFailed: '重建引用台账失败',
     deleted: '操作完成',
     deleteFailed: '操作失败',
     close: '关闭',
@@ -867,6 +881,13 @@ export const adminEn: AdminTexts = {
     purge: 'Delete permanently',
     purgeConfirm: 'Permanently delete this image? The file is removed from disk and cannot be recovered.',
     purgeWithRefs: 'This image is used by {n} article(s). Deleting it will break them. Continue?',
+    thumbRetry: 'Retry thumbnail',
+    thumbQueued: 'Thumbnail queued again',
+    thumbRetryFailed: 'Thumbnail retry failed',
+    rebuildRefs: 'Rebuild reference ledger',
+    rebuildConfirm: 'Recompute every reference from post bodies/covers, avatars and site icons? The ledger is rewritten; this is safe to repeat.',
+    rebuildDone: 'Ledger rebuilt: {n} reference(s)',
+    rebuildFailed: 'Rebuilding the ledger failed',
     deleted: 'Done',
     deleteFailed: 'Action failed',
     close: 'Close',

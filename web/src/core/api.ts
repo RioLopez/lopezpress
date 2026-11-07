@@ -521,6 +521,16 @@ export const purgeUpload = (name: string) =>
 export const restoreUpload = (name: string) =>
   request<{ message: string }>(`/api/uploads/${encodeURIComponent(name)}/restore`, { method: 'POST' })
 
+// Manual thumbnail retry: re-queues a row whose render failed twice. Refused
+// with 400 for ready rows and withdrawn images.
+export const retryUploadThumb = (name: string) =>
+  request<{ message: string }>(`/api/uploads/${encodeURIComponent(name)}/thumb-retry`, { method: 'POST' })
+
+// Full ledger reconciliation, root-only. Needed only after a direct DB edit
+// (M-9); the normal save/delete paths keep the ledger current.
+export const rebuildUploadRefs = () =>
+  request<{ refs: number }>('/api/admin/uploads/rebuild-refs', { method: 'POST' })
+
 // --- my uploads (any signed-in author) ---
 // Scoped to the caller by the server: there is no `owner` parameter here on
 // purpose, and passing one would be ignored.
