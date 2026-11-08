@@ -24,7 +24,7 @@ export function UserFilters({
   const { t } = useI18n()
 
   return (
-    <div class="admin-form">
+    <div class="admin-form admin-form--filters">
       <input
         class="search-input"
         type="search"

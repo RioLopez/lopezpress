@@ -7,12 +7,13 @@ import { listPostsPaged, deletePost, listCategories, errMessage, errStatus } fro
 import type { Post, PostStatus } from '../core/types'
 import { excerpt, highlight } from '../core/md'
 import { Sidebar } from '../ui/Sidebar'
+import { ListToolbar } from '../ui/ListToolbar'
 import { Pagination } from '../ui/Pagination'
 import { useNavSearch } from '../core/router'
 import { useQuery } from '../core/useQuery'
 import { useSite } from '../core/site'
 import { isAdminOnly, isRoot } from '../core/roles'
-import { orderCategories, categoryOptionLabel, categoryLabel } from '../core/taxonomy'
+import { orderCategories, categoryLabel } from '../core/taxonomy'
 
 // Classic pagination. The page number lives in the URL (?page=N) and
 // the page SIZE is decided by the server from site_config.page_size — the
@@ -67,6 +68,7 @@ export function ListPage() {
 
   const [status, setStatus] = useState<PostStatus | ''>('')
   const [search, setSearch] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const debouncedSearch = useDebounce(search, 300)
 
   const { data: pageData, loading, reload } = useQuery(
@@ -124,8 +126,14 @@ export function ListPage() {
     }
   }
 
-  const onCategorySelect = (name: string | null) => go({ category: name })
-  const onTagSelect = (name: string | null) => go({ tag: name })
+  const onCategorySelect = (name: string | null) => {
+    go({ category: name })
+    setFiltersOpen(false)
+  }
+  const onTagSelect = (name: string | null) => {
+    go({ tag: name })
+    setFiltersOpen(false)
+  }
 
   // Server-decided page size; fall back to 10 only while the first response
   // is still in flight.
@@ -170,54 +178,41 @@ export function ListPage() {
         <div class="list-main">
           <div class="list-header">
             <h1>{t('list.title')}</h1>
-            {/* Anonymous readers must never see an authoring entry. */}
-            {user && (
-              <button class="btn btn-primary" onClick={() => navigate('/create')}>
-                {t('nav.create')}
+            <div class="list-header-actions">
+              <button
+                class="btn btn-ghost btn-sm list-filter-toggle"
+                aria-expanded={filtersOpen}
+                aria-controls="list-filters"
+                onClick={() => setFiltersOpen((v) => !v)}
+              >
+                {t('list.filters')}
               </button>
-            )}
+              {/* Anonymous readers must never see an authoring entry. */}
+              {user && (
+                <button class="btn btn-primary" onClick={() => navigate('/create')}>
+                  {t('nav.create')}
+                </button>
+              )}
+            </div>
           </div>
 
-          <div class="list-toolbar">
-            <input
-              class="search-input"
-              type="search"
-              placeholder={t('list.searchPlaceholder')}
-              value={search}
-              onInput={(e) => {
-                setSearch((e.target as HTMLInputElement).value)
- // A filter change restarts at page 1. Doing it
-                // here (not in an effect) keeps a deep link like ?page=3 from
-                // being reset on mount.
-                if (page !== 1) go({ page: 1 })
-              }}
-            />
-            <select
-              value={activeCategory ?? ''}
-              onInput={(e) => {
-                const val = (e.target as HTMLSelectElement).value
-                onCategorySelect(val || null)
-              }}
-            >
-              <option value="">{t('list.allCategories')}</option>
-              {/* Options cannot be styled, so the two-level tree is spelled
-                  with an indent + └ prefix. Values are names, matching the
-                  URL and the sidebar. */}
-              {categoryNodes.map((node) => (
-                <option key={node.cat.id} value={node.cat.name}>
-                  {categoryOptionLabel(node)}
-                </option>
-              ))}
-            </select>
-            <select value={status} onInput={(e) => {
-              setStatus((e.target as HTMLSelectElement).value as PostStatus | '')
+          <ListToolbar
+            search={search}
+            onSearchChange={(v) => {
+              setSearch(v)
+              // A filter change restarts at page 1. Doing it here (not in an
+              // effect) keeps a deep link like ?page=3 from being reset on mount.
               if (page !== 1) go({ page: 1 })
-            }}>
-              <option value="">{t('list.allStatus')}</option>
-              <option value="published">{t('list.published')}</option>
-              <option value="private">{t('list.private')}</option>
-            </select>
-          </div>
+            }}
+            activeCategory={activeCategory}
+            onCategorySelect={onCategorySelect}
+            status={status}
+            onStatusChange={(v) => {
+              setStatus(v)
+              if (page !== 1) go({ page: 1 })
+            }}
+            categoryNodes={categoryNodes}
+          />
 
           {loading ? (
             <p class="muted">{t('common.loading')}</p>
@@ -330,12 +325,24 @@ export function ListPage() {
           )}
         </div>
 
-        <Sidebar
-          activeCategory={activeCategory}
-          activeTag={activeTag}
-          onCategorySelect={onCategorySelect}
-          onTagSelect={onTagSelect}
-        />
+        {filtersOpen && <div class="list-filter-scrim" onClick={() => setFiltersOpen(false)} />}
+        <div
+          id="list-filters"
+          class={`list-filters${filtersOpen ? ' list-filters--open' : ''}`}
+        >
+          <div class="list-filters-head">
+            <strong>{t('list.filters')}</strong>
+            <button class="btn btn-ghost btn-sm" onClick={() => setFiltersOpen(false)}>
+              {t('list.filtersClose')}
+            </button>
+          </div>
+          <Sidebar
+            activeCategory={activeCategory}
+            activeTag={activeTag}
+            onCategorySelect={onCategorySelect}
+            onTagSelect={onTagSelect}
+          />
+        </div>
       </div>
     </div>
   )

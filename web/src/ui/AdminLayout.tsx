@@ -33,6 +33,16 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
     return () => window.removeEventListener('menus-updated', load)
   }, [])
 
+  // Mobile drawer: Escape closes it, matching the overlay's click behaviour.
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
   const isDark = mode === 'dark'
   const themeLabel = isDark ? 'D' : 'L'
   const langLabel = locale === 'zh' ? '中' : 'EN'
@@ -65,6 +75,10 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
 
   return (
     <div class={`admin-layout ${drawerOpen ? 'admin-layout--open' : ''}`}>
+      <div
+        class={`admin-drawer-scrim${drawerOpen ? ' is-open' : ''}`}
+        onClick={() => setDrawerOpen(false)}
+      />
       <aside class="admin-sidebar">
         <div class="admin-sidebar-brand">
           {config.site_logo ? (
@@ -123,7 +137,8 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
           <button
             class="btn btn-ghost btn-sm admin-hamburger"
             onClick={() => setDrawerOpen((v) => !v)}
-            title="Menu"
+            aria-label="Menu"
+            aria-expanded={drawerOpen}
           >
             ☰
           </button>

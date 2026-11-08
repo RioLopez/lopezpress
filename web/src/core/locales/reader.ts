@@ -14,6 +14,8 @@ export type ReaderTexts = {
  // Filtered result differs from "no posts at all".
     noResults: string
     clearFilters: string
+    filters: string
+    filtersClose: string
     deleteConfirm: string
     prevPage: string
     nextPage: string
@@ -113,6 +115,8 @@ export const readerZh: ReaderTexts = {
     emptyLoggedOut: '请先登录。',
     noResults: '没有找到匹配的文章，换个关键词或分类试试。',
     clearFilters: '清除筛选',
+    filters: '筛选',
+    filtersClose: '关闭',
     deleteConfirm: '确定删除这篇文章吗？',
     prevPage: '上一页',
     nextPage: '下一页',
@@ -208,6 +212,8 @@ export const readerEn: ReaderTexts = {
     emptyLoggedOut: 'Please sign in first.',
     noResults: 'No posts match these filters. Try another keyword or category.',
     clearFilters: 'Clear filters',
+    filters: 'Filters',
+    filtersClose: 'Close',
     deleteConfirm: 'Delete this post?',
     prevPage: 'Previous',
     nextPage: 'Next',

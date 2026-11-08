@@ -125,7 +125,11 @@ html, body {
   width: 9px; height: 9px; background: var(--primary);
   display: inline-block;
 }
-.topbar-nav { display: flex; align-items: center; gap: 14px; }
+.topbar-nav {
+  display: flex; align-items: center; gap: 14px;
+  flex: 1 1 auto; min-width: 0; margin-left: 24px;
+}
+.topbar-util { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; margin-left: 12px; }
 .topbar-user { font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .badge-admin {
   font-size: 10px; padding: 2px 6px; background: var(--primary); color: var(--primary-fg);
@@ -282,8 +286,12 @@ html, body {
   flex: 7;
   min-width: 0;
 }
-.list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
 .list-header h1 { margin: 0; font-size: 20px; font-weight: 700; }
+.list-header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.list-filter-toggle { display: none; }
+.list-filters { display: contents; }
+.list-filters-head { display: none; }
 .list-toolbar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
 .list-toolbar input {
   flex: 1; min-width: 140px; padding: 9px 12px; border: 1px solid var(--border);
@@ -1454,7 +1462,12 @@ tr.row-selected { transition: background .12s; }
 .register-closed { font-weight: 600; color: var(--text); }
 
 /* Admin layout: responsive drawer ------------------------------------- */
+.admin-drawer-scrim { display: none; }
 @media (max-width: 768px) {
+  .admin-drawer-scrim.is-open {
+    display: block; position: fixed; inset: 0; z-index: 149;
+    background: rgba(0, 0, 0, .35);
+  }
   .admin-hamburger { display: inline-flex; align-items: center; justify-content: center; }
   .admin-sidebar {
     position: fixed; left: 0; top: 0; z-index: 150;
@@ -2043,19 +2056,55 @@ html { -webkit-text-size-adjust: 100%; }
 /* 3. 顶部栏：≤1023 收紧；≤639 隐藏品牌名、缩导航 */
 @media (max-width: 1023px) {
   .topbar { padding: 0 14px; }
-  .topbar-nav { gap: 10px; }
+  .topbar-nav { gap: 10px; margin-left: 16px; }
+  .topbar-util { gap: 8px; margin-left: 8px; }
 }
 @media (max-width: 639px) {
+  /* 窄屏：品牌只留色点，导航单行横滑，工具区固定不参与滚动 */
+  .topbar { padding: 0 12px; gap: 8px; }
+  .topbar-brand { flex: 0 0 auto; }
   .topbar-brand .brand-name { display: none; }
-  .nav-link { padding: 6px 10px; font-size: 13px; }
-  .topbar-nav { gap: 8px; }
+  .topbar-nav {
+    margin-left: 0; gap: 6px;
+    overflow-x: auto; overflow-y: hidden;
+    padding: 4px 0;
+    scrollbar-width: none;
+  }
+  .topbar-nav::-webkit-scrollbar { display: none; }
+  .topbar-nav .nav-link { flex: 0 0 auto; white-space: nowrap; padding: 6px 9px; font-size: 13px; }
+  .topbar-util { margin-left: 0; gap: 6px; }
+  .topbar-util > * { flex: 0 0 auto; }
+  .topbar-util .icon-btn { width: 32px; height: 32px; padding: 0; }
+  .topbar .user-menu-name { display: none; }
 }
 
-/* 4. 列表页：≤900 侧栏提前置顶为整块卡片 */
+/* 4. 列表页：≤900 内容优先，分类/标签收进可折叠底部筛选面板 */
 @media (max-width: 900px) {
   .list-layout { flex-direction: column; }
-  .list-main { order: 2; }
-  .sidebar { order: 1; width: 100%; flex: none; min-width: 0; }
+  .list-main { order: 1; }
+  .list-filter-toggle { display: inline-flex; }
+  .list-filters { display: none; }
+  .list-filters--open {
+    display: block;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 161;
+    max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -14px 40px rgba(20, 16, 12, .22);
+  }
+  .list-filters-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .list-filter-scrim {
+    position: fixed; inset: 0; z-index: 160;
+    background: rgba(17, 16, 14, .45);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+  .sidebar { width: 100%; flex: none; min-width: 0; }
   .sidebar-section { border-radius: var(--radius) !important; }
   .sidebar-section + .sidebar-section { margin-top: 10px; }
 }
@@ -2075,8 +2124,11 @@ html { -webkit-text-size-adjust: 100%; }
   .friend-link-row, .settings-row { flex-direction: column; align-items: stretch; }
   .editor-actions .btn, .settings-actions .btn, .backup-import-row .btn,
   .admin-form input, .friend-link-row input { width: 100%; }
-  .btn { min-height: 40px; }
-  .icon-btn { width: 38px; height: 38px; }
+  .list-header h1 { font-size: 22px; }
+  .list-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .list-toolbar .search-input { grid-column: 1 / -1; width: 100%; min-width: 0; }
+  .list-toolbar select { width: 100%; min-width: 0; }
+  .icon-btn { width: 40px; height: 40px; }
 }
 
 /* 7. 阅读页：≤639 字号/内边距收敛 */
@@ -2461,3 +2513,59 @@ input.search-input {
 /* 原生控件（下拉弹层、滚动条）跟随主题明暗，避免暗色下弹出白色浮层 */
 :root { color-scheme: light; }
 [data-theme="dark"] { color-scheme: dark; }
+
+/* ---------- 移动端触控与输入 ----------
+   16px 是 iOS Safari 不自动放大的下限；44px 是常用触控目标。放在控件层末尾，
+   才能覆盖前面同选择器的 38px / 14px。 */
+@media (max-width: 639px) {
+  input[type="text"], input[type="search"], input[type="email"], input[type="password"],
+  input[type="number"], input[type="tel"], input[type="url"], input[type="date"],
+  input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"],
+  input:not([type]), textarea, select, .select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 40px; }
+  .topbar .btn { min-height: 32px; }
+  .post-status, .badge { white-space: nowrap; }
+}
+
+/* ---------- 后台筛选栏：手机上两列网格，搜索独占一行 ---------- */
+.admin-form--import { margin-top: -6px; }
+
+@media (max-width: 640px) {
+  .admin-page .admin-form.admin-form--filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+  .admin-form--import { margin-top: 0; }
+  .admin-form--import .btn { width: 100%; justify-content: center; }
+  .admin-page .admin-form--filters > input,
+  .admin-page .admin-form--filters > .search-input {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-page .admin-form--filters select { width: 100%; min-width: 0; }
+  .admin-page .admin-form--filters .btn,
+  .admin-page .admin-form--filters label.btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ---------- 后台表格：手机上保留表格语义，首列吸附 + 横滚提示 ---------- */
+@media (max-width: 768px) {
+  .table-scroll { scrollbar-width: thin; }
+  .admin-table th:first-child,
+  .admin-table td:first-child {
+    position: sticky; left: 0; z-index: 2;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .admin-table thead th:first-child { background: var(--surface-2); z-index: 3; }
+  .admin-table tbody tr:hover td:first-child { background: var(--surface-2); }
+}

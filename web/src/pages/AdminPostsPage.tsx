@@ -204,7 +204,7 @@ export function AdminPostsPage() {
       <h1>{t('admin.postsTitle')}</h1>
       <p class="muted">{t('admin.postsSub')}</p>
 
-      <div class="admin-form">
+      <div class="admin-form admin-form--filters">
         <input
           class="search-input"
           value={search}
@@ -291,7 +291,7 @@ export function AdminPostsPage() {
         </button>
       </div>
 
-      <div class="admin-form">
+      <div class="admin-form admin-form--import">
         <label class="btn btn-ghost btn-sm">
           {t('admin.importMd')}
           <input

@@ -75,8 +75,8 @@ export function Layout({ children }: { children: ComponentChildren }) {
               {t('nav.admin')}
             </button>
           )}
-          {renderUtil()}
         </nav>
+        <div class="topbar-util">{renderUtil()}</div>
       </header>
       <main class={`main ${path === '/' ? 'main--wide' : ''} ${isEditorRoute ? 'main--editor' : ''}`}>{children}</main>
       {isEditorRoute ? null : <Footer />}
