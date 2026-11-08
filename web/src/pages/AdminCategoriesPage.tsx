@@ -180,7 +180,7 @@ export function AdminCategoriesPage() {
           <p class="muted">{t('admin.noMatch')}</p>
         ) : (
           <div class="table-scroll">
-            <table class="admin-table">
+            <table class="admin-table admin-table--cards">
               <thead>
                 <tr>
                   <th>{t('admin.name')}</th>
@@ -194,7 +194,7 @@ export function AdminCategoriesPage() {
                   <tr key={c.id} class={depth === 1 ? 'row-child' : ''}>
                     {editingId === c.id ? (
                       <>
-                        <td>
+                        <td class="card-title">
                           <div class="admin-form admin-form--inline">
                             <input
                               value={editName}
@@ -206,7 +206,7 @@ export function AdminCategoriesPage() {
                             />
                           </div>
                         </td>
-                        <td>
+                        <td data-label={t('admin.parentCategory')}>
                           <div class="admin-form admin-form--inline">
                             <select
                               value={editParent === '' ? '' : String(editParent)}
@@ -221,21 +221,21 @@ export function AdminCategoriesPage() {
                             <button class="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>{t('editor.cancel')}</button>
                           </div>
                         </td>
-                        <td class="num">{c.count}</td>
+                        <td class="num" data-label={t('admin.postCount')}>{c.count}</td>
                         <td class="actions"></td>
                       </>
                     ) : (
                       <>
-                        <td>
+                        <td class="card-title">
                           {depth === 1 && <span class="tree-indent">└</span>}
                           <span class={depth === 0 ? 'tree-root' : ''}>{c.name}</span>
                         </td>
-                        <td class="muted">
+                        <td class="muted" data-label={t('admin.parentCategory')}>
                           {c.parent_id != null
                             ? cats.find((p) => p.id === c.parent_id)?.name || '—'
                             : '—'}
                         </td>
-                        <td class="num">
+                        <td class="num" data-label={t('admin.postCount')}>
                           {c.count > 0 ? (
                             <a
                               href="#"

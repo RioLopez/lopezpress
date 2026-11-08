@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import { useAuth } from '../core/auth'
 import { useI18n } from '../core/i18n'
@@ -19,6 +19,9 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const { cycle, mode } = useTheme()
   const [path, navigate] = useNav()
   const { config } = useSite()
+  // ≤639: the content nav moves into a dropdown behind a menu button. A
+  // horizontally scrolling nav cut "管理" in half and had no affordance.
+  const [navOpen, setNavOpen] = useState(false)
 
   // Reflect the configured browser title across content pages.
   useEffect(() => {
@@ -29,6 +32,24 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const themeLabel = isDark ? 'D' : 'L'
   const langLabel = locale === 'zh' ? '中' : 'EN'
   const toggleLang = () => setLocale((locale === 'zh' ? 'en' : 'zh') as Locale)
+
+  useEffect(() => setNavOpen(false), [path])
+
+  // A dropdown without an outside-click close would stay open over the page.
+  useEffect(() => {
+    if (!navOpen) return
+    const onDoc = (e: MouseEvent) => {
+      const el = e.target as Element | null
+      if (!el?.closest('.topbar')) setNavOpen(false)
+    }
+    document.addEventListener('click', onDoc)
+    return () => document.removeEventListener('click', onDoc)
+  }, [navOpen])
+
+  const go = (p: string) => {
+    setNavOpen(false)
+    navigate(p)
+  }
 
   const isAdminUser = isAdmin(user?.role)
   const isEditorRoute = path === '/create' || path.startsWith('/edit/')
@@ -60,18 +81,27 @@ export function Layout({ children }: { children: ComponentChildren }) {
             <span class="brand-name">{config.site_name || 'Echo Content'}</span>
           </AppLink>
         </div>
-        <nav class="topbar-nav">
-          <button class={`nav-link ${isActive('/') ? 'nav-link--active' : ''}`} onClick={() => navigate('/')}>
+        <button
+          class="btn btn-ghost btn-sm icon-btn topbar-menu-btn"
+          aria-label={t('nav.menu')}
+          aria-expanded={navOpen}
+          aria-controls="topbar-nav"
+          onClick={() => setNavOpen((o) => !o)}
+        >
+          ☰
+        </button>
+        <nav id="topbar-nav" class={`topbar-nav ${navOpen ? 'is-open' : ''}`}>
+          <button class={`nav-link ${isActive('/') ? 'nav-link--active' : ''}`} onClick={() => go('/')}>
             {t('nav.list')}
           </button>
-          <button class={`nav-link ${isActive('/create') ? 'nav-link--active' : ''}`} onClick={() => navigate('/create')}>
+          <button class={`nav-link ${isActive('/create') ? 'nav-link--active' : ''}`} onClick={() => go('/create')}>
             {t('nav.create')}
           </button>
-          <button class={`nav-link ${isActive('/archive') ? 'nav-link--active' : ''}`} onClick={() => navigate('/archive')}>
+          <button class={`nav-link ${isActive('/archive') ? 'nav-link--active' : ''}`} onClick={() => go('/archive')}>
             {t('nav.archive')}
           </button>
           {isAdminUser && (
-            <button class="nav-link nav-link--admin" onClick={() => navigate('/admin')}>
+            <button class="nav-link nav-link--admin" onClick={() => go('/admin')}>
               {t('nav.admin')}
             </button>
           )}

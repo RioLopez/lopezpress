@@ -7,6 +7,7 @@ export type NavTexts = {
     archive: string
     settings: string
     admin: string
+    menu: string
     backToContent: string
  // Admin sidebar is grouped instead of 10 flat items.
     groupContent: string
@@ -31,7 +32,7 @@ export type NavTexts = {
 }
 
 export const navZh: NavTexts = {
-  nav: { list: '全部文章', create: '写文章', archive: '归档', settings: '设置', admin: '管理', backToContent: '返回内容', dashboard: '仪表盘', site: '站点设置', groupContent: '内容', groupUsers: '用户', groupSystem: '系统' },
+  nav: { list: '全部文章', create: '写文章', archive: '归档', settings: '设置', admin: '管理', menu: '菜单', backToContent: '返回内容', dashboard: '仪表盘', site: '站点设置', groupContent: '内容', groupUsers: '用户', groupSystem: '系统' },
   menu: { profile: '个人中心', account: '账号设置', logout: '退出登录', loginOrRegister: '登录 / 注册', confirmLogout: '确定退出登录吗？' },
   sidebar: {
     categories: '分类',
@@ -42,7 +43,7 @@ export const navZh: NavTexts = {
 }
 
 export const navEn: NavTexts = {
-  nav: { list: 'All Posts', create: 'New Post', archive: 'Archive', settings: 'Settings', admin: 'Admin', backToContent: 'Back to content', dashboard: 'Dashboard', site: 'Site', groupContent: 'Content', groupUsers: 'Users', groupSystem: 'System' },
+  nav: { list: 'All Posts', create: 'New Post', archive: 'Archive', settings: 'Settings', admin: 'Admin', menu: 'Menu', backToContent: 'Back to content', dashboard: 'Dashboard', site: 'Site', groupContent: 'Content', groupUsers: 'Users', groupSystem: 'System' },
   menu: { profile: 'Profile', account: 'Account settings', logout: 'Sign out', loginOrRegister: 'Sign in / Register', confirmLogout: 'Sign out?' },
   sidebar: {
     categories: 'Categories',

@@ -82,7 +82,7 @@ export function AdminTagsPage() {
           <p class="muted">{t('admin.noMatch')}</p>
         ) : (
           <div class="table-scroll">
-            <table class="admin-table">
+            <table class="admin-table admin-table--cards">
               <thead>
                 <tr>
                   <th>{t('admin.name')}</th>
@@ -94,7 +94,7 @@ export function AdminTagsPage() {
                 {visible.map((tag) => (
                   <tr key={tag.id}>
                     {editingId === tag.id ? (
-                      <td>
+                      <td class="card-title">
                         <div class="admin-form admin-form--inline">
                           <input
                             value={editName}
@@ -109,9 +109,9 @@ export function AdminTagsPage() {
                         </div>
                       </td>
                     ) : (
-                      <td><span class="post-tag-chip">{tag.name}</span></td>
+                      <td class="card-title"><span class="post-tag-chip">{tag.name}</span></td>
                     )}
-                    <td class="num">
+                    <td class="num" data-label={t('admin.postCount')}>
                       {tag.count > 0 ? (
                         <a
                           href="#"

@@ -356,8 +356,9 @@ export function ReadPage({ id }: { id: string }) {
         >
           <button class="read-toc-toggle" onClick={() => setTocOpen((o) => !o)}>
             <span>{t('read.tocTitle')}</span>
-            <span class="read-toc-caret" aria-hidden="true">
-              ▼ {tocOpen ? t('read.tocClose') : t('read.tocOpen')}
+            <span class="read-toc-state">
+              <span class="read-toc-caret" aria-hidden="true">▼</span>
+              {tocOpen ? t('read.tocClose') : t('read.tocOpen')}
             </span>
           </button>
           {tocOpen && (

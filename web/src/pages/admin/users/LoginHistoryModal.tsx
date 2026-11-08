@@ -28,30 +28,32 @@ export function LoginHistoryModal({
       ) : logs.length === 0 ? (
         <p class="muted">{t('admin.noLogs')}</p>
       ) : (
-        <table class="admin-table login-log-table">
-          <thead>
-            <tr>
-              <th>{t('admin.loginTime')}</th>
-              <th>{t('admin.loginIp')}</th>
-              <th>{t('admin.loginOk')}</th>
-              <th>UA</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((l) => (
-              <tr key={l.id}>
-                <td class="muted">{fmtDate(l.created_at, locale)}</td>
-                <td class="mono-cell">{l.ip}</td>
-                <td>
-                  <span class={`post-status post-status-${l.success ? 'published' : 'draft'}`}>
-                    {l.success ? t('admin.loginOk') : t('admin.loginFail')}
-                  </span>
-                </td>
-                <td class="muted ua-cell" title={l.ua}>{l.ua}</td>
+        <div class="table-scroll">
+          <table class="admin-table login-log-table admin-table--cards">
+            <thead>
+              <tr>
+                <th>{t('admin.loginTime')}</th>
+                <th>{t('admin.loginIp')}</th>
+                <th>{t('admin.loginOk')}</th>
+                <th>UA</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id}>
+                  <td class="muted" data-label={t('admin.loginTime')}>{fmtDate(l.created_at, locale)}</td>
+                  <td class="muted" data-label={t('admin.loginIp')}>{l.ip}</td>
+                  <td data-label={t('admin.loginOk')}>
+                    <span class={`post-status post-status-${l.success ? 'published' : 'draft'}`}>
+                      {l.success ? t('admin.loginOk') : t('admin.loginFail')}
+                    </span>
+                  </td>
+                  <td class="muted ua-cell" data-label="UA" title={l.ua}>{l.ua}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Modal>
   )

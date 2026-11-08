@@ -39,7 +39,8 @@
      `Modern design system`   (2026-10-14)  圆角/阴影/hover lift
      `Responsive system`      (2026-10-14)  统一断点标准
      `v1.1`                   (2026-10-14)  赭石配色 + 衬线标题 + 目录式列表
-   断点标准：手机<640 / 平板 640-1023 / 笔记本 1024-1439 / 桌面≥1440。
+   断点标准：手机 ≤639 / 平板 640-1023 / 笔记本 1024-1439 / 桌面 ≥1440。
+   代码内只允许 1439 / 1023 / 639 三个阈值，详见技能 responsive-adaptation（~/.config/skills）。
    ========================================================================= */
 
 :root {
@@ -253,7 +254,7 @@ html, body {
 .captcha-refresh:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
 /* Narrow phones: a 180px picture plus a usable input no longer fit on one
    line, so stack them rather than letting the input collapse to nothing. */
-@media (max-width: 420px) {
+@media (max-width: 639px) {
   .captcha-row { flex-wrap: wrap; }
   .captcha-row input { flex-basis: 100%; }
 }
@@ -289,7 +290,9 @@ html, body {
 .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
 .list-header h1 { margin: 0; font-size: 20px; font-weight: 700; }
 .list-header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.list-filter-toggle { display: none; }
+/* 显式降级：桌面也允许显示筛选按钮（.btn 的 display 优先级更高），
+   仅 ≤1023 由响应式层改为 inline-flex。用父级选择器提高优先级。 */
+.list-header-actions .list-filter-toggle { display: none; }
 .list-filters { display: contents; }
 .list-filters-head { display: none; }
 .list-toolbar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -721,7 +724,7 @@ code.hl { background: var(--hl, #fff3a3); }
   padding: 8px 10px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
 }
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .menu-row { flex-wrap: wrap; }
   .menu-row-actions { width: 100%; justify-content: flex-end; }
 }
@@ -971,7 +974,7 @@ code.hl { background: var(--hl, #fff3a3); }
 .link a { color: var(--primary); cursor: pointer; }
 
 /* Responsive ------------------------------------------------------------ */
-@media (max-width: 768px) {
+@media (max-width: 639px) {
   .list-layout {
     flex-direction: column;
   }
@@ -989,7 +992,7 @@ code.hl { background: var(--hl, #fff3a3); }
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .topbar { padding: 0 14px; }
   .topbar-nav { gap: 8px; }
   .topbar-nav .nav-link, .topbar-nav .btn { font-size: 13px; }
@@ -1386,7 +1389,7 @@ tr.row-selected { transition: background .12s; }
 .settings-nav-item:hover { background: var(--border); color: var(--text); }
 .settings-nav-item.is-active { background: var(--border); color: var(--primary); font-weight: 600; }
 .settings-body { min-width: 0; }
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .settings-layout { grid-template-columns: 1fr; gap: 12px; }
   .settings-nav { position: static; flex-direction: row; overflow-x: auto; }
   .settings-nav-item { white-space: nowrap; }
@@ -1463,7 +1466,7 @@ tr.row-selected { transition: background .12s; }
 .register-closed { font-weight: 600; color: var(--text); }
 
 /* Admin layout: responsive drawer -------------------------------------
-   断点定在 1024：768–1023 是「窄桌面」（缩放窗口/小笔记本），230px 侧栏
+   断点定在 1024：640–1023 是「窄桌面 / 平板」（缩放窗口/小笔记本），230px 侧栏
    会把表格和操作列挤到换行；这一段直接收进抽屉，内容区拿回整宽。 */
 .admin-drawer-scrim { display: none; }
 @media (max-width: 1023px) {
@@ -1483,8 +1486,8 @@ tr.row-selected { transition: background .12s; }
   .dash-cols { flex-direction: column; }
 }
 
-/* 缩放窗口（1200 以下）先收起用户表的低价值列，避免表格被挤到横滚 */
-@media (max-width: 1200px) {
+/* 缩放窗口（≤1439）先收起用户表的低价值列，避免表格被挤到横滚 */
+@media (max-width: 1439px) {
   .users-table .hide-compact { display: none; }
 }
 
@@ -1685,7 +1688,7 @@ tr.row-selected { transition: background .12s; }
 /* ===================================================================
    Personal center: responsive (spec 20 §七)
    Large ≥1440: keep 15% banner gutters (set above). Mid 1024–1439: 8%.
-   Small PC / tablet 768–1023: 4%. Mobile <768: sidebar → top tabs,
+   Small PC / tablet 640–1023: 4%. Mobile ≤639: sidebar → top tabs,
    banner → vertical card, cancel side gutters.
    =================================================================== */
 @media (max-width: 1439px) {
@@ -1695,7 +1698,7 @@ tr.row-selected { transition: background .12s; }
   .center-banner { padding: 5% 4%; }
   .center-banner-stats { gap: 22px; }
 }
-@media (max-width: 768px) {
+@media (max-width: 639px) {
   .center-layout { flex-direction: column; gap: 14px; padding: 4px 0 32px; }
   .center-sidebar {
     width: 100%; flex: none; position: static; top: auto;
@@ -1716,7 +1719,7 @@ tr.row-selected { transition: background .12s; }
   .user-menu-overlay { display: block; }
   .user-menu-sheet { left: 0; right: 0; top: auto; bottom: 0; border-radius: var(--radius) var(--radius) 0 0; }
 }
-@media (max-width: 480px) {
+@media (max-width: 639px) {
   .post-row { flex-direction: column; align-items: flex-start; gap: 6px; }
   .post-row-side { width: 100%; justify-content: space-between; }
 }
@@ -1924,7 +1927,7 @@ tr.row-selected { transition: background .12s; }
     animation: pe-fade .15s ease-out;
   }
 }
-@media (max-width: 768px) {
+@media (max-width: 639px) {
   .pe-topbar { gap: 10px; }
   .pe-title { font-size: 17px; height: 44px; padding: 0 12px; }
   .pe-toolbar { flex-wrap: wrap; row-gap: 8px; }
@@ -2033,18 +2036,19 @@ tr.row-selected { transition: background .12s; }
 .empty-icon-doc { border-radius: 3px; }
 
 /* =========================================================================
-   Responsive system — unified standard (2026-10-14)
-   断点标准（本项目统一，未来新增一律遵循）：
-     · 手机   < 640px
+   Responsive system — unified standard (2026-10-14, 断点归一 2026-11-08)
+   断点标准（本项目唯一来源，代码内只允许 1439 / 1023 / 639 三个阈值）：
+     · 手机   ≤ 639px
      · 平板   640–1023px
      · 笔记本 1024–1439px
      · 桌面   ≥ 1440px
    原则：
      1) 内容容器响应式居中，padding 用 clamp 随屏平滑，任何屏不横向溢出
-     2) 多列布局 ≤1023 降单列；列表侧栏 ≤900 提前置顶为整块卡
-     3) 表单/动作条 ≤639 全宽竖排；触控目标 ≥40px
+     2) 多列布局 ≤1023 降单列；列表侧栏 ≤1023 置顶并收进底部筛选面板
+     3) 表单/动作条 ≤639 全宽竖排；触控目标 ≥44px
      4) 宽内容（表格/代码/图片）由组件包 overflow-x 容器（组件层补）
-     5) 顶部导航窄屏只缩间距/字号并隐藏品牌名，不做横滚（避免裁剪用户菜单）
+     5) 顶部导航 ≤639 单行横滑，工具区固定不参与滚动
+     6) 平铺列表 ≤639 转卡片；640–1023 保留表格语义 + 首列吸附
    Appended last; keeps all class names.
    ========================================================================= */
 
@@ -2084,11 +2088,11 @@ html { -webkit-text-size-adjust: 100%; }
   .topbar .user-menu-name { display: none; }
 }
 
-/* 4. 列表页：≤900 内容优先，分类/标签收进可折叠底部筛选面板 */
-@media (max-width: 900px) {
+/* 4. 列表页：≤1023 内容优先，分类/标签收进可折叠底部筛选面板 */
+@media (max-width: 1023px) {
   .list-layout { flex-direction: column; }
   .list-main { order: 1; }
-  .list-filter-toggle { display: inline-flex; }
+  .list-header-actions .list-filter-toggle { display: inline-flex; }
   .list-filters { display: none; }
   .list-filters--open {
     display: block;
@@ -2452,7 +2456,7 @@ input[type="checkbox"], input[type="radio"] {
 .admin-form:not(.admin-form--inline) .btn { flex: 0 0 auto; }
 
 /* 小屏：搜索框独占一行，避免把筛选挤成两行参差 */
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .list-tools input.search-input, .audit-controls input.search-input { flex-basis: 100%; }
   .list-tools .select, .audit-controls .select { flex: 1 1 140px; }
   .admin-form:not(.admin-form--inline) input,
@@ -2521,14 +2525,14 @@ input.search-input {
 [data-theme="dark"] { color-scheme: dark; }
 
 /* ---------- 移动端触控与输入 ----------
-   16px 是 iOS Safari 不自动放大的下限；44px 是常用触控目标。放在控件层末尾，
-   才能覆盖前面同选择器的 38px / 14px。 */
+   16px 是 iOS Safari 不自动放大的下限，低于 16px 时聚焦会强制缩放页面，
+   这正是「手机上点输入框后排版错乱」的根因。组件类选择器（.list-toolbar
+   select 等）优先级更高，所以这里用 !important 钉住字号；min-height 44px
+   是常用触控目标。 */
 @media (max-width: 639px) {
-  input[type="text"], input[type="search"], input[type="email"], input[type="password"],
-  input[type="number"], input[type="tel"], input[type="url"], input[type="date"],
-  input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"],
-  input:not([type]), textarea, select, .select {
-    font-size: 16px;
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select, textarea {
+    font-size: 16px !important;
     min-height: 44px;
   }
   .btn { min-height: 44px; }
@@ -2540,7 +2544,7 @@ input.search-input {
 /* ---------- 后台筛选栏：手机上两列网格，搜索独占一行 ---------- */
 .admin-form--import { margin-top: -6px; }
 
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .admin-page .admin-form.admin-form--filters {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2563,23 +2567,23 @@ input.search-input {
   }
 }
 
-/* ---------- 后台表格：手机上保留表格语义，首列吸附 + 横滚提示 ---------- */
-@media (max-width: 768px) {
-  .table-scroll { scrollbar-width: thin; }
-  .admin-table th:first-child,
-  .admin-table td:first-child {
-    position: sticky; left: 0; z-index: 2;
-    background: var(--surface);
-    box-shadow: 1px 0 0 var(--border);
-  }
-  .admin-table thead th:first-child { background: var(--surface-2); z-index: 3; }
-  .admin-table tbody tr:hover td:first-child { background: var(--surface-2); }
+/* ---------- 后台表格：首列吸附 + 横滚提示 ----------
+   只要表格需要横滚，首列就保持可见（1024–1150 的窄内容区同样需要）；
+   ≤639 由下方卡片模式接管并清除吸附。 */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.admin-table th:first-child,
+.admin-table td:first-child {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
 }
+.admin-table thead th:first-child { background: var(--surface-2); z-index: 3; }
+.admin-table tbody tr:hover td:first-child { background: var(--surface-2); }
 
 /* ---------- 后台列表：手机端转卡片（不再横滚找操作按钮） ----------
    只作用于显式标记 .admin-table--cards 的「平铺列表」表格；分类树、角色、
    标签矩阵、登录历史、备份这些结构化表格保持表格形态。 */
-@media (max-width: 768px) {
+@media (max-width: 639px) {
   .admin-table--cards { min-width: 0; display: block; }
   .admin-table--cards thead { display: none; }
   .admin-table--cards tbody,
@@ -2604,7 +2608,7 @@ input.search-input {
     display: flex; align-items: baseline; gap: 10px;
     white-space: normal;
   }
-  /* 卡片模式不再需要首列吸附：先把 ≤768 的 sticky 设定清掉 */
+  /* 卡片模式不再需要首列吸附：先把 ≤1023 的 sticky 设定清掉 */
   .admin-table--cards td:first-child {
     position: static; left: auto; z-index: auto;
     box-shadow: none; background: transparent;
@@ -2653,4 +2657,137 @@ input.search-input {
 @media (max-width: 1023px) {
   .admin-topbar .admin-hamburger { display: inline-flex; align-items: center; justify-content: center; }
 }
+
+/* =========================================================================
+   移动端补丁（1.0.29）— 公开站顶栏 / 阅读页目录 / 设置页 / 矩阵 / 编辑器
+   断点仍只用 639 / 1023 / 1439。
+   ========================================================================= */
+
+/* ---------- 公开站顶栏：≤639 导航收进下拉菜单 ----------
+   旧做法是让导航横向滚动，但一屏放不下时「管理」被截成半个字，而且
+   没有任何可滚动的视觉提示。改成汉堡按钮 + 全宽下拉。 */
+.topbar-menu-btn { display: none; }
+@media (max-width: 639px) {
+  .topbar-menu-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex: 0 0 auto;
+    margin-right: auto;
+  }
+  .topbar-nav { display: none; }
+  .topbar-nav.is-open {
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    position: absolute; top: var(--topbar-h); left: 0; right: 0; z-index: 20;
+    margin: 0; padding: 8px;
+    overflow: visible;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+  }
+  .topbar-nav.is-open .nav-link {
+    display: flex; align-items: center;
+    min-height: 44px; padding: 0 12px;
+    font-size: 15px; text-align: left;
+    border-radius: var(--radius-sm);
+  }
+  .topbar-nav.is-open .nav-link:hover { background: var(--surface-2); }
+  .topbar-nav.is-open .nav-link--admin { border: 0; }
+}
+
+/* ---------- 阅读页目录：只旋转箭头，不旋转文字 ----------
+   .read-toc-caret 以前包着「▼ 展开」整段文字，收起时 rotate(-90deg)
+   把中文也一起转了 90 度，看起来像竖排的一列字。 */
+.read-toc-state { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+
+/* ---------- 设置页 / 个人中心：≤639 提前堆叠 ---------- */
+@media (max-width: 639px) {
+  .settings-nav { flex-wrap: wrap; overflow: visible; }
+  .settings-nav-item { flex: 0 0 auto; }
+  .image-lib-head { flex-direction: column; gap: 6px; }
+}
+
+/* ---------- 权限矩阵：≤639 收紧单元格，避免只剩第一列 ---------- */
+@media (max-width: 639px) {
+  .role-matrix { min-width: 0; }
+  .role-matrix th, .role-matrix td { padding: 8px 6px; font-size: 12px; white-space: normal; }
+  .role-matrix td:not(:first-child) { width: auto; min-width: 44px; }
+  .role-matrix th:first-child, .role-matrix td:first-child { position: static; box-shadow: none; }
+  .perm-matrix { font-size: 12px; }
+  .perm-matrix th, .perm-matrix td { padding: 6px 4px; line-height: 1.35; }
+  .perm-matrix th { letter-spacing: 0; }
+}
+
+/* ---------- 行内表单：≤639 允许换行，避免输入框挤掉按钮 ---------- */
+@media (max-width: 639px) {
+  .admin-form--inline { flex-wrap: wrap; }
+  .admin-form--inline input { flex: 1 1 140px; width: auto; min-width: 0; }
+  .admin-form:not(.admin-form--inline) select,
+  .admin-form:not(.admin-form--inline) .btn { width: 100%; }
+  .menu-row-order { flex-direction: row; }
+  .menu-row-order .btn { width: 44px; min-height: 44px; }
+}
+
+/* ---------- 媒体库：≤639 两列缩略图 / 详情单列 ---------- */
+@media (max-width: 639px) {
+  .media-grid, .image-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .media-detail-list { grid-template-columns: 1fr; gap: 2px; }
+  .media-detail-list dt { margin-top: 6px; white-space: normal; }
+}
+/* 列表视图是 7 列的密集表：平板保持横向滚动而不是把列压扁。 */
+@media (max-width: 1023px) {
+  .media-table { min-width: 680px; }
+}
+/* ≤639 已转为卡片，必须收回上面的最小宽度。 */
+@media (max-width: 639px) {
+  .media-table { min-width: 0; }
+}
+
+/* ---------- 个人中心：≤1023 侧栏转横向页签，主列铺满 ----------
+   .center-layout 的 align-items:flex-start 在纵向排列时会把主列压成
+   内容宽度（平板下只有 ~280px），必须显式 stretch。 */
+@media (max-width: 1023px) {
+  .center-layout { align-items: stretch; }
+  .center-nav { flex-direction: row; gap: 6px; }
+  .center-nav-link { white-space: nowrap; }
+}
+
+/* ---------- 仪表盘：≤639 统计卡两列，避免六张卡竖排过长 ---------- */
+@media (max-width: 639px) {
+  .dash-card { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 16px; }
+  .dash-card-num { font-size: 26px; }
+}
+
+/* ---------- 备份导入：≤639 文件选择器达到触控/16px 输入标准 ---------- */
+@media (max-width: 639px) {
+  .backup-import-row input[type="file"] { width: 100%; font-size: 16px; min-height: 44px; }
+  .backup-import-row input[type="file"]::file-selector-button {
+    min-height: 44px; margin-right: 10px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: 16px; cursor: pointer;
+  }
+}
+
+/* ---------- 登录历史弹窗：卡片里 UA 允许换行 ---------- */
+/* 弹窗内宽最多 680px，720px 的表格最小宽度会让 UA 被裁在边框外。 */
+.login-log-table { min-width: 0; }
+@media (max-width: 639px) {
+  .login-log-table td.ua-cell { max-width: none; white-space: normal; overflow: visible; }
+  .modal { max-height: calc(100dvh - 24px); }
+  .modal-backdrop { padding: 12px; }
+  .media-detail { padding: 14px 14px 0; }
+  .media-detail .modal-foot {
+    position: sticky; bottom: 0;
+    margin: 0 -14px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    background: var(--surface);
+  }
+}
+
+/* ---------- 编辑器：≤639 只保留单栏模式 ---------- */
+@media (max-width: 639px) {
+  .pe-mode--split { display: none; }
+  .pe-canvas .vditor-preview { display: none !important; }
+  .pe-canvas .vditor-sv { width: 100% !important; }
+  .pe-drawer-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+
 

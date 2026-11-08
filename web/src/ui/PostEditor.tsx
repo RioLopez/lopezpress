@@ -129,7 +129,11 @@ export function PostEditor({
   const [tags, setTags] = useState<string[]>((initialTags || []).filter(Boolean))
   const [pinned, setPinned] = useState(!!initialPinned && canPin)
   const [cover, setCover] = useState(initialCover)
-  const [mode, setMode] = useState<EditorMode>('split')
+  // Split preview needs two side-by-side panes; at ≤639 there is no room for
+  // two, so the first paint starts in the single-pane IR mode.
+  const [mode, setMode] = useState<EditorMode>(() =>
+    window.matchMedia('(max-width: 639px)').matches ? 'ir' : 'split',
+  )
   const [body, setBody] = useState(initialBody)
   const [categories, setCategories] = useState<Category[]>([])
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -391,7 +395,7 @@ export function PostEditor({
           source of truth for the same commands. */}
       <div class="pe-toolbar">
         <div class="pe-modes" role="group" aria-label="editor mode">
-          <button class={`pe-mode ${mode === 'split' ? 'pe-mode--active' : ''}`} onClick={() => setMode('split')}>
+          <button class={`pe-mode pe-mode--split ${mode === 'split' ? 'pe-mode--active' : ''}`} onClick={() => setMode('split')}>
             {t('editor.modeSplit')}
           </button>
           <button class={`pe-mode ${mode === 'ir' ? 'pe-mode--active' : ''}`} onClick={() => setMode('ir')}>

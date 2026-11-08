@@ -22,7 +22,7 @@ export function MediaList(p: Props) {
   }
   return (
     <div class="media-table-wrap">
-      <table class="media-table">
+      <table class="media-table admin-table--cards">
         <thead>
           <tr>
             <th />
@@ -37,7 +37,7 @@ export function MediaList(p: Props) {
         <tbody>
           {p.items.map((it) => (
             <tr key={it.name} class={it.deleted ? 'media-row--deleted' : ''}>
-              <td>
+              <td class="col-check">
                 <input
                   type="checkbox"
                   checked={p.selected.has(it.name)}
@@ -45,17 +45,19 @@ export function MediaList(p: Props) {
                   aria-label={it.original_name || it.name}
                 />
               </td>
-              <td>
+              <td class="card-title">
                 <button class="media-row-open" onClick={() => p.onOpen(it)}>
                   <img src={it.thumb_url || it.url} alt="" loading="lazy" />
                   <span class="media-mono">{it.original_name || it.name}</span>
                 </button>
               </td>
-              <td>{kindLabel[it.kind] || it.kind}</td>
-              <td>{it.owner_name || t('media.ownerLegacy')}</td>
-              <td>{it.width > 0 ? `${it.width}×${it.height}` : '—'} · {fmtBytes(it.size)}</td>
-              <td>{it.ref_count > 0 ? it.ref_count : '—'}</td>
-              <td>{fmtDate(it.created_at)}</td>
+              <td data-label={t('media.kindAll')}>{kindLabel[it.kind] || it.kind}</td>
+              <td data-label={t('media.owner')}>{it.owner_name || t('media.ownerLegacy')}</td>
+              <td data-label={t('media.dimensions')}>
+                {it.width > 0 ? `${it.width}×${it.height}` : '—'} · {fmtBytes(it.size)}
+              </td>
+              <td data-label={t('media.refs')}>{it.ref_count > 0 ? it.ref_count : '—'}</td>
+              <td data-label={t('media.uploaded')}>{fmtDate(it.created_at)}</td>
             </tr>
           ))}
         </tbody>
