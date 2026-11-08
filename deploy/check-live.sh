@@ -13,13 +13,17 @@
 # names, so equal names mean equal content.
 #
 # Usage:  bash deploy/check-live.sh [base_url] [dist_dir]
-#         bash deploy/check-live.sh http://203.0.113.10:8088
+#         bash deploy/check-live.sh https://your-site.example.com
+#
+# base_url 也可以从环境变量 VPS_BASE 读；两者都没有时回落到本机 8088。
+# 生产地址不要写进仓库：这是公开仓库，写死的 IP + 端口等于直接把
+# 后台入口标给扫描器。
 #
 # Exit codes: 0 = in sync, 1 = drift, 2 = could not check.
 
 set -uo pipefail
 
-BASE="${1:-http://203.0.113.10:8088}"
+BASE="${1:-${VPS_BASE:-http://127.0.0.1:8088}}"
 DIST="${2:-web/dist}"
 INDEX="$DIST/index.html"
 
