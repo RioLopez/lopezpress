@@ -345,6 +345,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 / 日期 | 变更 |
 |---|---|
+| 2026-11-08（1.0.27） | **后台移动端卡片化 + 断点重规划**。后台列表（用户、文章、回收站、封禁库、审核队列、操作日志）在 ≤768 由横向滚动表格改为逐条卡片（标题 + 标签值 + 底部操作行），复选框移到卡片右上角；后台抽屉断点 768→1023，768–1023 的窄桌面直接收起侧栏；用户表 ≤1200 收起「最近登录 IP/时间」；修复状态徽章在窄列折成两行、桌面挤出 ☰ 两个渲染问题。**接口契约不变** |
 | 2026-11-08（1.0.26） | **前端响应式适配**。内容站 ≤900 改为内容优先，分类/标签收进带遮罩的底部筛选面板；移动端顶栏改为导航单行横滑、工具区固定；列表工具栏搜索独占一行、下拉两列；后台筛选栏两列网格，输入 16px 防 iOS 聚焦放大、按钮 44px 触控；后台宽表格保留语义并首列吸附、横滚可达操作列；后台抽屉补遮罩与 Esc 关闭。**接口契约不变** |
 | 2026-11-08（1.0.25） | **界面精修 + 内容模块检索 + 审计导出**。新增 `GET /api/admin/actions/export`（CSV，admin）：与 `/api/admin/actions` 同口径，支持 `q`/`actor` 过滤，UTF-8 BOM 便于 Excel 打开中文，单元格以 `= + - @` 开头时加 `'` 防公式注入，单次最多 20000 行；`GET /api/admin/actions` 新增可选 `q` 关键词（操作人/操作/对象/详情）。前端：全站控件统一高度/圆角/焦点环/搜索图标/下拉箭头（追加 v1.2 控件层，`index.css`），审计页新增搜索与「导出 CSV」；文章管理补「浏览最少」排序与「重置筛选」；回收站、封禁库、审核队列新增客户端搜索 + 排序字段 + 正/倒序。**其余契约不变** |
 | 2026-11-07（1.0.19） | **系统概览 / 仪表盘增强**。`GET /api/admin/dashboard` 的响应**只增不改**，新增 `views_today` / `views_7d`（与 30 天趋势同源的去重阅读）、`status_counts`（published / pending / draft / private，`banned` **仅 root**）、`users_total` / `users_disabled` / `users_new_7d`、`media_live_count` / `media_live_bytes`（`deleted_at IS NULL` 的图库行）、`app_version`（构建身份）、`auto_backup`（**仅 root**）、`recent_actions`（最近 5 条，口径同 `/api/admin/actions`）。前端仪表盘数字卡 3→6，新增「内容结构」「系统状态」「最近操作」三块，页面拆为 `pages/admin/dashboard/` 子组件。**其余契约不变**；`dashboard_test.go` 增加角色裁剪断言 |

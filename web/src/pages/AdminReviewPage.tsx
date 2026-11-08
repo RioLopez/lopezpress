@@ -116,7 +116,7 @@ export function AdminReviewPage() {
         emptyText={q.trim() && items.length > 0 ? t('admin.noMatchContent') : t('admin.reviewEmpty')}
       >
         <div class="table-scroll">
-          <table class="admin-table">
+          <table class="admin-table admin-table--cards">
             <thead>
               <tr>
                 <th>{t('admin.name')}</th>
@@ -128,19 +128,19 @@ export function AdminReviewPage() {
             <tbody>
               {visible.map((p) => (
                 <tr key={p.id}>
-                  <td>
+                  <td class="card-title">
                     <div class="admin-user-cell">
                       <span>{p.title}</span>
                       <span class="muted">{p.view_count} {t('list.views')}</span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label={t('list.author')}>
                     <div class="admin-user-cell">
                       <span>{p.author?.display_name || p.author?.username || p.author_id}</span>
                       <span class="muted">{p.author?.email}</span>
                     </div>
                   </td>
-                  <td class="muted">{fmtDate(p.created_at, locale)}</td>
+                  <td class="muted" data-label={t('admin.submittedAt')}>{fmtDate(p.created_at, locale)}</td>
                   <td class="actions">
                     <button
                       class="btn btn-primary btn-sm"

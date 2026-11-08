@@ -368,7 +368,7 @@ export function AdminPostsPage() {
         emptyText={t('list.empty')}
       >
         <div class="table-scroll">
-          <table class="admin-table">
+          <table class="admin-table admin-table--cards">
             <thead>
               <tr>
                 <th class="col-check">
@@ -389,7 +389,7 @@ export function AdminPostsPage() {
                   <td class="col-check">
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
                   </td>
-                  <td>
+                  <td class="card-title">
                     <span
                       class="admin-post-title"
                       onClick={() => navigate(`/read/${p.id}`)}
@@ -399,15 +399,15 @@ export function AdminPostsPage() {
                       {p.title}
                     </span>
                   </td>
-                  <td>
+                  <td data-label={t('admin.status')}>
                     <span class={`post-status post-status-${p.status}`}>
                       {t(`admin.statusLabel.${p.status}`)}
                     </span>
                   </td>
-                  <td class="muted">{p.author?.display_name || p.author?.username || '—'}</td>
-                  <td>{p.category?.name || '—'}</td>
-                  <td class="num">{p.view_count}</td>
-                  <td class="muted">{new Date(p.created_at).toLocaleDateString(localeTag)}</td>
+                  <td class="muted" data-label={t('admin.author')}>{p.author?.display_name || p.author?.username || '—'}</td>
+                  <td data-label={t('list.categoryLabel')}>{p.category?.name || '—'}</td>
+                  <td class="num" data-label={t('list.views')}>{p.view_count}</td>
+                  <td class="muted" data-label={t('admin.time')}>{new Date(p.created_at).toLocaleDateString(localeTag)}</td>
                   <td class="actions">
                     <button class="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${p.id}`)}>
                       {t('list.edit')}

@@ -36,7 +36,7 @@ export function UserTable({
 
   return (
     <div class="table-scroll">
-      <table class="admin-table users-table">
+      <table class="admin-table users-table admin-table--cards">
         <thead>
           <tr>
             <th class="col-select">
@@ -51,8 +51,8 @@ export function UserTable({
             <th>{t('admin.username')}</th>
             <th>{t('admin.role')}</th>
             <th>{t('admin.status')}</th>
-            <th>{t('admin.lastLoginIp')}</th>
-            <th>{t('admin.lastLoginAt')}</th>
+            <th class="hide-compact">{t('admin.lastLoginIp')}</th>
+            <th class="hide-compact">{t('admin.lastLoginAt')}</th>
             <th class="actions"></th>
           </tr>
         </thead>
@@ -67,7 +67,7 @@ export function UserTable({
                   onChange={(e) => onSelect(u.id, (e.target as HTMLInputElement).checked)}
                 />
               </td>
-              <td>
+              <td class="card-title">
                 <div class="admin-user-cell">
                   <span class="admin-user-name">
                     {u.display_name || u.username}
@@ -77,7 +77,7 @@ export function UserTable({
                   <span class="muted">{t('list.author')}: {fmtDate(u.created_at, locale)}</span>
                 </div>
               </td>
-              <td>
+              <td data-label={t('admin.role')}>
                 {isRoot(u.role) ? (
                   <span class="badge-root">root</span>
                 ) : (
@@ -93,13 +93,15 @@ export function UserTable({
                   </select>
                 )}
               </td>
-              <td>
+              <td data-label={t('admin.status')}>
                 <span class={`post-status post-status-${u.disabled ? 'draft' : 'published'}`}>
                   {u.disabled ? t('admin.disabled') : t('admin.active')}
                 </span>
               </td>
-              <td class="mono-cell">{u.last_login_ip || '—'}</td>
-              <td class="muted">{fmtDate(u.last_login_at, locale)}</td>
+              <td class="mono-cell hide-compact">{u.last_login_ip || '—'}</td>
+              <td class="muted hide-compact" data-label={t('admin.lastLoginAt')}>
+                {fmtDate(u.last_login_at, locale)}
+              </td>
               <td class="actions">
                 {/* The root account's login trail is root-only on the server:
                     an admin could otherwise profile where the super-admin

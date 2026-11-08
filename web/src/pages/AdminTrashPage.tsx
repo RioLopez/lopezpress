@@ -120,7 +120,7 @@ export function AdminTrashPage() {
         emptyText={q.trim() && items.length > 0 ? t('admin.noMatchContent') : t('admin.emptyTrash')}
       >
         <div class="table-scroll">
-        <table class="admin-table">
+        <table class="admin-table admin-table--cards">
           <thead>
             <tr>
               <th>{t('admin.name')}</th>
@@ -132,14 +132,14 @@ export function AdminTrashPage() {
           <tbody>
             {visible.map((p) => (
               <tr key={p.id}>
-                <td>
+                <td class="card-title">
                   <div class="admin-user-cell">
                     <span>{p.title}</span>
                     <span class="muted">{p.view_count} {t('list.views')}</span>
                   </div>
                 </td>
-                <td>{p.author?.username || p.author_id}</td>
-                <td class="muted">{fmtDate(p.deleted_at, locale)}</td>
+                <td data-label={t('list.author')}>{p.author?.username || p.author_id}</td>
+                <td class="muted" data-label={t('admin.deletedAt')}>{fmtDate(p.deleted_at, locale)}</td>
                 <td class="actions">
                   <button
                     class="btn btn-primary btn-sm"

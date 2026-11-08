@@ -83,7 +83,7 @@ export function AdminAuditPage() {
       {rows && rows.length === 0 && <p class="muted">{t('audit.empty')}</p>}
       {rows && rows.length > 0 && (
         <div class="table-scroll">
-          <table class="admin-table audit-table">
+          <table class="admin-table audit-table admin-table--cards">
             <thead>
               <tr>
                 <th>{t('audit.time')}</th>
@@ -96,11 +96,11 @@ export function AdminAuditPage() {
             <tbody>
               {rows.map((a) => (
                 <tr key={a.id}>
-                  <td class="audit-time">{fmt(a.created_at)}</td>
-                  <td>{a.actor_name || '—'}</td>
-                  <td><span class="audit-verb">{verb(a.action)}</span></td>
-                  <td class="audit-target">{a.target || '—'}</td>
-                  <td class="audit-detail">{a.detail || '—'}</td>
+                  <td class="audit-time" data-label={t('audit.time')}>{fmt(a.created_at)}</td>
+                  <td data-label={t('audit.actor')}>{a.actor_name || '—'}</td>
+                  <td data-label={t('audit.action')}><span class="audit-verb">{verb(a.action)}</span></td>
+                  <td class="audit-target" data-label={t('audit.target')}>{a.target || '—'}</td>
+                  <td class="audit-detail" data-label={t('audit.detail')}>{a.detail || '—'}</td>
                 </tr>
               ))}
             </tbody>

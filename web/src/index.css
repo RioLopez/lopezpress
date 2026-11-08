@@ -465,6 +465,7 @@ html, body {
 .post-list--cards .post-cover-thumb { border-radius: 8px; }
 
 .post-status {
+  display: inline-block; white-space: nowrap;
   font-size: 11px; padding: 2px 8px; border-radius: var(--radius);
   font-weight: 600;
 }
@@ -1461,9 +1462,11 @@ tr.row-selected { transition: background .12s; }
 /* Register: closed state (spec 16) ------------------------------------ */
 .register-closed { font-weight: 600; color: var(--text); }
 
-/* Admin layout: responsive drawer ------------------------------------- */
+/* Admin layout: responsive drawer -------------------------------------
+   断点定在 1024：768–1023 是「窄桌面」（缩放窗口/小笔记本），230px 侧栏
+   会把表格和操作列挤到换行；这一段直接收进抽屉，内容区拿回整宽。 */
 .admin-drawer-scrim { display: none; }
-@media (max-width: 768px) {
+@media (max-width: 1023px) {
   .admin-drawer-scrim.is-open {
     display: block; position: fixed; inset: 0; z-index: 149;
     background: rgba(0, 0, 0, .35);
@@ -1478,8 +1481,11 @@ tr.row-selected { transition: background .12s; }
   .admin-layout--open .admin-sidebar { transform: translateX(0); }
   .admin-main { padding: 18px 14px; }
   .dash-cols { flex-direction: column; }
-  .users-table td.mono-cell,
-  .users-table th:nth-child(5) { display: none; }
+}
+
+/* 缩放窗口（1200 以下）先收起用户表的低价值列，避免表格被挤到横滚 */
+@media (max-width: 1200px) {
+  .users-table .hide-compact { display: none; }
 }
 
 
@@ -1605,7 +1611,7 @@ tr.row-selected { transition: background .12s; }
 .center-note { margin-top: 16px; font-size: 13px; line-height: 1.6; }
 
 /* Status badges (reuse post-status palette) */
-.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius); text-transform: uppercase; letter-spacing: .03em; }
+.badge { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius); text-transform: uppercase; letter-spacing: .03em; }
 .badge--published { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
 .badge--draft { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .badge--scheduled { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
@@ -2569,3 +2575,82 @@ input.search-input {
   .admin-table thead th:first-child { background: var(--surface-2); z-index: 3; }
   .admin-table tbody tr:hover td:first-child { background: var(--surface-2); }
 }
+
+/* ---------- 后台列表：手机端转卡片（不再横滚找操作按钮） ----------
+   只作用于显式标记 .admin-table--cards 的「平铺列表」表格；分类树、角色、
+   标签矩阵、登录历史、备份这些结构化表格保持表格形态。 */
+@media (max-width: 768px) {
+  .admin-table--cards { min-width: 0; display: block; }
+  .admin-table--cards thead { display: none; }
+  .admin-table--cards tbody,
+  .admin-table--cards tr,
+  .admin-table--cards td { display: block; width: auto; }
+
+  .admin-table--cards tr {
+    position: relative;
+    margin: 0 0 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    background: var(--surface);
+  }
+  .admin-table--cards tr.row-selected {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+  }
+
+  .admin-table--cards td {
+    border: 0; padding: 4px 0;
+    display: flex; align-items: baseline; gap: 10px;
+    white-space: normal;
+  }
+  /* 卡片模式不再需要首列吸附：先把 ≤768 的 sticky 设定清掉 */
+  .admin-table--cards td:first-child {
+    position: static; left: auto; z-index: auto;
+    box-shadow: none; background: transparent;
+  }
+  .admin-table--cards td.num { width: auto; text-align: left; }
+  .admin-table--cards td::before {
+    content: attr(data-label);
+    flex: 0 0 76px;
+    font-size: 12px; font-weight: 600;
+    color: var(--text-muted);
+  }
+  .admin-table--cards td:not([data-label])::before { display: none; }
+
+  /* 主标题行：去掉标签，作为卡片标题 */
+  .admin-table--cards td.card-title {
+    display: block;
+    padding: 0 28px 6px 0;
+    font-weight: 600; font-size: 15px;
+  }
+
+  .admin-table--cards td.col-check,
+  .admin-table--cards td.col-select {
+    position: absolute; top: 12px; right: 12px; left: auto;
+    width: auto; z-index: 1; padding: 0; background: transparent;
+  }
+
+  .admin-table--cards td.actions {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 8px; padding: 10px 0 0;
+    border-top: 1px solid var(--border);
+    width: auto; white-space: normal;
+  }
+  .admin-table--cards td.actions .btn { margin: 0; }
+
+  .admin-table--cards tbody tr:hover:not(.row-selected) td { background: transparent; }
+
+  /* 卡片里已被收起的低价值列保持隐藏 */
+  .admin-table--cards td.mono-cell,
+  .admin-table--cards td.hide-compact { display: none; }
+}
+
+/* ---------- 汉堡按钮只属于抽屉模式 ----------
+   后段的 .btn { display:inline-flex } 会盖掉前面的 .admin-hamburger{display:none}，
+   这里用更高优先级钉住，否则桌面也一直显示 ☰。 */
+.admin-topbar .admin-hamburger { display: none; }
+@media (max-width: 1023px) {
+  .admin-topbar .admin-hamburger { display: inline-flex; align-items: center; justify-content: center; }
+}
+
