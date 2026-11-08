@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """doc_check.py -- keep the documentation from growing back.
 
-2026-10-27: the repo went from 92 markdown files to 6. The old gate checked
-"every doc has an A/B banner" and "docs/README.md exists". With six files, the
+2026-10-27: the repo went from 92 markdown files to 5. The old gate checked
+"every doc has an A/B banner" and "docs/README.md exists". With five files, the
 real risk is no longer a missing banner -- it is **the pile growing back**.
 So this gate is now a whitelist:
 
@@ -10,8 +10,8 @@ So this gate is now a whitelist:
   2. each of them must carry a "> 类别 A|B" banner,
   3. a missing file is REPORTED but does not fail -- shrinking further is fine.
 
-The 6th file, 内部维护文档, is local-only (dev/ is gitignored and in
-SKIP_DIRS), so it is not counted here.
+Any local notes kept outside the repository (dev/ is gitignored and in
+SKIP_DIRS) are not counted here.
 
 Adding a document is therefore a two-step decision: write the file, then add it
 to ALLOWED below. That second step is the speed bump that stops the pile.
@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Directories that are never official docs. dev/ is local AI notes (gitignored).
+# Directories that are never official docs (build output, caches, gitignored local notes).
 SKIP_DIRS = {".git", "node_modules", "dist", ".workbuddy", "__pycache__", ".vite", "dev"}
 
 # The complete set of official documents. This list IS the policy: the repo is
@@ -83,8 +83,8 @@ def main() -> int:
         for name in extra:
             fail(f"未登记的文档：{name}")
         print()
-        print("  2026-10-27 起文档固定为 6 份（5 份官方 + 本地 内部维护文档）。")
-        print("  新增文档前先问：能不能写进这 6 份里已有的那一份？")
+        print("  2026-10-27 起文档固定为 5 份（见 ALLOWED）。")
+        print("  新增文档前先问：能不能写进这 5 份里已有的那一份？")
         print("  确实要独立成文 → 在 scripts/doc_check.py 的 ALLOWED 里加一行，这是有意的决定。")
     else:
         say(f"[ok] 没有多余文档（{len(names)}/{len(ALLOWED)}）")
@@ -113,7 +113,7 @@ def main() -> int:
     if failures:
         print(f"RESULT: FAIL ({len(failures)} 项)")
         return 1
-    print("RESULT: PASS -- 文档仍在 6 份之内且自洽")
+    print("RESULT: PASS -- 文档仍在 5 份之内且自洽")
     return 0
 
 

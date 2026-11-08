@@ -2,7 +2,7 @@
 # `-f deploy/docker/Dockerfile.* .`). Keep the context small and free of
 # secrets: web/node_modules alone is thousands of files.
 
-# --- VCS / editor / agent scratch ---
+# --- VCS / editor / local notes ---
 .git
 .gitignore
 .workbuddy

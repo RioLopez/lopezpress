@@ -187,7 +187,7 @@ curl http://<主机IP>/health
 **与 systemd 的取舍**：systemd 最轻、无 Docker 依赖、适合已装好的 VPS；Compose 一键起、
 环境一致、易迁移，代价是主机要装 Docker。
 
-> **诚实说明**：本机没有 Docker，这套方案**从未真正跑起来过**，只是按 distroless + nginx
+> **诚实说明**：这套容器方案**尚未在容器环境中实跑验证**，只是按 distroless + nginx
 > 的标准写法配置的。要用它请先在测试机上完整跑一遍 `up -d --build` + 备份恢复，
 > 再上生产。Dockerfile 的基础镜像已对齐 `go.mod` 要求的 1.26（`golang:1.26-alpine`），
 > 且 `GOSUMDB` 必须是 `sum.golang.org`——设成 `off` 会让 toolchain 下载直接失败。

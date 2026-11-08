@@ -137,7 +137,7 @@ export SM_MS_TOKEN=""             # 可选：SM.MS 图床 token 服务端持有
 | --- | --- | --- | --- |
 | admin | admin@example.com | 首次全新启动随机生成（仅终端打印一次） | **root**（全库唯一超级管理员） |
 
-> **admin 密码说明**：`seedDemoData` 仅在数据库**不存在 admin 账号**时新建，并使用随机 22 字符密码（在 stderr 打印一次横幅，不落日志），登录后强制跳 `/change-password` 改密。若数据库**已存在** admin 账号（如本机开发库），则沿用既有密码不被覆盖——历史开发库的 admin 密码可能是早期固定的 `[redacted]` 或此前某次随机值，**以实际数据库为准**；忘记密码可用 `ADMIN_INITIAL_PASSWORD` 环境变量在下次首启（无 admin 时）固定。
+> **admin 密码说明**：`seedDemoData` 仅在数据库**不存在 admin 账号**时新建，并使用随机 22 字符密码（在 stderr 打印一次横幅，不落日志），登录后强制跳 `/change-password` 改密。若数据库**已存在** admin 账号（如既有开发库），则沿用既有密码不被覆盖——历史开发库的 admin 密码可能是早期固定的 `[redacted]` 或此前某次随机值，**以实际数据库为准**；忘记密码可用 `ADMIN_INITIAL_PASSWORD` 环境变量在下次首启（无 admin 时）固定。
 >
 > **密码策略只管写入，不管既有密码**（1.0.1 起）：新建账号 / 改密 / 重置密码要求「≥ 8 个字符且 ≤ 72 字节，且不在常见密码表里」；但一个存量 `[redacted]` **仍然能登录**——策略拦截的是"设置弱密码"，不是"已有弱密码"。它会在下一次改密时被要求换掉。
 >
@@ -203,12 +203,9 @@ curl -X POST http://localhost:8080/api/posts -H "Content-Type: application/json"
 | **还有什么没做** | [`内部待办清单`](内部待办清单) |
 | **能不能上线 / 还剩什么安全债** | [`内部安全基线`](内部安全基线) |
 
-> AI 协作用的唯一入口是 `内部维护文档`：项目全貌、改码陷阱、决策理由、事实基线全在那一份里。
-> 它放在 `dev/` 下并被 gitignore（含本机路径与历史细节），所以不在公开仓库中。
-
 ## 部署
 
-见 [deploy/README.md](deploy/README.md)：systemd 服务、Nginx 反代 + 前端静态托管、一键上传脚本、线上校验脚本（`check-live.sh`，确认服务器跑的就是这份代码）；容器化方案（**本机无 Docker，未实跑过**）见 [deploy/docker/](deploy/docker)。
+见 [deploy/README.md](deploy/README.md)：systemd 服务、Nginx 反代 + 前端静态托管、一键上传脚本、线上校验脚本（`check-live.sh`，确认服务器跑的就是这份代码）；容器化方案见 [deploy/docker/](deploy/docker)（未在容器环境中实跑验证）。
 
 ## 说明
 
