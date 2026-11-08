@@ -271,11 +271,12 @@ func EmptyTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListActions returns the site's recent admin/content operations (audit trail).
-// GET /api/admin/actions?limit=50&actor=<user-id> (auth, admin)
+// GET /api/admin/actions?limit=50&actor=<user-id>&q=<keyword> (auth, admin)
 func ListActions(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r.URL.Query(), "limit", 50, 200)
 	actor := r.URL.Query().Get("actor")
-	rows, err := svc.ListActions(r.Context(), actor, limit)
+	q := r.URL.Query().Get("q")
+	rows, err := svc.ListActions(r.Context(), actor, q, limit)
 	if err != nil {
 		writeServiceError(w, err)
 		return

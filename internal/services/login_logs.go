@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"gorm.io/gorm"
+
 	"lopezpress/internal/models"
 )
 
@@ -38,18 +40,16 @@ func (s *Service) RecordLogin(ctx context.Context, userID, identifier, ip, ua st
 }
 
 // ListActions returns the most recent action_log rows (optionally filtered
-// by an actor). Admin endpoint — the route table enforces the role (P4).
-func (s *Service) ListActions(ctx context.Context, actorID string, limit int) ([]models.ActionLog, error) {
+// by an actor and a keyword). Admin endpoint — the route table enforces the
+// role (P4).
+func (s *Service) ListActions(ctx context.Context, actorID, q string, limit int) ([]models.ActionLog, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	if limit > 200 {
 		limit = 200
 	}
-	query := s.db.WithContext(ctx).Model(&models.ActionLog{})
-	if actorID != "" {
-		query = query.Where("actor_id = ?", actorID)
-	}
+	query := actionQuery(s.db.WithContext(ctx), actorID, q)
 	var out []models.ActionLog
 	if err := query.Order("created_at DESC, id DESC").Limit(limit).Find(&out).Error; err != nil {
 		return nil, newErr(http.StatusInternalServerError, "failed to load actions")
@@ -58,4 +58,42 @@ func (s *Service) ListActions(ctx context.Context, actorID string, limit int) ([
 		out = []models.ActionLog{}
 	}
 	return out, nil
+}
+
+// maxActionExportRows bounds one export. The audit trail grows forever and a
+// CSV response is assembled in memory, so an unbounded "export everything"
+// would be a denial-of-service vector on a small box. 20k rows is far more
+// than an operator needs to reconcile one incident, and the response states
+// when it was truncated so nobody mistakes a prefix for the whole history.
+const maxActionExportRows = 20000
+
+// ExportActions returns every action_log row matching the filters, newest
+// first, up to maxActionExportRows.
+func (s *Service) ExportActions(ctx context.Context, actorID, q string) ([]models.ActionLog, error) {
+	query := actionQuery(s.db.WithContext(ctx), actorID, q)
+	var out []models.ActionLog
+	if err := query.Order("created_at DESC, id DESC").Limit(maxActionExportRows).Find(&out).Error; err != nil {
+		return nil, newErr(http.StatusInternalServerError, "failed to load actions")
+	}
+	if out == nil {
+		out = []models.ActionLog{}
+	}
+	return out, nil
+}
+
+// actionQuery applies the two filters both readers share, so the page and the
+// CSV export never disagree about what "matching rows" means.
+func actionQuery(db *gorm.DB, actorID, q string) *gorm.DB {
+	query := db.Model(&models.ActionLog{})
+	if actorID != "" {
+		query = query.Where("actor_id = ?", actorID)
+	}
+	if q != "" {
+		like := "%" + escapeLike(q) + "%"
+		query = query.Where(
+			"actor_name LIKE ? ESCAPE '\\' OR action LIKE ? ESCAPE '\\' OR target LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\'",
+			like, like, like, like,
+		)
+	}
+	return query
 }

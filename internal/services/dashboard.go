@@ -138,7 +138,7 @@ func (s *Service) GetDashboard(ctx context.Context, actor models.User) (Dashboar
 		Select("COUNT(*) AS n, COALESCE(SUM(size),0) AS total_bytes").
 		Where("deleted_at IS NULL").Scan(&media)
 
-	actions, err := s.ListActions(ctx, "", 5)
+	actions, err := s.ListActions(ctx, "", "", 5)
 	if err != nil {
 		return DashboardData{}, err
 	}

@@ -373,11 +373,16 @@ export const getDashboard = () =>
   request<DashboardData>('/api/admin/dashboard')
 
 // Admin operation audit trail: recent content + admin mutations.
-export const listActions = (limit = 50, actor?: string) => {
+export const listActions = (limit = 50, actor?: string, q?: string) => {
   const qs = new URLSearchParams({ limit: String(limit) })
   if (actor) qs.set('actor', actor)
+  if (q) qs.set('q', q)
   return request<ActionLog[]>(`/api/admin/actions?${qs.toString()}`)
 }
+
+// CSV snapshot of the audit trail, honoring the same actor/keyword filters.
+export const exportActions = (q?: string) =>
+  download(`/api/admin/actions/export?${new URLSearchParams(q ? { q } : {}).toString()}`)
 
 // No batch endpoint on the backend; fan out one call per user and tolerate
 // partial failure. Returns how many succeeded so the caller can report it.

@@ -26,6 +26,8 @@ export function UserFilters({
   return (
     <div class="admin-form">
       <input
+        class="search-input"
+        type="search"
         value={query}
         placeholder={t('admin.searchUsers')}
         onInput={(e) => onQuery((e.target as HTMLInputElement).value)}

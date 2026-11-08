@@ -144,7 +144,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | POST | `/api/trash/{id}/restore` | admin | 恢复。目标属于 root/其他 admin 时 **403**（与 `DELETE /api/posts/{id}` 同一套规则） |
 | DELETE | `/api/trash/{id}` | admin | **单条永久删除**。权限同 restore；不受 7 天恢复窗口限制（窗口外的行已不可恢复，更不该不可删除）；删除后同事务清理孤儿图片台账并重算 `ref_count`；不是回收站里的行返回 400，已不存在返回 404 |
 | POST | `/api/trash/empty` | admin | 清空。**只清调用者有权管理的那些**，返回实际删除数 |
-| GET | `/api/admin/actions` | admin | 审计日志 |
+| GET | `/api/admin/actions` | admin | 审计日志。可选 `q`（操作人/操作/对象/详情关键词，大小写不敏感）与 `actor`（用户 ID） |
+| GET | `/api/admin/actions/export` | admin | 审计日志 CSV 导出（UTC+8 服务器本地时间，UTF-8 BOM，公式注入已转义；与列表同口径，最多 20000 行） |
 
 ### 1.7 后台 — 用户 / 站点 / 备份
 
@@ -344,6 +345,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 轮次 / 日期 | 变更 |
 |---|---|
+| 2026-11-08（1.0.25） | **界面精修 + 内容模块检索 + 审计导出**。新增 `GET /api/admin/actions/export`（CSV，admin）：与 `/api/admin/actions` 同口径，支持 `q`/`actor` 过滤，UTF-8 BOM 便于 Excel 打开中文，单元格以 `= + - @` 开头时加 `'` 防公式注入，单次最多 20000 行；`GET /api/admin/actions` 新增可选 `q` 关键词（操作人/操作/对象/详情）。前端：全站控件统一高度/圆角/焦点环/搜索图标/下拉箭头（追加 v1.2 控件层，`index.css`），审计页新增搜索与「导出 CSV」；文章管理补「浏览最少」排序与「重置筛选」；回收站、封禁库、审核队列新增客户端搜索 + 排序字段 + 正/倒序。**其余契约不变** |
 | 2026-11-07（1.0.19） | **系统概览 / 仪表盘增强**。`GET /api/admin/dashboard` 的响应**只增不改**，新增 `views_today` / `views_7d`（与 30 天趋势同源的去重阅读）、`status_counts`（published / pending / draft / private，`banned` **仅 root**）、`users_total` / `users_disabled` / `users_new_7d`、`media_live_count` / `media_live_bytes`（`deleted_at IS NULL` 的图库行）、`app_version`（构建身份）、`auto_backup`（**仅 root**）、`recent_actions`（最近 5 条，口径同 `/api/admin/actions`）。前端仪表盘数字卡 3→6，新增「内容结构」「系统状态」「最近操作」三块，页面拆为 `pages/admin/dashboard/` 子组件。**其余契约不变**；`dashboard_test.go` 增加角色裁剪断言 |
 | 2026-11-07（1.0.18） | **P1-1 权限收口 + P1-2 用户管理页 + P1-3 角色管理页**。后端把 `roles.go` 之外仍在手写的角色判断统一收敛到 `IsRoot` / `IsAdmin` / `IsAdminOrRoot` / `canManageUser` / `canReviewPost`：用户管理（创建、改角色、禁用、删除、重置密码）全部读 `canManageUser`，审核与封禁库读 `IsAdminOrRoot` / `IsRoot`；`applyRoleChange` 明确「no-op 不需要权限、提升为 admin 仅 root」。**状态码与错误语义保持不变，API 契约无变化**。前端 `AdminUsersPage` 从 522 行降到 303 行，弹窗/筛选栏/表格拆到 `pages/admin/users/`；用户列表新增用户名/邮箱/昵称搜索、角色与状态筛选、5/10/20 每页分页（前端过滤，API 未新增参数）；新增 `/admin/roles` 角色页：三角色权限矩阵、人数与成员分布，只读展示，API 未新增参数 |
 | 2026-11-07（1.0.17） | **M-10 回收站单条永久删除**。新增 `DELETE /api/trash/{id}`：权限与恢复一致（admin 不能删 root/其他 admin 的行），不受 7 天恢复窗口限制，删除与图片台账清理在同一事务内；重复删除 404、非回收站行 400。回收站页每行新增「永久删除」按钮（二次确认）。**前端仅新增调用，其余契约不变** |

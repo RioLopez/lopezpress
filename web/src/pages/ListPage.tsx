@@ -180,6 +180,8 @@ export function ListPage() {
 
           <div class="list-toolbar">
             <input
+              class="search-input"
+              type="search"
               placeholder={t('list.searchPlaceholder')}
               value={search}
               onInput={(e) => {

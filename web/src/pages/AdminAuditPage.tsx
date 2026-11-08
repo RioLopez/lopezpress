@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
 import { useApp } from '../core/app'
-import { listActions, errMessage } from '../core/api'
+import { listActions, exportActions, saveBlob, errMessage } from '../core/api'
 import type { ActionLog } from '../core/types'
+import { useDebounce } from '../core/debounce'
 
 // Admin audit trail page: who did what on the site (content + admin ops).
 // The action verb is rendered from a small i18n map with a raw-value fallback
@@ -12,14 +13,30 @@ export function AdminAuditPage() {
   const { pushToast } = useApp()
   const [rows, setRows] = useState<ActionLog[] | null>(null)
   const [limit, setLimit] = useState(50)
+  const [q, setQ] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const debouncedQ = useDebounce(q, 300)
 
   useEffect(() => {
     let cancelled = false
-    listActions(limit)
+    listActions(limit, undefined, debouncedQ.trim() || undefined)
       .then((d) => { if (!cancelled) setRows(d) })
       .catch((e) => { if (!cancelled) pushToast('error', errMessage(e, 'load failed')) })
     return () => { cancelled = true }
-  }, [limit])
+  }, [limit, debouncedQ])
+
+  const doExport = async () => {
+    setExporting(true)
+    try {
+      const blob = await exportActions(debouncedQ.trim() || undefined)
+      saveBlob(blob, `actions-${new Date().toISOString().slice(0, 10)}.csv`)
+      pushToast('success', t('audit.exportDone'))
+    } catch (e) {
+      pushToast('error', errMessage(e, t('audit.exportFailed')))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const verb = (action: string) => {
     const key = `audit.verb.${action}`
@@ -42,6 +59,13 @@ export function AdminAuditPage() {
       <p class="muted">{t('audit.sub')}</p>
 
       <div class="audit-controls">
+        <input
+          class="search-input"
+          type="search"
+          value={q}
+          placeholder={t('audit.searchPlaceholder')}
+          onInput={(e) => setQ((e.currentTarget as HTMLInputElement).value)}
+        />
         <label class="muted">
           {t('audit.limit')}
           <select class="select" value={limit} onChange={(e) => setLimit(Number((e.currentTarget as HTMLSelectElement).value))}>
@@ -50,6 +74,9 @@ export function AdminAuditPage() {
             <option value="100">100</option>
           </select>
         </label>
+        <button class="btn btn-primary audit-export" disabled={exporting} onClick={doExport}>
+          {exporting ? t('common.loading') : t('audit.export')}
+        </button>
       </div>
 
       {rows === null && <p class="muted">{t('center.loading')}</p>}

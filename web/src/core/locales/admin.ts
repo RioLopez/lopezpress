@@ -44,6 +44,7 @@ export type AdminTexts = {
     sortNewest: string
     sortOldest: string
     sortViews: string
+    sortViewsAsc: string
     pageSizeLabel: string
     postCount: string
     deleteConfirmCat: string
@@ -55,6 +56,11 @@ export type AdminTexts = {
     emptyCat: string
     emptyTag: string
     notAdmin: string
+    searchContent: string
+    orderDesc: string
+    orderAsc: string
+    noMatchContent: string
+    resetFilters: string
  // post status badges: rendered as `admin.statusLabel.<value>`
     statusLabel: {
       published: string
@@ -388,6 +394,7 @@ export const adminZh: AdminTexts = {
     sortNewest: '最新发布',
     sortOldest: '最早发布',
     sortViews: '浏览最多',
+    sortViewsAsc: '浏览最少',
     pageSizeLabel: '每页',
     postCount: '文章数',
     deleteConfirmCat: '确定删除分类「{t}」吗？该分类下的文章将变为无分类状态。',
@@ -399,6 +406,11 @@ export const adminZh: AdminTexts = {
     emptyCat: '暂无分类，在上方添加第一个分类。',
     emptyTag: '暂无标签。',
     notAdmin: '此页面仅限管理员访问。',
+    searchContent: '搜索标题、作者…',
+    orderDesc: '倒序',
+    orderAsc: '正序',
+    noMatchContent: '没有匹配的内容。',
+    resetFilters: '重置筛选',
     statusLabel: {
       published: '已发布',
       private: '私密',
@@ -721,6 +733,7 @@ export const adminEn: AdminTexts = {
     sortNewest: 'Newest',
     sortOldest: 'Oldest',
     sortViews: 'Most viewed',
+    sortViewsAsc: 'Least viewed',
     pageSizeLabel: 'Per page',
     postCount: 'Posts',
     deleteConfirmCat: 'Delete category "{t}"? Posts in this category will become uncategorized.',
@@ -732,6 +745,11 @@ export const adminEn: AdminTexts = {
     emptyCat: 'No categories yet. Add your first one above.',
     emptyTag: 'No tags yet.',
     notAdmin: 'This page is admin-only.',
+    searchContent: 'Search title or author…',
+    orderDesc: 'Descending',
+    orderAsc: 'Ascending',
+    noMatchContent: 'No matching content.',
+    resetFilters: 'Reset filters',
     statusLabel: {
       published: 'Published',
       private: 'Private',

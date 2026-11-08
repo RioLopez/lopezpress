@@ -108,6 +108,10 @@ export type SiteTexts = {
     sub: string
     empty: string
     limit: string
+    searchPlaceholder: string
+    export: string
+    exportDone: string
+    exportFailed: string
     time: string
     actor: string
     action: string
@@ -249,6 +253,10 @@ export const siteZh: SiteTexts = {
     sub: '站内内容与管理操作的审计记录（谁在何时做了什么）',
     empty: '暂无操作记录',
     limit: '显示条数',
+    searchPlaceholder: '搜索操作人、操作、对象或详情…',
+    export: '导出 CSV',
+    exportDone: '操作日志已导出',
+    exportFailed: '导出失败',
     time: '时间',
     actor: '操作人',
     action: '操作',
@@ -388,6 +396,10 @@ export const siteEn: SiteTexts = {
     sub: 'Audit trail of content & admin actions on the site',
     empty: 'No recorded operations yet',
     limit: 'Show',
+    searchPlaceholder: 'Search actor, action, target or detail…',
+    export: 'Export CSV',
+    exportDone: 'Operation log exported',
+    exportFailed: 'Export failed',
     time: 'Time',
     actor: 'Actor',
     action: 'Action',

@@ -50,8 +50,8 @@
   --text: #18181b;
   --text-muted: #71717a;
   --border: #e4e4e7;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
+  --primary: #b8492c;
+  --primary-hover: #9d3c22;
   --primary-fg: #ffffff;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
@@ -67,9 +67,9 @@
   --text: #ededed;
   --text-muted: #a1a1aa;
   --border: #2e2e2e;
-  --primary: #818cf8;
-  --primary-hover: #6366f1;
-  --primary-fg: #0a0a0a;
+  --primary: #e0734f;
+  --primary-hover: #ef8a66;
+  --primary-fg: #1b1a17;
   --danger: #ef4444;
   --danger-hover: #dc2626;
   --success: #22c55e;
@@ -2098,7 +2098,7 @@ html { -webkit-text-size-adjust: 100%; }
 
 /* =========================================================================
    v1.1 — 内容出版物气质（读者优先；作者授权定稿 2026-10-14）
-   · 换掉默认 indigo → 赭石/胭脂 #b8492c（暗色 #e0734f）+ 暖纸白/墨黑
+   · 强调色统一为赭石/胭脂 #b8492c（暗色 #e0734f）+ 暖纸白/墨黑
    · 内容标题用系统衬线栈（读物感，零字体加载）
    · 追加在末尾覆盖旧 token；--primary 一换，全站强调色自动跟随
    ========================================================================= */
@@ -2258,3 +2258,206 @@ html { -webkit-text-size-adjust: 100%; }
 .email-current { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 .email-change-panel { margin-top: 10px; padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius); }
 .email-change-panel .field { margin-bottom: 10px; }
+
+/* =========================================================================
+   v1.2 控件统一层 — 表单/下拉/复选/搜索/按钮/表格
+   -------------------------------------------------------------------------
+   目标：全站控件同一套高度、圆角、边框、焦点环与间距，和赭石主题协调。
+   这一层追加在文件末尾，因此对旧规则做“温和覆盖”：只改观感，不改布局
+   语义。class 名一个未增，旧页面无需改动。
+   ========================================================================= */
+:root {
+  --control-h: 38px;
+  --control-h-sm: 30px;
+  --control-pad-x: 12px;
+  --control-radius: 9px;
+  --control-gap: 10px;
+}
+
+/* ---------- 文本类输入 / 下拉 / 多行文本 ---------- */
+input[type="text"], input[type="search"], input[type="email"], input[type="password"],
+input[type="number"], input[type="tel"], input[type="url"], input[type="date"],
+input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"],
+input:not([type]), textarea, select, .select {
+  min-height: var(--control-h);
+  padding: 7px var(--control-pad-x);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background-color: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.35;
+  transition: border-color .16s var(--ease), box-shadow .16s var(--ease), background-color .16s var(--ease);
+}
+input[type="text"]:hover, input[type="search"]:hover, input[type="email"]:hover,
+input[type="password"]:hover, input[type="number"]:hover, input[type="tel"]:hover,
+input[type="url"]:hover, input[type="date"]:hover, input[type="datetime-local"]:hover,
+input[type="time"]:hover, input[type="month"]:hover, input[type="week"]:hover,
+input:not([type]):hover, textarea:hover, select:hover, .select:hover {
+  border-color: color-mix(in srgb, var(--border) 45%, var(--text-muted));
+}
+input[type="text"]:focus-visible, input[type="search"]:focus-visible, input[type="email"]:focus-visible,
+input[type="password"]:focus-visible, input[type="number"]:focus-visible, input[type="tel"]:focus-visible,
+input[type="url"]:focus-visible, input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible,
+input[type="time"]:focus-visible, input[type="month"]:focus-visible, input[type="week"]:focus-visible,
+input:not([type]):focus-visible, textarea:focus-visible, select:focus-visible, .select:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--ring);
+}
+::placeholder { color: color-mix(in srgb, var(--text-muted) 82%, transparent); opacity: 1; }
+textarea { min-height: 88px; resize: vertical; }
+
+/* 下拉：统一去掉系统三角，换成一枚与主题同灰度的细箭头 */
+select, .select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%236f6a62' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  cursor: pointer;
+}
+[data-theme="dark"] select, [data-theme="dark"] .select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%23a39d94' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* 搜索框：左侧放大镜，右 padding 保持文字不压图标 */
+input.search-input {
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' stroke='%236f6a62' stroke-width='2' fill='none'/%3E%3Cpath d='M16.5 16.5 21 21' stroke='%236f6a62' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 13px center;
+  background-size: 15px;
+}
+[data-theme="dark"] input.search-input {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' stroke='%23a39d94' stroke-width='2' fill='none'/%3E%3Cpath d='M16.5 16.5 21 21' stroke='%23a39d94' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* ---------- 复选框 / 单选：统一尺寸 + 主题色 ---------- */
+input[type="checkbox"], input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  vertical-align: -3px;
+}
+
+/* ---------- 按钮：统一高度与内边距，保留原有语义色 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--control-radius);
+  font-weight: 500;
+  letter-spacing: .01em;
+}
+.btn-sm { min-height: 28px; padding: 0 10px; border-radius: 8px; font-weight: 500; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.btn-primary { font-weight: 600; }
+.admin-table td.actions .btn { margin-right: 4px; }
+.admin-table td.actions .btn:last-child { margin-right: 0; }
+
+/* ---------- 工具栏排版：搜索优先占宽，其余控件自然宽度 ---------- */
+.list-tools, .audit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--control-gap);
+  margin: 14px 0 18px;
+}
+.list-tools input.search-input, .audit-controls input.search-input {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+.list-tools .select, .audit-controls .select { min-width: 124px; }
+.audit-controls label.muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.audit-controls .audit-export { margin-left: auto; }
+.admin-form:not(.admin-form--inline) { gap: var(--control-gap); align-items: center; }
+.admin-form:not(.admin-form--inline) input, .admin-form:not(.admin-form--inline) .search-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.admin-form:not(.admin-form--inline) select { flex: 0 0 auto; }
+.admin-form:not(.admin-form--inline) .btn { flex: 0 0 auto; }
+
+/* 小屏：搜索框独占一行，避免把筛选挤成两行参差 */
+@media (max-width: 640px) {
+  .list-tools input.search-input, .audit-controls input.search-input { flex-basis: 100%; }
+  .list-tools .select, .audit-controls .select { flex: 1 1 140px; }
+  .admin-form:not(.admin-form--inline) input,
+  .admin-form:not(.admin-form--inline) .search-input { flex-basis: 100%; }
+}
+
+/* ---------- 表格：去掉竖线，保留横向细分隔，悬停整行高亮 ---------- */
+.admin-table { border-collapse: separate; border-spacing: 0; }
+.admin-table th, .admin-table td {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 11px 14px;
+}
+.admin-table thead th { background: var(--surface-2); }
+.admin-table thead th:first-child { border-top-left-radius: var(--control-radius); }
+.admin-table thead th:last-child { border-top-right-radius: var(--control-radius); }
+.admin-table tbody tr:last-child td { border-bottom: 0; }
+.admin-table tbody tr:hover:not(.row-selected) td {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+.admin-table td.audit-time, .admin-table td.audit-target, .admin-table td.audit-detail {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.audit-verb {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ---------- 标题排版：后台页眉与说明的间距统一 ---------- */
+.admin-page > h1, .settings-page > h1 { letter-spacing: -.01em; }
+.admin-page > .muted, .settings-page > .muted { margin: 2px 0 18px; line-height: 1.65; }
+
+/* ---------- 图标背景归位 ----------
+   旧规则里的 `background: var(--surface)` 是简写，会把 repeat/position/size
+   一并重置为默认值，导致下拉箭头与搜索放大镜平铺成花纹。这三条只钉住纯装饰
+   的长属性，不影响任何背景色或布局。 */
+select, .select, input.search-input {
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 12px !important;
+}
+input.search-input {
+  background-position: 13px center !important;
+  background-size: 15px !important;
+}
+
+/* ---------- 表格行内危险操作：默认低调，悬停才实心 ---------- */
+.admin-table td.actions .btn-danger {
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  color: var(--danger);
+}
+.admin-table td.actions .btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+/* 原生控件（下拉弹层、滚动条）跟随主题明暗，避免暗色下弹出白色浮层 */
+:root { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }

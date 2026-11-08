@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
 import { listPending, reviewPost, errMessage } from '../core/api'
@@ -6,6 +6,7 @@ import type { Post } from '../core/types'
 import { fmtDate } from '../core/format'
 import { Modal } from '../ui/Modal'
 import { TableState } from '../ui/TableState'
+import { ContentTools, type SortDir } from '../ui/ContentTools'
 import { useQuery } from '../core/useQuery'
 
 // Content review workbench. Every post authored by a plain user is
@@ -16,6 +17,9 @@ export function AdminReviewPage() {
   const { pushToast } = useApp()
   const { t, locale } = useI18n()
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState<'submitted' | 'title' | 'views'>('submitted')
+  const [dir, setDir] = useState<SortDir>('desc')
 
   // The rejection modal: which post we are rejecting and the note text.
   const [rejectTarget, setRejectTarget] = useState<Post | null>(null)
@@ -25,6 +29,23 @@ export function AdminReviewPage() {
     onError: () => pushToast('error', t('admin.failed')),
   })
   const items = data ?? []
+
+  const visible = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const matched = needle
+      ? items.filter((p) => `${p.title} ${p.author?.username ?? ''} ${p.author?.display_name ?? ''} ${p.author?.email ?? ''}`.toLowerCase().includes(needle))
+      : items
+    const mul = dir === 'asc' ? 1 : -1
+    const epoch = (p: Post) => {
+      const n = new Date(p.created_at).getTime()
+      return Number.isNaN(n) ? 0 : n
+    }
+    return [...matched].sort((a, b) => {
+      if (sort === 'title') return a.title.localeCompare(b.title, locale) * mul
+      if (sort === 'views') return (a.view_count - b.view_count) * mul
+      return (epoch(a) - epoch(b)) * mul
+    })
+  }, [items, q, sort, dir, locale])
 
   const approve = async (p: Post) => {
     setBusyId(p.id)
@@ -71,7 +92,29 @@ export function AdminReviewPage() {
         </div>
       </div>
 
-      <TableState loading={loading} isEmpty={items.length === 0} loadingText={t('common.loading')} emptyText={t('admin.reviewEmpty')}>
+      <ContentTools
+        q={q}
+        onQ={setQ}
+        placeholder={t('admin.searchContent')}
+        sorts={[
+          { value: 'submitted', label: t('admin.submittedAt') },
+          { value: 'title', label: t('admin.name') },
+          { value: 'views', label: t('list.views') },
+        ]}
+        sort={sort}
+        onSort={(v) => setSort(v as typeof sort)}
+        dir={dir}
+        onDir={setDir}
+        descLabel={t('admin.orderDesc')}
+        ascLabel={t('admin.orderAsc')}
+      />
+
+      <TableState
+        loading={loading}
+        isEmpty={items.length === 0 || visible.length === 0}
+        loadingText={t('common.loading')}
+        emptyText={q.trim() && items.length > 0 ? t('admin.noMatchContent') : t('admin.reviewEmpty')}
+      >
         <div class="table-scroll">
           <table class="admin-table">
             <thead>
@@ -83,7 +126,7 @@ export function AdminReviewPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((p) => (
+              {visible.map((p) => (
                 <tr key={p.id}>
                   <td>
                     <div class="admin-user-cell">

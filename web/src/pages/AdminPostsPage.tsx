@@ -30,6 +30,7 @@ const SORTS = [
   { key: 'new', sort: 'created_at', order: 'desc' },
   { key: 'old', sort: 'created_at', order: 'asc' },
   { key: 'views', sort: 'views', order: 'desc' },
+  { key: 'views-asc', sort: 'views', order: 'asc' },
 ] as const
 type SortKey = (typeof SORTS)[number]['key']
 
@@ -187,6 +188,17 @@ export function AdminPostsPage() {
   const localeTag = locale === 'zh' ? 'zh-CN' : 'en-US'
   const selectedCount = selected.size
 
+  const resetFilters = () => {
+    setSearch('')
+    setStatus('')
+    setCategory(null)
+    setTag('')
+    setAuthor('')
+    setSortKey('new')
+    setSize(DEFAULT_PAGE_SIZE)
+    setPage(1)
+  }
+
   return (
     <div class="admin-page">
       <h1>{t('admin.postsTitle')}</h1>
@@ -194,6 +206,7 @@ export function AdminPostsPage() {
 
       <div class="admin-form">
         <input
+          class="search-input"
           value={search}
           placeholder={t('list.searchPlaceholder')}
           onInput={(e) => {
@@ -260,6 +273,7 @@ export function AdminPostsPage() {
           <option value="new">{t('admin.sortNewest')}</option>
           <option value="old">{t('admin.sortOldest')}</option>
           <option value="views">{t('admin.sortViews')}</option>
+          <option value="views-asc">{t('admin.sortViewsAsc')}</option>
         </select>
         <select
           value={String(size)}
@@ -272,6 +286,9 @@ export function AdminPostsPage() {
             <option key={n} value={String(n)}>{t('admin.pageSizeLabel')} {n}</option>
           ))}
         </select>
+        <button type="button" class="btn btn-ghost btn-sm" onClick={resetFilters}>
+          {t('admin.resetFilters')}
+        </button>
       </div>
 
       <div class="admin-form">

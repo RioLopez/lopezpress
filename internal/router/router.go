@@ -160,6 +160,9 @@ var routes = []route{
 	{method: "PUT", path: "/api/admin/site-config", auth: authRequired, roles: adminRoles, handler: handlers.UpdateSiteConfig},
 	{method: "GET", path: "/api/admin/dashboard", auth: authRequired, roles: adminRoles, handler: handlers.GetDashboard},
 	{method: "GET", path: "/api/admin/actions", auth: authRequired, roles: adminRoles, handler: handlers.ListActions},
+	// CSV export of the same audit trail. Same roles as the page: an admin
+	// who can read the log can also take a copy of it.
+	{method: "GET", path: "/api/admin/actions/export", auth: authRequired, roles: adminRoles, handler: handlers.ExportActions},
 	{method: "POST", path: "/api/admin/mail/test", auth: authRequired, roles: adminRoles, handler: handlers.SendTestMail},
 
 	// ---- Sidebar menu (B5) ----
