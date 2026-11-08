@@ -56,3 +56,17 @@ scripts/__pycache__/
 # 本地笔记与报告——仅本地，不随仓库分发
 dev/
 docs/
+
+# 测试与内部演练脚本——仅本地保留，不随仓库分发。
+# 公开仓库只放「能跑起来 / 能部署 / 能对接」所需的源码与配置；
+# 测试里写满了内部字段名、错误文案与边界行为，等同把实现细节的说明书公开。
+# 本地 go test / npm test 不受影响。
+*_test.go
+*.test.ts
+scripts/truth_check.py
+scripts/defence_smoke.py
+scripts/backup_restore_drill.py
+scripts/fakesmtp.py
+
+# 个人上传工具的扫描白名单，与项目运行无关
+.gau-allowlist

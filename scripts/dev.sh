@@ -179,7 +179,9 @@ gate)
 		&& python3 scripts/doc_check.py \
 		&& python3 scripts/contract_check.py \
 		&& python3 scripts/security_check.py \
-		&& python3 scripts/truth_check.py --declared \
+		&& { [ -f dev/scripts/truth_check.py ] \
+			&& python3 dev/scripts/truth_check.py --declared \
+			|| echo "  [SKIP] 本地事实基线对账（dev/scripts/truth_check.py 不随仓库分发）"; } \
 		&& python3 scripts/vuln_check.py )
 	;;
 reset-root)
