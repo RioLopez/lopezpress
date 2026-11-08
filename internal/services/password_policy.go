@@ -247,7 +247,7 @@ princess football baseball superman batman master shadow michael jennifer
 trustno1 starwars whatever freedom qazwsx qazwsxedc 159357 753951 852456
 woaini woaini1314 woshishui buzhidao wangba 123qwe qwe123
 aaaaaaaa bbbbbbbb 11111111 22222222 88888888 abcdefgh abcdefg 88888888a 99999999
-lopezpress lopezpress123 lopez lopez123 echolopez echo123 example-host
+lopezpress lopezpress123 lopez lopez123 echolopez echo123
 changeme default secret mypassword newpassword temp123 pass123 passw0rd1
 aa123456 ab123456 abc12345 aini1314 7758521 147258369 741852963 963852741
 `

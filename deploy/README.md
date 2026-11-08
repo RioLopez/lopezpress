@@ -1,5 +1,5 @@
 > 类别 B · 部署与运维 — 上线/排障时看这份。
-> 2026-10-27 合并了原 `deploy/LOCAL.md`、`deploy/docker/README.md`、`docs/deploy/README.md` 三份（均已删除，原文在仓库外备份 `_doc_backup_20261027_before_prune/`）。
+> 2026-10-27 合并了原 `deploy/LOCAL.md`、`deploy/docker/README.md`、`docs/deploy/README.md` 三份（均已删除，原文不随仓库分发）。
 
 # 部署（VPS / 本机 / 容器）
 

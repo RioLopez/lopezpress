@@ -3,7 +3,7 @@
 
 Why this exists
 ---------------
-`内部安全基线` 里「依赖漏洞扫描」这一项，曾是最没人能收尾的阻塞项：
+上线安全基线里「依赖漏洞扫描」这一项，曾是最没人能收尾的阻塞项：
 "govulncheck needs a newer Go and a working checksum database, so
 it is not installed". The item sat there for three rounds because "not
 installed" reads like "not applicable", and meanwhile the build shipped a Go

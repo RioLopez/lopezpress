@@ -55,3 +55,4 @@ scripts/__pycache__/
 
 # 本地笔记与报告——仅本地，不随仓库分发
 dev/
+docs/

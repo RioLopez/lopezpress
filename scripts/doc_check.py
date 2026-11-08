@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """doc_check.py -- keep the documentation from growing back.
 
-2026-10-27: the repo went from 92 markdown files to 5. The old gate checked
-"every doc has an A/B banner" and "docs/README.md exists". With five files, the
+2026-10-27: the repo went from 92 markdown files to 3. The old gate checked
+"every doc has an A/B banner" and "docs/README.md exists". With three files, the
 real risk is no longer a missing banner -- it is **the pile growing back**.
 So this gate is now a whitelist:
 
-  1. every .md in the repo must be listed in ALLOWED (5 official docs),
+  1. every .md in the repo must be listed in ALLOWED (3 official docs),
   2. each of them must carry a "> 类别 A|B" banner,
   3. a missing file is REPORTED but does not fail -- shrinking further is fine.
 
-Any local notes kept outside the repository (dev/ is gitignored and in
-SKIP_DIRS) are not counted here.
+Any local notes kept outside the repository (dev/ and docs/ are gitignored
+and in SKIP_DIRS) are not counted here.
 
 Adding a document is therefore a two-step decision: write the file, then add it
 to ALLOWED below. That second step is the speed bump that stops the pile.
@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # Directories that are never official docs (build output, caches, gitignored local notes).
-SKIP_DIRS = {".git", "node_modules", "dist", ".workbuddy", "__pycache__", ".vite", "dev"}
+SKIP_DIRS = {".git", "node_modules", "dist", ".workbuddy", "__pycache__", ".vite", "dev", "docs"}
 
 # The complete set of official documents. This list IS the policy: the repo is
 # deliberately kept at this size, and every one of them earns its place.
@@ -39,8 +39,6 @@ ALLOWED = {
     "README.md",                      # 上手：跑起来、配置、演示账号
     "api.md",                         # 接口参考 + 变更日志
     "deploy/README.md",               # 部署 / 上线 / HTTPS / 排障
-    "内部待办清单",                   # 唯一待办清单（只列没做完的）
-    "内部安全基线",      # 能不能上线
 }
 
 failures: list[str] = []
@@ -83,8 +81,8 @@ def main() -> int:
         for name in extra:
             fail(f"未登记的文档：{name}")
         print()
-        print("  2026-10-27 起文档固定为 5 份（见 ALLOWED）。")
-        print("  新增文档前先问：能不能写进这 5 份里已有的那一份？")
+        print("  2026-10-27 起文档固定为 3 份（见 ALLOWED）。")
+        print("  新增文档前先问：能不能写进这 3 份里已有的那一份？")
         print("  确实要独立成文 → 在 scripts/doc_check.py 的 ALLOWED 里加一行，这是有意的决定。")
     else:
         say(f"[ok] 没有多余文档（{len(names)}/{len(ALLOWED)}）")
@@ -113,7 +111,7 @@ def main() -> int:
     if failures:
         print(f"RESULT: FAIL ({len(failures)} 项)")
         return 1
-    print("RESULT: PASS -- 文档仍在 5 份之内且自洽")
+    print("RESULT: PASS -- 文档仍在 3 份之内且自洽")
     return 0
 
 
