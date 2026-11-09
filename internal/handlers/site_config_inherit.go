@@ -95,7 +95,7 @@ func inheritSiteConfigBranding(in map[string]any, cur models.SiteConfig, cfg *mo
 // value, and the field-level authorisation in accounts.go only protects
 // non-root admins. Before this, a root PUT carrying just {"page_size":10}
 // silently switched allow_register off and blanked the SMTP host/port/user —
-// the defect the 2026-11-06 external review recorded as F-09. Explicitly
+// a regression that partial-update semantics must prevent. Explicitly
 // sending the key (even with a zero value) still applies it, so root can
 // deliberately close registration or clear a setting. Storage quotas are
 // deliberately absent here: services.applyStoragePolicy already inherits a

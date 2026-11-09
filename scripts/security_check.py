@@ -3,15 +3,15 @@
 
 Why this exists
 ---------------
-Three rounds of external review found the same class of bug repeatedly, and
-each time the fix covered only the instance the report named:
+A fix for one reported instance tends to leave the same class of bug in every
+sibling code path, so each round of review only moved the problem:
 
-  * R3-05 capped the login body — 18 other handlers kept decoding an unbounded
-    body.
-  * R4-10 reported "the importer has no name limit" — the tag path, the category
-    CRUD endpoints and the cover/profile/review-note fields all had none either.
-  * R1-01 reported four endpoints bypassing public_read — the cause was a route
-    table annotation, not the handlers.
+  * one handler capped the login body — 18 other handlers kept decoding an
+    unbounded body.
+  * one importer got a name limit — the tag path, the category CRUD endpoints
+    and the cover/profile/review-note fields all had none either.
+  * one report listed four endpoints bypassing public_read — the cause was a
+    route table annotation, not the handlers.
 
 The lesson is not "be more careful next time". It is that a security property
 which lives only in a reviewer's attention will regress. This file turns the
