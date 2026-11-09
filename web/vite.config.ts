@@ -66,6 +66,14 @@ async function dirSize(dir: string): Promise<number> {
 }
 
 async function syncVditorAssets(): Promise<void> {
+  // Opt-in skip: when LP_SKIP_VDITOR_SYNC=1 the caller has already staged the
+  // assets into public/vditor (e.g. a deploy script that copies them with the
+  // system `cp`, which sidesteps node:fs.cp EPERM quirks on some overlayfs
+  // sandboxes). Default behavior is unchanged.
+  if (process.env.LP_SKIP_VDITOR_SYNC === '1') {
+    console.log('[vditor] sync skipped (LP_SKIP_VDITOR_SYNC=1); assets expected pre-staged')
+    return
+  }
   if (!existsSync(vditorSrc)) {
     // Failing loudly beats an editor that renders blank with a 404 in the
     // console: the package is a dependency, so this can only mean that
