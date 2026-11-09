@@ -52,21 +52,22 @@ lopezpress/
 │   ├── handlers/              # 薄处理器（auth / accounts / posts / categories / moderation / upload / admin / feed / query）
 │   ├── services/              # 业务厚层（含 roles.go 权限唯一入口、canSeePost 可见性权威）
 │   ├── middleware/            # 自写中间件：Chain / Logger / CORS / Recover / 通用限流 / 登录限流
-│   ├── router/                # 路由装配（Go 1.22 ServeMux 方法+通配 + 中间件链）
+│   ├── router/                # 路由装配（Go 1.26.10 ServeMux 方法+通配 + 中间件链）
 │   └── httpx/                 # 请求/响应小工具
-├── web/                       # 前端（Preact + Vite + TS）：27 个页面 + 个人中心子组件 + core 层（api/auth/i18n/router/theme/md/format/http）
+├── web/                       # 前端（Preact + Vite + TS）：29 个页面 + 个人中心子组件 + core 层（api/auth/i18n/router/theme/md/format/http）
 ├── deploy/                    # 部署脚本（systemd / Nginx / Docker Compose / 一键上传）
-├── docs/                      # 2 份：待办清单 + 上线安全基线
 ├── scripts/
 │   ├── dev.sh                 # Linux 一键开发：后端 + 前端，数据隔离到 data/dev
-│   └── contract_check.py      # 前后端 method+path 契约自动核对
+│   ├── contract_check.py      # 前后端 method+path 契约自动核对
+│   └── *_check.py             # 架构 / 安全 / 文档 / 依赖漏洞门禁（dev.sh gate 一键跑）
 ├── .env                       # 运行时配置（端口 / JWT / DB 路径 / 限流）
 └── go.mod
 ```
 
 > 启动命令：`go run ./cmd/server`，默认监听 `:8080`。
 > **一键启动（Linux，推荐）**：`scripts/dev.sh up` 同时拉起后端（:8080）和前端（:5173），并强制数据隔离到 `data/dev/`；支持 `up` / `down` / `restart` / `status` / `logs` / `build` / `gate` / `reset-root` / `help` 子命令，已做端口幂等检测。
-> **后端路由总量**：84 条（前端已接入 77 条，`scripts/contract_check.py` 可复核；未被前端调用的 6 条为 `/feed`、`/health`、`/health/ready`、`/robots.txt`、`/sitemap.xml`、`/uploads/`）。
+> **后端路由总量**：95 条（前端已接入 88 条，`scripts/contract_check.py` 可复核；未被前端调用的 6 条为 `/feed`、`/health`、`/health/ready`、`/robots.txt`、`/sitemap.xml`、`/uploads/`）。
+> 待办清单、上线安全基线与本机运维档案只做本地维护，不随公开仓库分发（见「仓库内容边界」一节）。
 
 ## 快速开始（本地开发）
 
