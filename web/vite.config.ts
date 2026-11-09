@@ -136,7 +136,17 @@ function vditorAssets(): Plugin {
 // with index.html, so every uploaded image renders broken in dev.
 const apiTarget = `http://127.0.0.1:${process.env.LP_API_PORT || '8080'}`
 
+// Opt-in publicDir override: when LP_PUBLIC_DIR is set, Vite copies that
+// directory (instead of `public`) into the build output. A deploy script sets
+// this to an empty staging dir and stages the real static assets itself, which
+// sidesteps Vite's internal fs.copyFileSync (it can hit EPERM on some
+// overlayfs sandboxes). Default behavior is unchanged when unset.
+const publicDir = process.env.LP_PUBLIC_DIR && process.env.LP_PUBLIC_DIR.length > 0
+  ? process.env.LP_PUBLIC_DIR
+  : 'public'
+
 export default defineConfig({
+  publicDir,
   plugins: [preact(), vditorAssets()],
   server: {
     port: 5173,
