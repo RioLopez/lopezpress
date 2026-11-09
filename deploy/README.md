@@ -35,7 +35,7 @@ deploy/
 ├── deploy-to-vps.sh        # 本地一键：交叉编译 → scp → 远端跑 install-systemd.sh
 ├── build.sh                # 本地构建（检查 Go 版本 ≥ go.mod 要求）
 ├── check-live.sh           # 比对线上 assets 哈希与本地产物：在跑的是不是这份代码
-├── diagnose.sh / fix-deploy.sh   # 线上排障与修复
+├── diagnose.sh             # 只读排障：打印端口/进程/日志位置，不改文件不重启
 └── nginx.conf              # Nginx 反代（443/HTTP2/压缩/真实 IP/点文件拒绝）
 ```
 
