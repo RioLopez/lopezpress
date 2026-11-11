@@ -116,7 +116,7 @@ BACKUP_DIR=data/backups
 | 模式 | 怎么起 |
 |---|---|
 | 一键（推荐） | `scripts/dev.sh up`（隔离数据到 `data/dev/`，端口幂等） |
-| 后端 | `GOTOOLCHAIN=go1.26.10 go run ./cmd/server` |
+| 后端 | `GOTOOLCHAIN=go1.26.11 go run ./cmd/server` |
 | 前端开发（热更新 + `/api` 代理） | `cd web && npm ci && npx vite` → `http://127.0.0.1:5173` |
 | 生产模式（前后端同端口） | `npm run build` → 把 `web/dist` 复制成根目录 `dist/` → 起后端 → `http://127.0.0.1:8080` |
 

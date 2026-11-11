@@ -12,9 +12,9 @@ DEV_DIR="${DEV_DIR:-$ROOT/data/dev}"
 RUN_DIR="$DEV_DIR/run"
 LOG_DIR="$DEV_DIR/logs"
 
-# 工具链：仓库声明 Go 1.26.10，本机用 GOTOOLCHAIN 自动拉取/切换。
+# 工具链：仓库声明 Go 1.26.11，本机用 GOTOOLCHAIN 自动拉取/切换。
 export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
-export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.10}"
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.11}"
 export GOPROXY="${GOPROXY:-https://goproxy.cn}"
 export GOSUMDB="${GOSUMDB:-sum.golang.org}"
 export GOTMPDIR="${GOTMPDIR:-$HOME/.cache/gotmp}"

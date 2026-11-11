@@ -4,7 +4,7 @@
 
 基于 **Go 标准库（`net/http`）+ GORM + SQLite + Preact** 的内容型站点全栈项目，前后端分离。
 
-- 后端：Go **1.26.10** 标准库 `ServeMux`（方法 + 通配路由），纯 Go SQLite 驱动（无需 CGO，可交叉编译）
+- 后端：Go **1.26.11** 标准库 `ServeMux`（方法 + 通配路由），纯 Go SQLite 驱动（无需 CGO，可交叉编译）
 - 前端：Preact + Vite + TypeScript（`web/`），构建为单页应用（SPA）
 - 鉴权：JWT（HS256）+ bcrypt；浏览器端 token 存 **`lp_token` HttpOnly + SameSite=Lax Cookie**，`Authorization` 头保留给 API 客户端；`token_version` 支持服务端吊销
 - 限流：自写令牌桶中间件（按身份分桶，token 从 cookie 或 header 读，默认 **20 rps / burst 50**，`.env` 的 `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` 可调）+ 全局匿名桶（200 rps / burst 400，防 IP 轮换稀释）+ 登录专用限流（IP/账号双桶 + 5 次失败锁）
@@ -52,7 +52,7 @@ lopezpress/
 │   ├── handlers/              # 薄处理器（auth / accounts / posts / categories / moderation / upload / admin / feed / query）
 │   ├── services/              # 业务厚层（含 roles.go 权限唯一入口、canSeePost 可见性权威）
 │   ├── middleware/            # 自写中间件：Chain / Logger / CORS / Recover / 通用限流 / 登录限流
-│   ├── router/                # 路由装配（Go 1.26.10 ServeMux 方法+通配 + 中间件链）
+│   ├── router/                # 路由装配（Go 1.26.11 ServeMux 方法+通配 + 中间件链）
 │   └── httpx/                 # 请求/响应小工具
 ├── web/                       # 前端（Preact + Vite + TS）：29 个页面 + 个人中心子组件 + core 层（api/auth/i18n/router/theme/md/format/http）
 ├── deploy/                    # 部署脚本（systemd / Nginx / Docker Compose / 一键上传）
@@ -73,23 +73,23 @@ lopezpress/
 
 ### 1. 安装 Go
 
-需要 Go **1.26.10**（`go.mod` 声明的最低版本；标准库 `ServeMux` 方法通配路由特性）。
+需要 Go **1.26.11**（`go.mod` 声明的最低版本；标准库 `ServeMux` 方法通配路由特性）。
 
 ```bash
-go version                 # 需要 ≥ 1.26.10
-# 若发行版自带版本偏低，GOTOOLCHAIN 会在首次构建时自动下载 1.26.10：
-export GOTOOLCHAIN=go1.26.10
+go version                 # 需要 ≥ 1.26.11
+# 若发行版自带版本偏低，GOTOOLCHAIN 会在首次构建时自动下载 1.26.11：
+export GOTOOLCHAIN=go1.26.11
 go version
 ```
 
-> `scripts/dev.sh` 已固定 `GOTOOLCHAIN=go1.26.10`，手动跑测试时也建议带上该变量。
+> `scripts/dev.sh` 已固定 `GOTOOLCHAIN=go1.26.11`，手动跑测试时也建议带上该变量。
 
 ### 2. 启动后端
 
 ```bash
 cd lopezpress
-GOTOOLCHAIN=go1.26.10 go mod tidy
-GOTOOLCHAIN=go1.26.10 go run ./cmd/server   # 默认监听 :8080
+GOTOOLCHAIN=go1.26.11 go mod tidy
+GOTOOLCHAIN=go1.26.11 go run ./cmd/server   # 默认监听 :8080
 ```
 
 首次运行会在 `data/app.db` 创建 SQLite 数据库并写入演示数据。
