@@ -13,17 +13,21 @@ import {
   rebuildUploadRefs,
   batchDeleteUploads,
   uploadImage,
+  uploadPDF,
   errMessage,
   errStatus,
 } from '../core/api'
+import { getUploadPrefs, prefsToOptions } from '../core/uploadPrefs'
 import { isRoot } from '../core/roles'
-import type { UploadFileInfo } from '../core/types'
+import type { ImageUploadOptions, UploadFileInfo } from '../core/types'
 import { MediaHeader } from './admin/media/MediaHeader'
+import { MediaTabs, type MediaScope } from './admin/media/MediaTabs'
 import { MediaToolbar, type MediaView, type StatusFilter, type RefFilter } from './admin/media/MediaToolbar'
 import { MediaBulkBar } from './admin/media/MediaBulkBar'
 import { MediaGrid } from './admin/media/MediaGrid'
 import { MediaList } from './admin/media/MediaList'
 import { MediaDetail } from './admin/media/MediaDetail'
+import { ImageUploadDialog } from '../ui/ImageUploadDialog'
 
 const PAGE_SIZE = 24
 
@@ -43,6 +47,9 @@ export function AdminMediaPage() {
   const isRootUser = isRoot(user?.role)
 
   const [status, setStatus] = useState<StatusFilter>('live')
+  // Two libraries in one page: pictures and PDF attachments. `kind` is the
+  // narrower image-only filter (article / avatar / site icon).
+  const [scope, setScope] = useState<MediaScope>('image')
   const [kind, setKind] = useState('')
   const [refStatus, setRefStatus] = useState<RefFilter>('')
   const [view, setView] = useState<MediaView>('grid')
@@ -54,17 +61,20 @@ export function AdminMediaPage() {
   const [uploading, setUploading] = useState(false)
   const [rebuilding, setRebuilding] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [uploadPrompt, setUploadPrompt] = useState<File | null>(null)
+
+  const kindFilter = scope === 'pdf' ? 'pdf' : kind || 'image'
 
   const { data, loading, reload } = useQuery(
     () =>
       listUploads({
         status,
-        kind: kind || undefined,
+        kind: kindFilter,
         ref_status: refStatus || undefined,
         page,
         size: PAGE_SIZE,
       }),
-    [status, kind, refStatus, page],
+    [status, kindFilter, refStatus, page],
     { onError: (e) => pushToast('error', errMessage(e, t('media.deleteFailed'))) },
   )
 
@@ -79,10 +89,10 @@ export function AdminMediaPage() {
   // happened. A 429 here means "wait", not "no" — the limiter sits outside the
   // handler, so the file was never received — and waiting out the refill is
   // what makes importing an existing library possible unattended.
-  const uploadOne = async (file: File) => {
+  const uploadOne = async (file: File, opts?: ImageUploadOptions) => {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await uploadImage(file, 'post')
+        return scope === 'pdf' ? await uploadPDF(file) : await uploadImage(file, 'post', opts)
       } catch (e) {
         if (errStatus(e) === 429 && attempt < 5) {
           await new Promise((r) => setTimeout(r, 3200))
@@ -93,7 +103,9 @@ export function AdminMediaPage() {
     }
   }
 
-  const onUploadMany = async (files: File[]) => {
+  // One upload loop for both tabs. `optsFor` is what differs: images may carry
+  // a resize/compression recipe, PDFs never do.
+  const runUploads = async (files: File[], optsFor: (f: File) => ImageUploadOptions | undefined) => {
     if (files.length === 0) return
     setUploading(true)
     setProgress({ done: 0, total: files.length })
@@ -102,7 +114,7 @@ export function AdminMediaPage() {
     let failed = 0
     for (let i = 0; i < files.length; i++) {
       try {
-        const r = await uploadOne(files[i])
+        const r = await uploadOne(files[i], optsFor(files[i]))
         if (r.deduped) reused++
         else added++
       } catch {
@@ -120,6 +132,25 @@ export function AdminMediaPage() {
     if (failed) parts.push(t('media.batchFailed', { n: String(failed) }))
     pushToast(failed ? 'error' : 'info', parts.join(' · '))
     await reload()
+  }
+
+  // A single picture gets the size/compression dialog; a batch reuses the
+  // remembered defaults (there is no sensible per-file conversation in the
+  // middle of a multi-select). PDFs never show it.
+  const onUploadMany = async (files: File[]) => {
+    if (files.length === 0) return
+    if (scope === 'image' && files.length === 1) {
+      setUploadPrompt(files[0])
+      return
+    }
+    const prefs = getUploadPrefs()
+    await runUploads(files, (f) => (scope === 'image' ? prefsToOptions(prefs, f) : undefined))
+  }
+
+  const confirmUploadPrompt = async (opts: ImageUploadOptions) => {
+    const file = uploadPrompt
+    setUploadPrompt(null)
+    if (file) await runUploads([file], () => opts)
   }
 
   const withdraw = async (item: UploadFileInfo) => {
@@ -242,12 +273,24 @@ export function AdminMediaPage() {
   return (
     <div class="admin-page">
       <MediaHeader
+        scope={scope}
         uploading={uploading}
         progress={progress}
         isRootUser={isRootUser}
         rebuilding={rebuilding}
         onUploadMany={onUploadMany}
         onRebuild={rebuild}
+      />
+
+      <MediaTabs
+        scope={scope}
+        onScope={(s) => {
+          setScope(s)
+          setKind('')
+          setPage(1)
+          setSelected(new Set())
+          setDetail(null)
+        }}
       />
 
       {stats && data && (
@@ -271,6 +314,7 @@ export function AdminMediaPage() {
       )}
 
       <MediaToolbar
+        scope={scope}
         status={status}
         kind={kind}
         refStatus={refStatus}
@@ -343,6 +387,14 @@ export function AdminMediaPage() {
           onWithdraw={withdraw}
           onRestore={restore}
           onRetryThumb={retryThumb}
+        />
+      )}
+
+      {uploadPrompt && (
+        <ImageUploadDialog
+          file={uploadPrompt}
+          onCancel={() => setUploadPrompt(null)}
+          onConfirm={confirmUploadPrompt}
         />
       )}
     </div>

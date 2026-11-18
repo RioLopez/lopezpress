@@ -200,11 +200,12 @@ export function highlight(text: string, query: string): string {
   return escapedText.replace(re, (m) => `<mark class="hl">${m}</mark>`)
 }
 
-// Count words / CJK characters in a Markdown source string.
-// CJK: count each character as one word; non-CJK: split on whitespace.
-export function wordCount(src: string | null | undefined): number {
+// Count words / CJK characters in a post body. `format` selects the renderer:
+// Markdown is parsed first; HTML is stripped directly (the same tag-removal
+// pass), so counting never depends on marked accepting the source.
+export function wordCount(src: string | null | undefined, format?: string): number {
   if (!src) return 0
-  const text = stripHTML(renderMD(src))
+  const text = stripHTML(renderBody(src, format))
   const re = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]|\S+/g
   let count = 0
   while (re.exec(text) !== null) count++
@@ -275,6 +276,13 @@ export function extractTOC(src: string | null | undefined): TOCEntry[] {
   }))
 }
 
+// Render a post body according to its declared format. The server stores only
+// "markdown" and "html"; anything else (including rows written before
+// body_format existed) is Markdown.
+export function renderBody(src: string | null | undefined, format?: string): string {
+  return format === 'html' ? renderHTML(src) : renderMD(src)
+}
+
 export function renderMD(src: string | null | undefined): string {
   if (!src) return ''
   let html: unknown
@@ -284,7 +292,20 @@ export function renderMD(src: string | null | undefined): string {
     return ''
   }
   if (typeof html !== 'string') return ''
+  return sanitizeHTML(html)
+}
 
+// HTML posts skip marked entirely: running a hand-written fragment through the
+// Markdown parser would wrap and re-interpret it. The sanitizer is the same
+// pass the Markdown path uses, so one allowlist governs both formats.
+export function renderHTML(src: string | null | undefined): string {
+  if (!src) return ''
+  return sanitizeHTML(src)
+}
+
+// Sanitize a fragment and apply the presentation helpers both formats need:
+// dangerous elements/attributes removed, table wrappers, stable heading ids.
+export function sanitizeHTML(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   for (const s of Array.from(doc.body.querySelectorAll('script'))) s.remove()
   // Strip dangerous elements + inline event handlers / dangerous attrs that
@@ -342,4 +363,16 @@ export function renderMD(src: string | null | undefined): string {
     h.id = slugs[i]
   })
   return doc.body.innerHTML
+}
+
+// For HTML posts the TOC cannot come from Markdown headings. sanitizeHTML has
+// already assigned the same deterministic ids, so read them back from the
+// rendered fragment instead of re-deriving slugs.
+export function extractTOCHTML(html: string | null | undefined): TOCEntry[] {
+  if (!html) return []
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return Array.from(doc.body.querySelectorAll('h2, h3')).map((el) => {
+    const depth: 2 | 3 = el.tagName === 'H2' ? 2 : 3
+    return { id: el.id, text: el.textContent || '', depth }
+  })
 }

@@ -35,10 +35,11 @@ const rebuildBatchSize = 500
 // hard-deletes it and breaks the site. Rebuilding from the source of truth is
 // the only correct answer; there is nothing to reconcile against.
 //
-// "Source of truth" is FOUR places, not one: post bodies, post covers, user
-// avatars, and the two site branding slots. The ledger is what makes an image
-// look used, so a rebuild that only reads bodies silently drops the other three
-// and turns every avatar and the site logo into a delete-able orphan.
+// "Source of truth" is FIVE places, not one: post bodies, post covers, user
+// avatars, the two site branding slots, and PDF attachments. The ledger is
+// what makes an image look used, so a rebuild that only reads bodies silently
+// drops the others and turns every avatar, the site logo and every attached
+// PDF into a delete-able orphan.
 //
 // Soft-deleted posts are skipped: DeletePost releases their edges, so
 // re-adding them would resurrect references for content the author removed.
@@ -71,10 +72,15 @@ func rebuildUploadRefsTx(tx *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	refs := make([]models.UploadRef, 0, len(postRefs)+len(avatarRefs)+len(siteRefs))
+	attachmentRefs, err := attachmentRefsTx(tx)
+	if err != nil {
+		return err
+	}
+	refs := make([]models.UploadRef, 0, len(postRefs)+len(avatarRefs)+len(siteRefs)+len(attachmentRefs))
 	refs = append(refs, postRefs...)
 	refs = append(refs, avatarRefs...)
 	refs = append(refs, siteRefs...)
+	refs = append(refs, attachmentRefs...)
 
 	if len(refs) > 0 {
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
@@ -206,6 +212,32 @@ func siteRefsTx(tx *gorm.DB, byName map[string]string) ([]models.UploadRef, erro
 	}
 	if id, ok := byName[uploadNameFromURL(cfg.SiteFavicon)]; ok {
 		refs = append(refs, models.UploadRef{UploadID: id, Kind: siteRefFavicon})
+	}
+	return refs, nil
+}
+
+// attachmentRefsTx collects one edge per (post, PDF) join row. The upload id
+// is already the library primary key, so no name lookup is needed. Soft-deleted
+// posts are skipped for the same reason postRefsTx skips them: DeletePost
+// released their edges, and a rebuild must not resurrect them.
+func attachmentRefsTx(tx *gorm.DB) ([]models.UploadRef, error) {
+	var rows []struct {
+		PostID   string
+		AuthorID string
+		UploadID string
+	}
+	if err := tx.Table("post_attachments AS pa").
+		Select("pa.post_id, p.author_id, pa.upload_id").
+		Joins("JOIN posts AS p ON p.id = pa.post_id").
+		Where("p.deleted_at IS NULL").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	refs := make([]models.UploadRef, 0, len(rows))
+	for _, r := range rows {
+		refs = append(refs, models.UploadRef{
+			UploadID: r.UploadID, PostID: r.PostID, Kind: "attachment", UserID: r.AuthorID,
+		})
 	}
 	return refs, nil
 }

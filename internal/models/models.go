@@ -51,6 +51,16 @@ const (
 	PostDraft     = "draft"
 )
 
+// Body formats. Markdown is the default and the only format a plain user may
+// author. HTML is restricted to root/admin and is sanitized server-side before
+// it is stored: the reader-facing renderer has its own allowlist, but the API
+// is not the only consumer of a post body (RSS, backups, future clients), so
+// the stored bytes must already be safe.
+const (
+	BodyFormatMarkdown = "markdown"
+	BodyFormatHTML     = "html"
+)
+
 // User represents an account that can authenticate and author posts.
 type User struct {
 	ID           string `gorm:"primaryKey;size:36" json:"id"`
@@ -98,8 +108,11 @@ type Post struct {
 	// Slug is the human-readable permanent link segment. Empty means
 	// "no slug yet" (rows created before the field existed); those keep working
 	// through the UUID route.
-	Slug       string `gorm:"size:160;index" json:"slug"`
-	Body       string `json:"body"`
+	Slug string `gorm:"size:160;index" json:"slug"`
+	Body string `json:"body"`
+	// BodyFormat selects the renderer: "markdown" (default) or "html".
+	// Existing rows are backfilled by migration 0018.
+	BodyFormat string `gorm:"size:16;default:'markdown'" json:"body_format"`
 	Status     string `gorm:"size:16;default:'published'" json:"status"`
 	AuthorID   string `gorm:"size:36;index" json:"author_id"`
 	CategoryID *int64 `json:"category_id"`
@@ -117,7 +130,11 @@ type Post struct {
 	// (gorm:"-") — computing it per request keeps it from going stale when the
 	// worker finishes a thumbnail or a file is purged.
 	CoverThumb string `gorm:"-" json:"cover_thumb,omitempty"`
-	ViewCount  int64  `gorm:"default:0" json:"view_count"`
+	// Attachments is populated only by the detail read paths. List payloads
+	// leave it empty: a card does not render the document list, and loading it
+	// for every row would multiply the query count.
+	Attachments []PostAttachmentView `gorm:"-" json:"attachments,omitempty"`
+	ViewCount   int64                `gorm:"default:0" json:"view_count"`
 	// Review metadata (spec: content moderation + banned vault). ReviewNote
 	// is the reviewer's free-text comment, set when a post is rejected
 	// (sent back for revision) or re-approved. ReviewedBy / ReviewedAt track
@@ -204,13 +221,18 @@ func SanitizePostReviews(posts []Post) {
 // who changed it. Tags/category/cover are cheap to re-set and are not
 // versioned. At most maxRevisionsPerPost rows survive per post.
 type PostRevision struct {
-	ID        int64     `gorm:"primaryKey" json:"id"`
-	PostID    string    `gorm:"size:36;index;not null" json:"post_id"`
-	Title     string    `gorm:"size:200" json:"title"`
-	Body      string    `gorm:"type:text" json:"body"`
-	Status    string    `gorm:"size:16" json:"status"`
-	EditorID  string    `gorm:"size:36" json:"editor_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID     int64  `gorm:"primaryKey" json:"id"`
+	PostID string `gorm:"size:36;index;not null" json:"post_id"`
+	Title  string `gorm:"size:200" json:"title"`
+	Body   string `gorm:"type:text" json:"body"`
+	// BodyFormat travels with the text. Restoring a revision only rewrites
+	// title/body; without the format an old Markdown snapshot restored into an
+	// HTML post would render as raw source (and an old HTML snapshot into a
+	// Markdown post would silently pass through marked).
+	BodyFormat string    `gorm:"size:16;default:'markdown'" json:"body_format"`
+	Status     string    `gorm:"size:16" json:"status"`
+	EditorID   string    `gorm:"size:36" json:"editor_id"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Category is a named grouping for posts. It supports ONE level of nesting:

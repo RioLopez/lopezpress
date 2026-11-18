@@ -19,6 +19,7 @@ export function MediaList(p: Props) {
     post: t('media.kindPost'),
     avatar: t('media.kindAvatar'),
     site: t('media.kindSite'),
+    pdf: t('media.kindPdf'),
   }
   return (
     <div class="media-table-wrap">
@@ -47,7 +48,11 @@ export function MediaList(p: Props) {
               </td>
               <td class="card-title">
                 <button class="media-row-open" onClick={() => p.onOpen(it)}>
-                  <img src={it.thumb_url || it.url} alt="" loading="lazy" />
+                  {it.mime === 'application/pdf' ? (
+                    <span class="media-row-file" aria-hidden="true">PDF</span>
+                  ) : (
+                    <img src={it.thumb_url || it.url} alt="" loading="lazy" />
+                  )}
                   <span class="media-mono">{it.original_name || it.name}</span>
                 </button>
               </td>

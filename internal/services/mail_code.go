@@ -33,7 +33,7 @@ func (s *Service) sendCodeMail(ctx context.Context, email, purpose, code string,
 // of the mail stack (no HTML part, no tracking pixel).
 func composeCodeMail(siteName, purpose, code string, ttl time.Duration) (string, string) {
 	if strings.TrimSpace(siteName) == "" {
-		siteName = "Echo"
+		siteName = "LopezPress"
 	}
 	mins := int(ttl.Minutes() + 0.5)
 	if mins < 1 {

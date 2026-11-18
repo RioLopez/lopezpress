@@ -93,6 +93,12 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	if err := validateImportPayload(in); err != nil {
 		return ImportResult{}, err
 	}
+	// A dump is attacker-controllable JSON. HTML bodies bypass CreatePost /
+	// UpdatePost, so the import path sanitizes them itself instead of trusting
+	// whatever the file carried.
+	if err := sanitizeImportedHTML(&in); err != nil {
+		return ImportResult{}, err
+	}
 	if dryRun {
 		// Preview is non-destructive: report the counts the payload would
 		// produce and let the caller ask for explicit confirmation.
@@ -196,6 +202,29 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 				return err
 			}
 		}
+		// Article → PDF links. Only rows whose post and upload survived the
+		// import are kept: a dangling join row would never render and would
+		// confuse the next ledger rebuild.
+		postIDs := make(map[string]bool, len(in.Posts))
+		for i := range in.Posts {
+			postIDs[in.Posts[i].ID] = true
+		}
+		uploadIDs := make(map[string]bool, len(in.UploadFiles))
+		for i := range in.UploadFiles {
+			uploadIDs[in.UploadFiles[i].ID] = true
+		}
+		seenAttachments := make(map[string]bool, len(in.PostAttachments))
+		for i := range in.PostAttachments {
+			a := in.PostAttachments[i]
+			key := a.PostID + "\x00" + a.UploadID
+			if !postIDs[a.PostID] || !uploadIDs[a.UploadID] || seenAttachments[key] {
+				continue
+			}
+			seenAttachments[key] = true
+			if err := tx.Create(&a).Error; err != nil {
+				return err
+			}
+		}
 		// The image library. LiveKey is json:"-" on the model, so it travels in
 		// the separate upload_livekeys map; it is UNIQUE and non-null, so an
 		// empty value would collide on the second row.
@@ -279,4 +308,34 @@ func (s *Service) ImportBackup(ctx context.Context, actor models.User, in Import
 	}
 	s.audit(ctx, actor, "import_backup", "backup", "dry_run=false; snapshot="+snapshotFile)
 	return ImportResult{DryRun: false, Applied: true, Stats: stats, SnapshotFile: snapshotFile}, nil
+}
+
+// sanitizeImportedHTML normalizes body_format on every imported article and
+// revision, and re-sanitizes HTML bodies. The import writes rows directly, so
+// without this a crafted dump could store <script> that every reader's client
+// would render. Legacy rows without the field are Markdown.
+func sanitizeImportedHTML(in *ImportData) error {
+	for i := range in.Posts {
+		in.Posts[i].BodyFormat = storedBodyFormat(in.Posts[i].BodyFormat)
+		if in.Posts[i].BodyFormat != models.BodyFormatHTML {
+			continue
+		}
+		body, err := SanitizeHTML(in.Posts[i].Body)
+		if err != nil {
+			return newErr(http.StatusBadRequest, "backup contains an invalid HTML post body")
+		}
+		in.Posts[i].Body = body
+	}
+	for i := range in.Revisions {
+		in.Revisions[i].BodyFormat = storedBodyFormat(in.Revisions[i].BodyFormat)
+		if in.Revisions[i].BodyFormat != models.BodyFormatHTML {
+			continue
+		}
+		body, err := SanitizeHTML(in.Revisions[i].Body)
+		if err != nil {
+			return newErr(http.StatusBadRequest, "backup contains an invalid HTML revision body")
+		}
+		in.Revisions[i].Body = body
+	}
+	return nil
 }

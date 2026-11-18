@@ -34,6 +34,10 @@ const (
 	UploadKindPost   = "post"
 	UploadKindAvatar = "avatar"
 	UploadKindSite   = "site"
+	// UploadKindPDF is a document attachment, not an image. It shares the
+	// library row, quota and de-duplication, but skips decode/re-encode and
+	// the thumbnail worker.
+	UploadKindPDF = "pdf"
 )
 
 // UploadImage validates client-supplied bytes and stores them.
@@ -52,6 +56,15 @@ const (
 // multipart, capping sizes. This function takes plain bytes, which is what
 // makes the service layer testable without a request (review finding A1).
 func (s *Service) UploadImage(ctx context.Context, filename string, data []byte, kind string) (UploadResult, error) {
+	return s.UploadImageWithOptions(ctx, filename, data, kind, UploadOptions{})
+}
+
+// UploadImageWithOptions is UploadImage plus the optional resize/compression
+// recipe. The original bytes are hashed first (source_sha256) so the library
+// can group "the same picture at several sizes", while the de-duplication key
+// remains the hash of the FINAL bytes: two different transforms of one source
+// are two legitimate rows.
+func (s *Service) UploadImageWithOptions(ctx context.Context, filename string, data []byte, kind string, opts UploadOptions) (UploadResult, error) {
 	kind = normalizeUploadKind(kind)
 	ext := strings.ToLower(filepath.Ext(filename))
 	if !isAllowedImageExt(ext) {
@@ -65,10 +78,12 @@ func (s *Service) UploadImage(ctx context.Context, filename string, data []byte,
 	if !isAllowedImageContent(data) {
 		return UploadResult{}, newErr(http.StatusBadRequest, "file content is not a supported image")
 	}
-	// Full decode, re-encode, and the compression-ratio guard: three questions
-	// about the same thing ("are these bytes really an image we should store"),
-	// asked in one place.
-	data, err := prepareUploadBytes(data, ext)
+	sourceSum := sha256.Sum256(data)
+	sourceHash := hex.EncodeToString(sourceSum[:])
+	// Full decode, optional resize, re-encode, and the compression-ratio guard:
+	// four questions about the same thing ("are these bytes really an image we
+	// should store, and at what size"), asked in one place.
+	data, transform, err := prepareUploadBytes(data, ext, opts)
 	if err != nil {
 		return UploadResult{}, err
 	}
@@ -84,13 +99,18 @@ func (s *Service) UploadImage(ctx context.Context, filename string, data []byte,
 	}
 
 	if mode, token := s.imageHostMode(siteCfg); mode == "smms" {
-		if res, ok := s.uploadToRemote(ctx, filename, data, kind, token); ok {
-			return res, nil
+		// A remote host cannot honour a server-side transform: the bytes would
+		// be proxied unchanged. Fall through to local storage when a transform
+		// was requested, so the author gets the size they asked for.
+		if transform == "" {
+			if res, ok := s.uploadToRemote(ctx, filename, data, kind, token); ok {
+				return res, nil
+			}
 		}
 		// A failed remote upload falls through to local storage, as before: the
 		// author still gets their picture instead of an opaque 502.
 	}
-	return s.storeLocalUpload(ctx, ext, filename, data, kind, siteCfg)
+	return s.storeLocalUpload(ctx, ext, filename, data, kind, siteCfg, sourceHash, transform)
 }
 
 // imageHostMode resolves which storage backend is active and the token for it.
@@ -133,7 +153,7 @@ func (s *Service) uploadToRemote(ctx context.Context, filename string, data []by
 // storeLocalUpload is the local path: de-duplicate, enforce quotas, write the
 // file, record the row. The order matters — every rejection happens before the
 // first byte reaches disk, so a refused upload never leaves a stray file.
-func (s *Service) storeLocalUpload(ctx context.Context, ext, filename string, data []byte, kind string, siteCfg models.SiteConfig) (UploadResult, error) {
+func (s *Service) storeLocalUpload(ctx context.Context, ext, filename string, data []byte, kind string, siteCfg models.SiteConfig, sourceHash, transform string) (UploadResult, error) {
 	// live_key is sha256 for a live row and "d:<id>" once soft-deleted, so this
 	// lookup can never resurrect an image its owner withdrew. The unique index
 	// makes it authoritative even under concurrent identical uploads (see the
@@ -160,18 +180,7 @@ func (s *Service) storeLocalUpload(ctx context.Context, ext, filename string, da
 		return UploadResult{}, err
 	}
 
-	row := models.UploadFile{
-		ID: id, Name: name, LiveKey: hash, OwnerID: me.ID,
-		Size: int64(len(data)), Sha256: hash,
-		OriginalName: sanitizeOriginalName(filename),
-		IP:           ClientIPFromContext(ctx),
-		Kind:         kind,
-		// The thumbnail is produced out of band (thumbs.go). Marking the row
-		// pending here is what survives a restart; the channel hint below may
-		// be dropped without consequence.
-		ThumbStatus: ThumbStatusPending,
-	}
-	row.Width, row.Height, row.Mime = imageGeometry(data)
+	row := newUploadRow(ctx, id, name, hash, sourceHash, transform, filename, data, kind)
 
 	if err := s.recordUpload(ctx, row, siteCfg, me.ID); err != nil {
 		if AsServiceError(err) != nil {
@@ -186,9 +195,35 @@ func (s *Service) storeLocalUpload(ctx context.Context, ext, filename string, da
 	}
 
 	s.audit(ctx, me, "upload_image", "upload:"+name,
-		fmt.Sprintf("kind=%s; size=%d; dedup=0; name=%s", kind, len(data), filename))
-	s.enqueueThumb(row.ID)
+		fmt.Sprintf("kind=%s; size=%d; dedup=0; name=%s; transform=%s", kind, len(data), filename, transform))
+	if kind != UploadKindPDF {
+		s.enqueueThumb(row.ID)
+	}
 	return uploadResult(row, false), nil
+}
+
+// newUploadRow builds the library row for one upload. Images get geometry and
+// a pending thumbnail; PDFs get neither — the decoder cannot read them, and a
+// queued thumbnail would only fail permanently.
+func newUploadRow(ctx context.Context, id, name, hash, sourceHash, transform, filename string, data []byte, kind string) models.UploadFile {
+	row := models.UploadFile{
+		ID: id, Name: name, LiveKey: hash, OwnerID: ActorFromContext(ctx).ID,
+		Size: int64(len(data)), Sha256: hash, SourceSha256: sourceHash,
+		Transform:    transform,
+		OriginalName: sanitizeOriginalName(filename),
+		IP:           ClientIPFromContext(ctx),
+		Kind:         kind,
+	}
+	if kind == UploadKindPDF {
+		row.Mime = "application/pdf"
+		return row
+	}
+	// The thumbnail is produced out of band (thumbs.go). Marking the row
+	// pending here is what survives a restart; the channel hint at the call
+	// site may be dropped without consequence.
+	row.ThumbStatus = ThumbStatusPending
+	row.Width, row.Height, row.Mime = imageGeometry(data)
+	return row
 }
 
 // recordUpload writes the library row, with the quota check inside the same
@@ -236,7 +271,7 @@ func (s *Service) uploadCreateFailed(ctx context.Context, name, hash, filename s
 // predate the worker, or its last hint may have been dropped from a full
 // queue. The worker is idempotent, so a redundant hint costs one query.
 func (s *Service) reuseUpload(ctx context.Context, existing models.UploadFile, filename string) UploadResult {
-	if needsThumb(existing) {
+	if existing.Kind != UploadKindPDF && needsThumb(existing) {
 		s.enqueueThumb(existing.ID)
 	}
 	s.audit(ctx, models.User{}, "upload_image", "upload:"+existing.Name, "dedup=1; name="+filename)
@@ -268,6 +303,8 @@ func uploadFileLimit(cfg models.SiteConfig, kind string) int64 {
 		if limit <= 0 {
 			limit = 512 * 1024
 		}
+	case UploadKindPDF:
+		limit = MaxPDFBytes
 	default:
 		limit = cfg.UploadMaxImage
 		if limit <= 0 {

@@ -32,10 +32,17 @@ export function MediaGrid(p: Props) {
             />
           </label>
           <button class="image-card-thumb" onClick={() => p.onOpen(it)} title={t('media.detail')}>
-            <img src={it.thumb_url || it.url} alt={it.original_name || it.name} loading="lazy" />
+            {it.mime === 'application/pdf' ? (
+              <span class="image-card-file" aria-hidden="true">PDF</span>
+            ) : (
+              <img src={it.thumb_url || it.url} alt={it.original_name || it.name} loading="lazy" />
+            )}
           </button>
           <div class="image-card-meta">
             <span>{fmtBytes(it.size)}</span>
+            {it.variant_count > 1 && (
+              <span title={t('media.variants')}>×{it.variant_count}</span>
+            )}
             <span title={t('media.refs')}>
               {it.ref_count > 0 ? `↩ ${it.ref_count}` : '—'}
             </span>

@@ -35,7 +35,15 @@ import (
 // root can read a private post, because handling a report about it requires
 // reading it.
 func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePostInput) (models.Post, error) {
-	if err := ValidatePostContent(in.Title, in.Body); err != nil {
+	format, err := resolveCreateBodyFormat(user, in.BodyFormat)
+	if err != nil {
+		return models.Post{}, err
+	}
+	body, err := preparePostBody(format, in.Body)
+	if err != nil {
+		return models.Post{}, err
+	}
+	if err := ValidatePostContent(in.Title, body); err != nil {
 		return models.Post{}, err
 	}
 	// Resolve the initial status by role.
@@ -67,7 +75,8 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 
 	post := models.Post{
 		Title:      in.Title,
-		Body:       in.Body,
+		Body:       body,
+		BodyFormat: format,
 		Status:     status,
 		AuthorID:   user.ID,
 		CategoryID: in.CategoryID,
@@ -107,7 +116,7 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	// four of them sharing "r6slug-col-2026-7"). Retry with the next suffix so
 	// the caller gets "title-2" — exactly what the probe would have returned had
 	// it seen the winner — rather than a 500.
-	created, err := s.insertPostWithSlugRetry(ctx, post, in, slug)
+	created, err := s.insertPostWithSlugRetry(ctx, post, in, slug, user)
 	if err != nil {
 		return models.Post{}, err
 	}
@@ -116,6 +125,7 @@ func (s *Service) CreatePost(ctx context.Context, user models.User, in CreatePos
 	if err := s.db.WithContext(ctx).Preload("Author").Preload("Category").Preload("Tags").Where("id = ?", created.ID).First(&created).Error; err != nil {
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
+	s.loadPostAttachments(ctx, &created)
 	s.audit(ctx, user, "create_post", "post:"+created.ID, auditDetail("title="+created.Title, "status="+created.Status))
 	// The author is the caller themselves; still strip the account-internal
 	// fields so no post payload ever carries an email / login-IP.
@@ -147,6 +157,7 @@ func (s *Service) GetPost(ctx context.Context, user models.User, id string) (mod
 		// Same 404 as "not found" so we never leak the post's existence.
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	s.loadPostAttachments(ctx, &post)
 	post.SanitizeAuthor()
 	post.SanitizeReview()
 	return post, nil
@@ -271,6 +282,7 @@ func (s *Service) GetPostPublic(ctx context.Context, id string) (models.Post, er
 		Where("id = ? AND status = ?", id, "published").First(&post).Error; err != nil {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	s.loadPostAttachments(ctx, &post)
 	post.SanitizeAuthor()
 	post.SanitizeReview()
 	return post, nil

@@ -1,5 +1,5 @@
 [Unit]
-Description=Echo Content API (Go/SQLite)
+Description=LopezPress API (Go/SQLite)
 After=network.target
 Wants=network-online.target
 

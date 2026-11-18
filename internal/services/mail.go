@@ -147,7 +147,7 @@ func (s *Service) sendMailFn(ctx context.Context, to, subject, body string) erro
 	}
 	from := cfg.SmtpUser
 	if from == "" {
-		from = "echo@" + sm.Host
+		from = "no-reply@" + sm.Host
 	}
 	return smtpSend(ctx, sm, from, to, subject, body)
 }
@@ -172,10 +172,14 @@ func (s *Service) SendTestMail(ctx context.Context, actor models.User) error {
 	}
 	from := cfg.SmtpUser
 	if from == "" {
-		from = "echo@" + sm.Host
+		from = "no-reply@" + sm.Host
 	}
-	subject := "[Echo] 测试邮件 / Test message"
-	body := "This is a test message from the Echo admin panel.\n" +
+	siteName := strings.TrimSpace(cfg.SiteName)
+	if siteName == "" {
+		siteName = "LopezPress"
+	}
+	subject := "[" + siteName + "] 测试邮件 / Test message"
+	body := "This is a test message from the " + siteName + " admin panel.\n" +
 		"If you received it, your SMTP settings are correct.\n"
 	if err := smtpSend(ctx, sm, from, actor.Email, subject, body); err != nil {
 		return newErr(http.StatusBadGateway, "smtp send failed")
@@ -231,7 +235,7 @@ func composeMail(kind MailKind, user models.User, extras map[string]string) (str
 		return subject, strings.Join(lines, "\n")
 	case MailReviewResult:
 		if get("action") == "reject" {
-			subject := "[Echo] 文章被退回修改 / Post sent back for revision"
+			subject := "[LopezPress] 文章被退回修改 / Post sent back for revision"
 			lines := []string{
 				"Your post has been sent back by a reviewer.",
 				"",
@@ -243,7 +247,7 @@ func composeMail(kind MailKind, user models.User, extras map[string]string) (str
 			}
 			return subject, strings.Join(lines, "\n")
 		}
-		subject := "[Echo] 文章已通过审核 / Post approved"
+		subject := "[LopezPress] 文章已通过审核 / Post approved"
 		lines := []string{
 			"Your post has been approved and is now published.",
 			"",
@@ -266,7 +270,7 @@ func composeMail(kind MailKind, user models.User, extras map[string]string) (str
 		}
 		return subject, strings.Join(lines, "\n")
 	}
-	return "Echo", ""
+	return "LopezPress", ""
 }
 
 // smtpSend opens an SMTP connection, optionally upgrades to TLS, authenticates

@@ -28,11 +28,19 @@ export function MediaDetail(p: Props) {
     body: t('media.refKindBody'),
     avatar: t('media.refKindAvatar'),
     site: t('media.refKindSite'),
+    attachment: t('media.refKindAttachment'),
   }
   return (
     <div class="modal-backdrop" onClick={p.onClose}>
       <div class="modal media-detail" onClick={(e) => e.stopPropagation()}>
-        <img src={d.url} alt="" class="media-detail-img" />
+        {d.mime === 'application/pdf' ? (
+          <a class="media-detail-file" href={d.url} target="_blank" rel="noopener noreferrer">
+            <span aria-hidden="true">PDF</span>
+            <span class="media-mono">{d.original_name || d.name}</span>
+          </a>
+        ) : (
+          <img src={d.url} alt="" class="media-detail-img" />
+        )}
         <dl class="media-detail-list">
           <dt>{t('media.uploaded')}</dt>
           <dd>{fmtDate(d.created_at)}</dd>
@@ -44,6 +52,18 @@ export function MediaDetail(p: Props) {
             {' · '}
             {fmtBytes(d.size)}
           </dd>
+          {d.transform && (
+            <>
+              <dt>{t('media.transform')}</dt>
+              <dd class="media-mono">{d.transform}</dd>
+            </>
+          )}
+          {d.variant_count > 1 && (
+            <>
+              <dt>{t('media.variants')}</dt>
+              <dd>{t('media.variantsValue', { n: String(d.variant_count) })}</dd>
+            </>
+          )}
           <dt>{t('media.refs')}</dt>
           <dd>{d.ref_count > 0 ? d.ref_count : t('media.refsNone')}</dd>
           <dt>{t('media.originalName')}</dt>

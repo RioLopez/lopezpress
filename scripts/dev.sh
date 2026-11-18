@@ -12,9 +12,14 @@ DEV_DIR="${DEV_DIR:-$ROOT/data/dev}"
 RUN_DIR="$DEV_DIR/run"
 LOG_DIR="$DEV_DIR/logs"
 
-# 工具链：仓库声明 Go 1.26.11，本机用 GOTOOLCHAIN 自动拉取/切换。
+# 工具链：只从 go.mod 的 `go` 指令读取，避免版本号散落多处后再次漂移。
 export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
-export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.11}"
+GO_DECLARED="$(grep -m1 '^go ' "$ROOT/go.mod" | awk '{print $2}' || true)"
+if [ -z "$GO_DECLARED" ]; then
+	echo "无法从 go.mod 读取声明的 Go 版本（^go 行），拒绝用未知工具链继续" >&2
+	exit 65
+fi
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go$GO_DECLARED}"
 export GOPROXY="${GOPROXY:-https://goproxy.cn}"
 export GOSUMDB="${GOSUMDB:-sum.golang.org}"
 export GOTMPDIR="${GOTMPDIR:-$HOME/.cache/gotmp}"
@@ -179,9 +184,11 @@ gate)
 		&& python3 scripts/doc_check.py \
 		&& python3 scripts/contract_check.py \
 		&& python3 scripts/security_check.py \
-		&& { [ -f dev/scripts/truth_check.py ] \
-			&& python3 dev/scripts/truth_check.py --declared \
-			|| echo "  [SKIP] 本地事实基线对账（dev/scripts/truth_check.py 不随仓库分发）"; } \
+		&& { if [ -f dev/scripts/truth_check.py ]; then
+			python3 dev/scripts/truth_check.py --declared
+		else
+			echo "  [SKIP] 本地事实基线对账（dev/scripts/truth_check.py 不随仓库分发）"
+		fi; } \
 		&& python3 scripts/vuln_check.py )
 	;;
 reset-root)

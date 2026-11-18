@@ -144,6 +144,7 @@ func (s *Service) GetPostBySlug(ctx context.Context, user models.User, slug stri
 	if !canSeePost(user, post) {
 		return models.Post{}, newErr(http.StatusNotFound, "post not found")
 	}
+	s.loadPostAttachments(ctx, &post)
 	post.SanitizeAuthor()
 	post.SanitizeReview()
 	return post, nil

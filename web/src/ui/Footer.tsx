@@ -57,7 +57,11 @@ export function Footer() {
               screen of angle brackets. */}
           <a href="/subscribe">{t('feed.footerLink')}</a>
         </span>
-        {!hasContent && <span class="footer-copy">Echo Content</span>}
+        {/* The footer used to fall back to a hard-coded legacy brand when every
+            field was empty. A site that had not customised its footer therefore
+            advertised somebody else's product name. Fall back to the configured
+            site name instead, and only then to the product default. */}
+        {!hasContent && <span class="footer-copy">{config.site_name || 'LopezPress'}</span>}
       </div>
     </footer>
   )

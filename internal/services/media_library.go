@@ -79,23 +79,47 @@ func (s *Service) checkUploadQuotaTx(db *gorm.DB, cfg models.SiteConfig, ownerID
 	return nil
 }
 
-// uploadStats collects the counters the gallery header shows.
+// uploadStats collects the counters the gallery header shows, scoped to the
+// tab the operator is looking at.
+//
+// The library is split into "images" and "PDF attachments" in the UI, and a
+// global counter above a filtered list is actively misleading: a site with
+// 4 GB of PDFs and 20 images would show the image tab as almost full.
+// kindScope is "", "image" (everything except PDF), "pdf", or an exact kind.
 //
 // DeletedBytes is reported separately on purpose: soft-deleted files still
 // occupy the disk, so a site that looks 40% full to its users can be 90% full
 // in reality. The admin needs both numbers to know whether "clean up" means
 // "remove withdrawn uploads" or "the site is genuinely out of room".
-func (s *Service) uploadStats(ctx context.Context) UploadStats {
+func (s *Service) uploadStats(ctx context.Context, kindScope string) UploadStats {
 	db := s.db.WithContext(ctx)
+	where, args := uploadKindWhere(kindScope)
 	var st UploadStats
-	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NULL`).Scan(&st.LiveCount)
-	db.Raw(`SELECT COALESCE(SUM(size), 0) FROM upload_files WHERE deleted_at IS NULL`).Scan(&st.LiveBytes)
-	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NOT NULL`).Scan(&st.DeletedCount)
-	db.Raw(`SELECT COALESCE(SUM(size), 0) FROM upload_files WHERE deleted_at IS NOT NULL`).Scan(&st.DeletedBytes)
-	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NULL AND ref_count = 0`).Scan(&st.OrphanCount)
+	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NULL`+where, args...).Scan(&st.LiveCount)
+	db.Raw(`SELECT COALESCE(SUM(size), 0) FROM upload_files WHERE deleted_at IS NULL`+where, args...).Scan(&st.LiveBytes)
+	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NOT NULL`+where, args...).Scan(&st.DeletedCount)
+	db.Raw(`SELECT COALESCE(SUM(size), 0) FROM upload_files WHERE deleted_at IS NOT NULL`+where, args...).Scan(&st.DeletedBytes)
+	db.Raw(`SELECT COUNT(*) FROM upload_files WHERE deleted_at IS NULL AND ref_count = 0`+where, args...).Scan(&st.OrphanCount)
 	st.TotalCount = st.LiveCount + st.DeletedCount
 	st.TotalBytes = st.LiveBytes + st.DeletedBytes
 	return st
+}
+
+// uploadKindWhere translates a library tab / filter into a WHERE fragment.
+// "image" is the one synthetic value: the UI treats every non-PDF row as an
+// image (article images, avatars and site branding), while an exact kind keeps
+// the existing narrower filters.
+func uploadKindWhere(kindScope string) (string, []any) {
+	switch kindScope {
+	case "":
+		return "", nil
+	case "image":
+		return " AND kind <> ?", []any{UploadKindPDF}
+	case "pdf":
+		return " AND kind = ?", []any{UploadKindPDF}
+	default:
+		return " AND kind = ?", []any{kindScope}
+	}
 }
 
 // applyUploadFilter translates the query struct into WHERE clauses.
@@ -111,7 +135,11 @@ func applyUploadFilter(db *gorm.DB, q UploadListQuery) *gorm.DB {
 		db = db.Where("owner_id = ?", q.OwnerID)
 	}
 	if q.Kind != "" {
-		db = db.Where("kind = ?", q.Kind)
+		if q.Kind == "image" {
+			db = db.Where("kind <> ?", UploadKindPDF)
+		} else {
+			db = db.Where("kind = ?", q.Kind)
+		}
 	}
 	// ref_count is the cached edge count, updated by the same transactions
 	// that write upload_refs; filtering on it is O(1) per row and matches what
@@ -154,12 +182,13 @@ func (s *Service) ListUploads(ctx context.Context, q UploadListQuery) (UploadPag
 		Total: total,
 		Page:  q.Page,
 		Size:  q.Size,
-		Stats: s.uploadStats(ctx),
+		Stats: s.uploadStats(ctx, q.Kind),
 	}
 
 	// Resolve owner names in one query instead of a join that would repeat for
 	// every row (and would need a LEFT JOIN anyway for legacy, owner-less rows).
 	names := s.ownerNames(ctx, rows)
+	variants := s.variantCounts(ctx, rows)
 	cfg, _ := s.GetSiteConfig(ctx, false)
 	page.SiteQuotaBytes = cfg.SiteQuotaBytes
 	page.SiteUsedBytes = page.Stats.TotalBytes
@@ -171,9 +200,49 @@ func (s *Service) ListUploads(ctx context.Context, q UploadListQuery) (UploadPag
 	}
 
 	for _, r := range rows {
-		page.Items = append(page.Items, uploadFileInfo(r, names[r.OwnerID]))
+		info := uploadFileInfo(r, names[r.OwnerID])
+		// Every live row is at least one size of its own source.
+		info.VariantCount = 1
+		if n, ok := variants[r.SourceSha256]; ok {
+			info.VariantCount = n
+		}
+		page.Items = append(page.Items, info)
 	}
 	return page, nil
+}
+
+// variantCounts counts how many live rows share each source picture on one
+// page. It is a single GROUP BY over the page's hashes, not a query per row:
+// the gallery shows "same picture, 3 sizes" and must not turn a 24-row page
+// into 24 extra queries.
+func (s *Service) variantCounts(ctx context.Context, rows []models.UploadFile) map[string]int {
+	seen := make(map[string]bool, len(rows))
+	hashes := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.SourceSha256 == "" || seen[r.SourceSha256] {
+			continue
+		}
+		seen[r.SourceSha256] = true
+		hashes = append(hashes, r.SourceSha256)
+	}
+	out := make(map[string]int, len(hashes))
+	if len(hashes) == 0 {
+		return out
+	}
+	var counts []struct {
+		SourceSha256 string `gorm:"column:source_sha256"`
+		N            int    `gorm:"column:n"`
+	}
+	if err := s.db.WithContext(ctx).Model(&models.UploadFile{}).
+		Select("source_sha256, COUNT(*) AS n").
+		Where("source_sha256 IN ? AND deleted_at IS NULL", hashes).
+		Group("source_sha256").Scan(&counts).Error; err != nil {
+		return out
+	}
+	for _, c := range counts {
+		out[c.SourceSha256] = c.N
+	}
+	return out
 }
 
 // ownerNames maps owner ids to display names for one page of rows.
@@ -214,6 +283,7 @@ func uploadFileInfo(f models.UploadFile, ownerName string) UploadFileInfo {
 		Size: f.Size, Width: f.Width, Height: f.Height, Mime: f.Mime,
 		Kind: f.Kind, OwnerID: f.OwnerID, OwnerName: ownerName,
 		OriginalName: f.OriginalName, IP: f.IP, Sha256: f.Sha256,
+		SourceSha256: f.SourceSha256, Transform: f.Transform,
 		ThumbStatus: f.ThumbStatus, ThumbAttempts: f.ThumbAttempts,
 		RefCount: f.RefCount, Legacy: f.Legacy,
 		Deleted: f.DeletedAt != nil, DeletedAt: f.DeletedAt,

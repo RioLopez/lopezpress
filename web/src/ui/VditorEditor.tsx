@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type Vditor from 'vditor'
 import { isSafeHref } from '../core/md'
+import type { ImageUploadOptions } from '../core/types'
 
 // The Markdown editor used by the post composer.
 //
@@ -41,7 +42,15 @@ export interface VditorEditorProps {
   lang: 'zh_CN' | 'en_US'
   placeholder?: string
   /** Upload one pasted or dropped image and report where it landed. */
-  onUploadImage: (file: File) => Promise<{ url: string; name: string }>
+  onUploadImage: (file: File, opts?: ImageUploadOptions) => Promise<{ url: string; name: string }>
+  /**
+   * Ask for resize/compression settings before a single-file upload. Returning
+   * null means the author cancelled, in which case nothing is inserted; an
+   * empty object means "original". Multi-file batches skip the prompt and use
+   * the remembered defaults, because there is no sensible per-file dialog in
+   * the middle of a paste.
+   */
+  askOptions?: (files: File[]) => Promise<ImageUploadOptions | null>
   /** Surface an upload failure; the editor itself cannot explain it. */
   onUploadError?: (message: string) => void
 }
@@ -186,12 +195,18 @@ export function VditorEditor(props: VditorEditorProps) {
             // returns as a string is shown as a tip, not inserted.
             if (!v) return null
             const tips = TIPS[propsRef.current.lang]
+            let opts: ImageUploadOptions | undefined
+            if (files.length === 1 && propsRef.current.askOptions) {
+              const chosen = await propsRef.current.askOptions(files)
+              if (chosen === null) return null // cancelled: insert nothing
+              opts = chosen
+            }
             for (let i = 0; i < files.length; i++) {
               const file = files[i]
               if (files.length > 1) v.tip(`${i + 1}/${files.length}`, 30000)
               else v.tip(tips.uploading, 30000)
               try {
-                const r = await propsRef.current.onUploadImage(file)
+                const r = await propsRef.current.onUploadImage(file, opts)
                 // insertMD, not insertValue, and never a returned string:
                 //  - a string RETURN VALUE is read as a tip message and nothing
                 //    is inserted (uploadFiles(), `typeof isValidate === "string"`);

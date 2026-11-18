@@ -9,6 +9,7 @@ export { ApiError, setTokenGetter, setOnUnauthorized, setOnPasswordChangeRequire
 import type {
   AuthResult,
   AuthorView,
+  AutoBackupStatus,
   BackupResult,
   BackupStats,
   CaptchaIssued,
@@ -16,6 +17,7 @@ import type {
   CategoryWithCount,
   CreatePostInput,
   DashboardData,
+  ImageUploadOptions,
   ListPostsQuery,
   LoginLog,
   MenuItem,
@@ -36,6 +38,7 @@ import type {
   UploadResult,
   UploadRefInfo,
   UploadBatchResult,
+  UploadsRestoreResult,
   UserPublic,
   UserStats,
   UserWithDisabled,
@@ -223,10 +226,18 @@ export const updateTag = (id: number, name: string) =>
 // --- prev/next nav + public read ---
 // Daily snapshot state + on-demand run.
 export const getAutoBackupStatus = () =>
-  request<{ enabled: boolean; keep: number; last_at: string; files: number }>('/api/admin/backup/auto')
+  request<AutoBackupStatus>('/api/admin/backup/auto')
 
 export const runAutoBackup = () =>
   request<{ file: string }>('/api/admin/backup/auto', { method: 'POST' })
+
+// Copies missing files back from one uploads-* snapshot. Additive: existing
+// files are never overwritten, so a repeat run is harmless.
+export const restoreUploadsSnapshot = (name: string) =>
+  request<UploadsRestoreResult>(
+    `/api/admin/backup/uploads/${encodeURIComponent(name)}/restore`,
+    { method: 'POST' },
+  )
 
 // Related posts.
 export const getRelatedPosts = (id: string) => request<Post[]>(`/api/posts/${id}/related`)
@@ -490,11 +501,29 @@ export const emptyTrash = () =>
 //
 // `kind` picks the server-side per-file ceiling and the record's purpose:
 // article images default to 5 MB, avatars to 512 KB.
-export const uploadImage = (file: File, kind: 'post' | 'avatar' | 'site' = 'post') => {
+export const uploadImage = (
+  file: File,
+  kind: 'post' | 'avatar' | 'site' = 'post',
+  opts?: ImageUploadOptions,
+) => {
   const form = new FormData()
   form.append('file', file)
   form.append('kind', kind)
+  // Absent fields mean "no transform". Numbers are sent as strings because
+  // FormData has no typed values; the server parses and clamps them.
+  if (opts?.max_width) form.append('max_width', String(opts.max_width))
+  if (opts?.max_height) form.append('max_height', String(opts.max_height))
+  if (opts?.quality) form.append('quality', String(opts.quality))
+  if (opts?.lossless) form.append('lossless', '1')
   return upload<UploadResult>('/api/upload', form)
+}
+
+// PDF attachments use their own endpoint: the image path decodes and
+// re-encodes its input, which a PDF cannot survive.
+export const uploadPDF = (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return upload<UploadResult>('/api/uploads/pdf', form)
 }
 
 // --- image library (admin: site-wide assets) ---

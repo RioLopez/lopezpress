@@ -25,7 +25,7 @@ const slugRetryLimit = 8
 // createPostTx writes the post row plus its tag associations and image
 // references inside the caller's transaction. Extracted from CreatePost so the
 // slug-conflict retry can re-run the whole unit without duplicating it.
-func createPostTx(ctx context.Context, tx *gorm.DB, s *Service, post models.Post, in CreatePostInput, out *models.Post) error {
+func createPostTx(ctx context.Context, tx *gorm.DB, s *Service, post models.Post, in CreatePostInput, actor models.User, out *models.Post) error {
 	if err := tx.Create(&post).Error; err != nil {
 		return err
 	}
@@ -42,6 +42,11 @@ func createPostTx(ctx context.Context, tx *gorm.DB, s *Service, post models.Post
 	// same transaction as the post itself. The ledger is what lets an admin see
 	// "deleting this image breaks 3 articles" before acting.
 	if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body, post.Cover); err != nil {
+		return err
+	}
+	// PDF attachments are a second ledger edge kind (kind="attachment"); both
+	// tables and the ref rows are written in this same transaction.
+	if err := s.syncPostAttachmentsTx(ctx, tx, post.ID, post.AuthorID, in.AttachmentIDs, actor); err != nil {
 		return err
 	}
 	*out = post
@@ -68,10 +73,10 @@ func isSlugConflict(err error) bool {
 // creates of the same title both see "free" and both insert. Before migration
 // 0014 nothing stopped the second one, and R6-02 measured four posts sharing a
 // single permanent link out of twenty concurrent creates.
-func (s *Service) insertPostWithSlugRetry(ctx context.Context, post models.Post, in CreatePostInput, slug string) (models.Post, error) {
+func (s *Service) insertPostWithSlugRetry(ctx context.Context, post models.Post, in CreatePostInput, slug string, actor models.User) (models.Post, error) {
 	var created models.Post
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return createPostTx(ctx, tx, s, post, in, &created)
+		return createPostTx(ctx, tx, s, post, in, actor, &created)
 	})
 	if err == nil {
 		return created, nil
@@ -91,7 +96,7 @@ func (s *Service) insertPostWithSlugRetry(ctx context.Context, post models.Post,
 		post.Slug = nextSlugCandidate(slug, attempt)
 		created = models.Post{}
 		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return createPostTx(ctx, tx, s, post, in, &created)
+			return createPostTx(ctx, tx, s, post, in, actor, &created)
 		})
 		if err == nil {
 			break

@@ -8,7 +8,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 > **事实源**：`internal/router/router.go`。本文件是给人和 AI 看的索引 + 关键端点细节；
 > 两者不一致时以 router.go 为准，并请回来修正本文件。
-> 当前：**85 条路由**（`scripts/contract_check.py` 会核对前端调用是否都存在于后端）。
+> 当前：**96 条路由**（`scripts/contract_check.py` 会核对前端调用是否都存在于后端）。
 
 鉴权标记：
 
@@ -84,8 +84,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/posts/recent` | 可选 | 最近 5 篇已发布文章；**响应不含 `reviewed_by` / `reviewed_at`**（匿名可读，不下发审核员身份） |
 | GET | `/api/posts/archive` | 可选 | 归档（旧版，全量；前端已改用 paged） |
 | GET | `/api/posts/archive/paged` | 可选 | 归档分页（默认 50 / 上限 200 / `body` 恒空） |
-| GET | `/api/posts/{id}` | 可选 | 单篇（**不计数**，计数走 `/view`） |
-| GET | `/api/posts/{id}/public` | 公开 | 仅 published |
+| GET | `/api/posts/{id}` | 可选 | 单篇（**不计数**，计数走 `/view`）。详情额外返回 `attachments`：该文的 PDF 附件列表 `{id, upload_id, name, url, original_name, size, mime, sort_order}`；列表接口不返回它 |
+| GET | `/api/posts/{id}/public` | 公开 | 仅 published；同样带 `attachments` |
 | GET | `/api/posts/{id}/nav` | 可选 | 上一篇 / 下一篇。锚点文章先过 `canSeePost`，读不到返回 404（与详情一致，不泄露存在性） |
 | GET | `/api/posts/{id}/related` | 可选 | 相关文章（同分类或同标签，≤5）。锚点文章先过 `canSeePost`，读不到返回 404 |
 | GET | `/api/permalinks/{slug}` | 可选 | 永久链接解析（`/p/slug` 用） |
@@ -97,8 +97,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| POST | `/api/posts` | 登录 | 新建（自动生成 slug） |
-| PUT | `/api/posts/{id}` | 登录 | 更新；改标题不动 slug，显式传 `slug` 才改；**更新前自动存修订**。字段「不传」≠「传空」：`cover` 不传=不动、传 `""`=删封面；`category_id` 不传=不动、传 `0`=改为无分类；`tags` 不传=不动、传 `[]`=清空标签 |
+| POST | `/api/posts` | 登录 | 新建（自动生成 slug）。`body_format` 可选：`markdown`（默认）或 `html`；**html 仅 root/admin**，服务端写入前按白名单清洗（`script/style/iframe/svg/on*/style` 移除）。`attachment_ids` 可选：PDF 上传 id 列表，最多 10 个 |
+| PUT | `/api/posts/{id}` | 登录 | 更新；改标题不动 slug，显式传 `slug` 才改；**更新前自动存修订**。字段「不传」≠「传空」：`cover` 不传=不动、传 `""`=删封面；`category_id` 不传=不动、传 `0`=改为无分类；`tags` 不传=不动、传 `[]`=清空标签；`attachment_ids` 同样（不传=不动、`[]`=清空）；`body_format` 不传=保持原格式，改 html 仍受 root/admin 限制 |
 | DELETE | `/api/posts/{id}` | 登录 | 软删（进回收站，7 天） |
 | POST | `/api/posts/{id}/view` | 可选 | **唯一的浏览量入口**（指纹去重 + 作者/爬虫不计） |
 | GET | `/api/posts/{id}/revisions` | 登录 | 修订历史（≤20 条/篇） |
@@ -116,10 +116,11 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/tags/with-count` | 登录 | 带文章数 |
 | PUT | `/api/tags/{id}` | admin | 改名（保留文章关联） |
 | DELETE | `/api/tags/{id}` | admin | 删除（解除关联） |
-| POST | `/api/upload` | 登录 | 上传图片 → `{id, name, url, size, width, height, mime, kind, deduped, remote}`。`kind` 为 `post`（默认，≤5 MB）/ `avatar`（≤512 KB）。扩展名白名单 **+ magic bytes 内容校验**，HTML 伪装成 `.png` 返回 400。**相同字节只存一份**，第二次上传返回 `deduped:true` 并指向已有行（不计配额、不写盘）。**每账号限流** 20 张/分、200 张/时（突发 5），超限返回 **429** + `Retry-After`，拒绝发生在解析 body 之前 |
+| POST | `/api/upload` | 登录 | 上传图片 → `{id, name, url, size, width, height, mime, kind, deduped, remote, transform?, source_sha256?}`。`kind` 为 `post`（默认，≤5 MB）/ `avatar`（≤512 KB）。可选表单字段 `max_width` / `max_height`（边界框，等比缩放、永不放大）、`quality`（JPEG 50–100）、`lossless=1`（JPEG 质量 100；PNG 本就无损）。扩展名白名单 **+ magic bytes 内容校验**，HTML 伪装成 `.png` 返回 400。**相同最终字节只存一份**，第二次相同来源+相同参数返回 `deduped:true`；同一张图的不同尺寸是独立行，共享 `source_sha256`。WebP 与 GIF 都原样存储、不接受缩放（GIF 不做重编码，动画帧完整保留）。**每账号限流** 20 张/分、200 张/时（突发 5），超限返回 **429** + `Retry-After`，拒绝发生在解析 body 之前 |
+| POST | `/api/uploads/pdf` | 登录 | 上传 PDF 附件 → 同上结构，`kind:"pdf"`。只接受 `.pdf` + `%PDF-` 魔数 + `application/pdf`，单文件 ≤20 MiB；共享图片的配额、sha256 去重与上传限流。阅读页以新标签打开（不内嵌 iframe） |
 | GET | `/api/me/uploads` | 登录 | **本人**的上传（分页 24，`?kind=&status=&page=&size=`），附 `stats` 与配额用量。普通用户唯一的图库入口 |
 | DELETE | `/api/me/uploads/{name}` | 登录 | 撤下本人的图（**软删**：文件仍服务已发布文章，但脱离图库、不可再被去重复用）。站长关掉「用户可删自己的图」时返回 403 |
-| GET | `/api/uploads` | **admin** | 全站图库（`?owner=&kind=&status=live\|deleted\|all&ref_status=used\|unused&page=&size=`）。每行带 `thumb_url`（后台队列生成的 480px 缩略图，未生成时为空串，客户端回落 `url`）与 `thumb_status` / `thumb_attempts`（`pending\|ready\|skip\|failed`；失败自动重试一次，`failed` 时可走 `thumb-retry`） |
+| GET | `/api/uploads` | **admin** | 全站附件库（`?owner=&kind=&status=live\|deleted\|all&ref_status=used\|unused&page=&size=`）。`kind=image` 是合成值：所有非 PDF 行（正文图/头像/站点图标）；`kind=pdf` 只列 PDF。`stats` 按同一 `kind` 口径统计。每行带 `thumb_url`（后台队列生成的 480px 缩略图，未生成时为空串，客户端回落 `url`）、`thumb_status` / `thumb_attempts`（`pending\|ready\|skip\|failed`）、`transform`（如 `1920x960-q82`，空串=原样存储）、`source_sha256`（同源多尺寸的分组键）与 `variant_count`（同源活跃行数，含自身；>1 表示这张源图存了多个尺寸） |
 | GET | `/api/uploads/{name}/refs` | **admin** | 单图引用详情（B3）：返回 `[{kind, post_id, post_title, user_id, user_name}]`，`kind` ∈ `body\|avatar\|site`。与删除警告读同一本台账 |
 | POST | `/api/admin/uploads/batch-delete` | **admin** | 批量删除（B3）：`{"names": [...], "hard": false}`，上限 100。逐条走单图删除逻辑，**部分成功**：`{"affected": N, "skipped": [{"name","reason"}]}`；`hard=true` 仍要求 admin/root |
 | DELETE | `/api/uploads/{name}` | **admin** | 软删（默认）或**硬删**（`?hard=1`，连文件与缩略图一起删，即使文章仍在引用；响应 `affected_refs` 告知破坏了几个引用）。`affected_refs` 来自 `upload_refs` 台账，涵盖正文、封面、头像、站点 logo/favicon 四种来源；**它只是告知，不阻止删除**——撤下一张违规图不应需要引用者的同意 |
@@ -159,8 +160,8 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | DELETE | `/api/users/{id}` | admin | 删除 |
 | GET | `/api/users/{id}/logins` | admin | 该用户登录记录。目标为 root 时仅 root 可读（403） |
 | GET | `/api/site-config` | 公开 | 公开配置（品牌、`footer_text`、`theme_color`、`home_layout`、`page_size`、`public_read`） |
-| GET | `/api/admin/site-config` | admin | 全量配置。非 root 的 `smtp_pass`/`img_host_token` 一律返回空串 |
-| PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`（字段级授权）；`friend_links[].url` 必须是 http(s)，否则 400；`site_url` 必须是不带路径的**裸 origin**（`scheme://host[:port]`），带 path/query/fragment 一律 400——它是 `/feed` 与 `/sitemap.xml` 里绝对链接的前缀，带 `/admin` 这类路径会让每篇文章链接都变成 404；`theme_color` 只接受 `#rrggbb`（空串 = 恢复内置配色），`home_layout` 只接受 `list`/`cards` |
+| GET | `/api/admin/site-config` | admin | 全量配置。非 root 的 `smtp_pass`/`img_host_token` 一律返回空串。额外带 `app_version`（当前二进制构建身份，只读，不入库） |
+| PUT | `/api/admin/site-config` | admin | 保存内容字段。非 root 提交时继承 `allow_register`/`smtp_*`/`img_host_token`/`auto_backup`/`backup_keep`/`backup_subdir`/`backup_interval_days`/`backup_hour`/`backup_include_uploads`（字段级授权）；`backup_subdir` 只能是 **BACKUP_DIR 下的相对路径**（绝对路径、盘符、`..` 一律 400）；`backup_interval_days` 1–30、`backup_hour` 0–23。`friend_links[].url` 必须是 http(s)，否则 400；`site_url` 必须是不带路径的**裸 origin**（`scheme://host[:port]`），带 path/query/fragment 一律 400——它是 `/feed` 与 `/sitemap.xml` 里绝对链接的前缀，带 `/admin` 这类路径会让每篇文章链接都变成 404；`theme_color` 只接受 `#rrggbb`（空串 = 恢复内置配色），`home_layout` 只接受 `list`/`cards` |
 | POST | `/api/admin/mail/test` | admin | 测试邮件 |
 | GET | `/api/admin/menus` | admin | 后台侧边栏全部行（含隐藏项），按 `sort,id` 排序。每行含 `key`（内置项稳定标识）/ `label_key`（i18n 键）/ `label`（覆盖文案）/ `group_key` / `root_only` / `visible` |
 | POST | `/api/admin/menus` | root | 新增自定义链接：`{"label","path","group_key"}`。`path` 必须以单个 `/` 开头（`//`、`http(s)://`、含空白一律 400）；`group_key` ∈ `content\|users\|system\|""` |
@@ -172,8 +173,9 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/backup/download` | **root** | 下载备份文件（JSON 与 `auto-*.db` 快照均含密码哈希） |
 | GET | `/api/backup/snapshots` | root | 快照列表（`snapshot-*` 与 `auto-*`） |
 | POST | `/api/backup/restore-snapshot` | root | 从快照恢复（恢复后全站 `token_version` +1） |
-| GET | `/api/admin/backup/auto` | root | 每日备份状态 |
-| POST | `/api/admin/backup/auto` | root | 立即生成今日快照（幂等） |
+| GET | `/api/admin/backup/auto` | root | 自动备份状态：`{enabled, keep, interval_days, hour, include_uploads, subdir, dir, dir_abs, uploads_dir, uploads_dir_abs, uploads_snapshot_dir, uploads_snapshot_dir_abs, uploads_snapshot_name, server_now, server_zone, last_at, files, uploads_snapshots, uploads_last_at}`。`dir_abs` 是实际写入的绝对路径；`uploads_dir_abs` 是数据库快照**不含**的附件目录；`uploads_snapshot_dir_abs` 是最新 `uploads-*` 快照的实际路径（没有则为空串）；`uploads_snapshot_name` 是该目录名，可直接传给还原端点；`server_now`/`server_zone` 是服务器当前时间与时区，`hour` 按此时钟解释 |
+| POST | `/api/admin/backup/auto` | root | 立即生成当日快照（跳过频率/时间门槛，但当天已有文件时仍幂等返回空 `file`） |
+| POST | `/api/admin/backup/uploads/{name}/restore` | root | 从 `uploads-YYYYMMDD` 快照**补回缺失的附件文件**，返回 `{name, restored, skipped, bytes}`。**只补缺失、不覆盖已存在文件**，可重复执行；不改数据库，建议先恢复同一时间的 `.db` 快照。名称非法（路径分隔符、`..`、非日期形状）返回 400，快照不存在返回 404 |
 
 ---
 
@@ -264,7 +266,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
   "media_live_count": 24,
   "media_live_bytes": 3456789,
   "app_version": "1.0.19+0000000",
-  "auto_backup": { "enabled": true, "keep": 3, "last_at": "2026-11-07T03:00:00Z", "files": 3 },
+  "auto_backup": { "enabled": true, "keep": 3, "interval_days": 1, "hour": 3, "include_uploads": true, "last_at": "2026-11-07T03:00:00Z", "files": 3 },
   "recent_actions": []
 }
 ```
@@ -281,10 +283,29 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 ### `GET|POST /api/admin/backup/auto`
 
 ```json
-{ "enabled": true, "keep": 3, "last_at": "2026-10-22T18:03:46Z", "files": 1 }
+{
+  "enabled": true,
+  "keep": 3,
+  "interval_days": 1,
+  "hour": 3,
+  "include_uploads": true,
+  "subdir": "daily",
+  "dir": "data/backups/daily",
+  "dir_abs": "/opt/lopezpress/data/backups/daily",
+  "uploads_dir": "data/uploads",
+  "uploads_dir_abs": "/opt/lopezpress/data/uploads",
+  "uploads_snapshot_dir": "data/backups/daily/uploads-20261022",
+  "uploads_snapshot_dir_abs": "/opt/lopezpress/data/backups/daily/uploads-20261022",
+  "server_now": "2026-10-22 18:03",
+  "server_zone": "UTC (+00:00)",
+  "last_at": "2026-10-22T18:03:46Z",
+  "files": 1,
+  "uploads_snapshots": 1,
+  "uploads_last_at": "2026-10-22T18:03:46Z"
+}
 ```
 
-`POST` 返回 `{ "file": "auto-20261022.db" }`；当天已有快照时 `file` 为空字符串（幂等，不是失败）。
+`POST` 返回 `{ "file": "auto-20261022.db" }`；当天已有快照时 `file` 为空字符串（幂等，不是失败）。附件快照与数据库快照同名日期，目录形如 `uploads-20261022/`；未变化的文件用硬链接复用，删除旧快照不会影响仍被其他快照引用的文件。
 
 ---
 
@@ -347,6 +368,10 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 版本 / 轮次 | 契约变化 |
 |---|---|
+| 1.0.33 | 新增 `POST /api/admin/backup/uploads/{name}/restore`（root）：从 `uploads-YYYYMMDD` 快照补回**缺失**附件，返回 `{name, restored, skipped, bytes}`，只补不覆盖；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_name` |
+| 1.0.32 | `GET /api/uploads` 行新增 `variant_count`（同源活跃版本数）；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_dir`/`uploads_snapshot_dir_abs`/`server_now`/`server_zone`。行为修正：GIF 不再重编码（原样存储，动画帧不再被丢弃），`lossless` 仍为 JPEG 质量 100 |
+| 1.0.31 | `POST /api/upload` 新增可选 `max_width`/`max_height`/`quality`/`lossless`，响应新增 `transform`/`source_sha256`；`GET /api/uploads` 的 `kind` 支持合成值 `image`（非 PDF），`stats` 按同一口径统计，行新增 `transform`/`source_sha256`；`GET /api/admin/site-config` 新增只读 `app_version`；`PUT /api/admin/site-config` 新增 `backup_subdir`/`backup_interval_days`/`backup_hour`/`backup_include_uploads`；`GET /api/admin/backup/auto` 新增位置与频率字段 |
+| 1.0.30 | 文章新增 `body_format`（`markdown`/`html`，html 仅 root/admin 且服务端清洗）；`POST/PUT /api/posts` 新增 `attachment_ids`；单篇响应新增 `attachments`；新增 `POST /api/uploads/pdf`（≤20 MiB，最多 10 个/篇） |
 | 1.0.29 – 1.0.26 | 纯前端响应式改造，接口无变化 |
 | 1.0.25 | 新增 `GET /api/admin/actions/export`（CSV，admin，最多 20000 行）；`GET /api/admin/actions` 新增可选 `q` |
 | 1.0.19 | `GET /api/admin/dashboard` 只增字段：`views_today`、`views_7d`、`status_counts`、`users_total`、`users_disabled`、`users_new_7d`、`media_live_count`、`media_live_bytes`、`app_version`、`auto_backup`、`recent_actions` |

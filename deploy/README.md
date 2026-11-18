@@ -88,10 +88,18 @@ TRUSTED_PROXIES=172.16.0.0/12     # Docker Compose（后端在容器网段）
 
 `^~` 前缀不能少：下面的 `location ~* \.(js\|css\|png…)$` 是正则 location，
 nginx 里**正则优先于普通前缀**，写 `location /uploads/` 会被那条正则抢走。
+**`location ^~ /api/` 同理**：少了 `^~`，`DELETE /api/uploads/x.gif` 会命中静态
+正则块，nginx 直接返回 **405**，附件库的“撤下/删除”对图片附件失效（1.0.32 实测过）。
 安全头（HSTS/CSP/X-Frame-Options 等）下沉到各自 location，**不要在 server 级再写一份**——
 重复下发会让 CSP 出现两份而互相失效。
 
 `client_max_body_size` 必须 ≥ 后端 `upload_max_image`（当前 nginx 32m / 后端 20MB）。
+
+> **非 443 端口必须用 `$http_host`**：如果测试机用 `listen 18080` 对外，反代要写
+> `proxy_set_header Host $http_host;`。`$host` 会丢掉端口，而登录的同源校验拿
+> `Origin: http://host:18080` 与 `Host: host` 比较，结果固定 **403
+> `cross-origin login is not allowed`**。443 因为默认端口不出现在 Origin 里，
+> 才没有暴露这个问题。
 
 ## 5. 本机开发（Linux）
 

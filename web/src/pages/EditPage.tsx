@@ -58,12 +58,14 @@ export function EditPage({ id }: { id: string }) {
       initialTitle={post.title}
       initialSlug={post.slug}
       initialBody={post.body}
+      initialBodyFormat={post.body_format === 'html' ? 'html' : 'markdown'}
       initialStatus={post.status}
       initialReviewNote={post.review_note}
       initialCategory={post.category_id}
       initialTags={post.tags?.map((tg) => tg.name)}
       initialPinned={post.pinned}
       initialCover={post.cover}
+      initialAttachments={post.attachments}
       publishing={busy}
       onCancel={() => navigate(`/read/${id}`)}
       onSubmit={async (v) => {

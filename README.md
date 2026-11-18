@@ -13,6 +13,8 @@
 
 **内容**
 - 文章 CRUD（作者 / 管理员权限控制）、Markdown 渲染 + XSS 白名单清洗
+- **HTML 正文**：root/admin 可将文章格式切换为 HTML 片段；服务端写入前按白名单清洗（脚本、样式、iframe 等移除），修订回滚会一并恢复格式
+- **PDF 附件**：每篇最多 10 个、单文件 20 MiB，共享图库配额与去重；阅读页在附件卡中新标签打开
 - 五态状态机：`published` / `private` / `pending` / `rejected` / `banned`（`banned` 仅 root 可见）
 - **永久链接**：`/p/标题`（旧 `/read/{uuid}` 永久有效，sitemap/RSS 自动用 slug）
 - 两层分类树（父/子，含预设树）+ 标签（many2many）、置顶、上下篇、**相关文章**
@@ -66,7 +68,7 @@ lopezpress/
 
 > 启动命令：`go run ./cmd/server`，默认监听 `:8080`。
 > **一键启动（Linux，推荐）**：`scripts/dev.sh up` 同时拉起后端（:8080）和前端（:5173），并强制数据隔离到 `data/dev/`；支持 `up` / `down` / `restart` / `status` / `logs` / `build` / `gate` / `reset-root` / `help` 子命令，已做端口幂等检测。
-> **后端路由总量**：95 条（前端已接入 88 条，`scripts/contract_check.py` 可复核；未被前端调用的 6 条为 `/feed`、`/health`、`/health/ready`、`/robots.txt`、`/sitemap.xml`、`/uploads/`）。
+> **后端路由总量**：96 条（前端已接入 89 条，`scripts/contract_check.py` 可复核；未被前端调用的 6 条为 `/feed`、`/health`、`/health/ready`、`/robots.txt`、`/sitemap.xml`、`/uploads/`）。
 > 待办清单、上线安全基线与本机运维档案只做本地维护，不随公开仓库分发（见「仓库内容边界」一节）。
 
 ## 快速开始（本地开发）
@@ -77,12 +79,13 @@ lopezpress/
 
 ```bash
 go version                 # 需要 ≥ 1.26.11
-# 若发行版自带版本偏低，GOTOOLCHAIN 会在首次构建时自动下载 1.26.11：
+# 必须显式固定工具链：GOTOOLCHAIN=auto 只会升不会降，本机若已装更高版本
+# （如 1.27.3）就会继续用它，不会切回 go.mod 声明的版本。
 export GOTOOLCHAIN=go1.26.11
-go version
+go version                 # 应显示 go1.26.11
 ```
 
-> `scripts/dev.sh` 已固定 `GOTOOLCHAIN=go1.26.11`，手动跑测试时也建议带上该变量。
+> `scripts/dev.sh` 会从 `go.mod` 读取版本并自动固定 `GOTOOLCHAIN`；**手动跑测试、门禁或构建时必须显式带上该变量**，否则结果会不一致（PNG 压缩用例假红、依赖漏洞扫描假报可达漏洞）。
 
 ### 2. 启动后端
 

@@ -86,7 +86,7 @@ export function AdminLayout({ children }: { children: ComponentChildren }) {
           ) : (
             <span class="brand-dot" />
           )}
-          <span class="brand-name">{config.site_name || 'Echo'}</span>
+          <span class="brand-name">{config.site_name || 'LopezPress'}</span>
         </div>
 
         <nav class="admin-sidebar-nav">

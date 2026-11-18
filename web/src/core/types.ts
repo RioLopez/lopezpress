@@ -45,6 +45,8 @@ export interface Post {
   id: string
   title: string
   body: string
+  // Renderer selected by the author: Markdown (default) or HTML (admin/root).
+  body_format?: 'markdown' | 'html'
   status: PostStatus
   author_id: string
   author?: UserPublic
@@ -66,6 +68,22 @@ export interface Post {
   reviewed_at?: string
   created_at: string
   updated_at: string
+  // PDF documents carried by this article. Only the detail read paths fill
+  // this in; list cards leave it absent.
+  attachments?: PostAttachment[]
+}
+
+// One PDF attached to a post. `url` is the opaque /uploads/ path; the original
+// file name is display-only.
+export interface PostAttachment {
+  id: number
+  upload_id: string
+  name: string
+  url: string
+  original_name: string
+  size: number
+  mime: string
+  sort_order: number
 }
 
 export interface AuthResult {
@@ -108,11 +126,13 @@ export interface CreatePostInput {
   // Empty = the server derives the permanent link from the title.
   slug?: string
   body: string
+  body_format?: 'markdown' | 'html'
   status: PostStatus
   category_id?: number
   tags?: string[]
   pinned?: boolean
   cover?: string
+  attachment_ids?: string[]
 }
 
 export interface UpdatePostInput {
@@ -120,11 +140,14 @@ export interface UpdatePostInput {
   // Empty = keep the current permanent link.
   slug?: string
   body?: string
+  // Absent = keep the current format.
+  body_format?: 'markdown' | 'html'
   status?: PostStatus
   category_id?: number
   tags?: string[]
   pinned?: boolean
   cover?: string
+  attachment_ids?: string[]
 }
 
 // --- pagination / search (GET /api/posts with params) ---
@@ -179,6 +202,22 @@ export interface UploadResult {
   kind: string
   deduped: boolean
   remote?: boolean
+  // Variant metadata: `transform` is the recipe the server applied (empty =
+  // stored as sent) and source_sha256 groups every size of one picture.
+  transform?: string
+  source_sha256?: string
+}
+
+// Requested resize/compression for one upload. All fields are optional; absent
+// means "no change". The server clamps the values, never rejects a slider.
+export interface ImageUploadOptions {
+  max_width?: number
+  max_height?: number
+  // JPEG only. 50..100; 0 = server default (82).
+  quality?: number
+  // Asks for JPEG quality 100. Still a lossy format — the label says "highest",
+  // not "lossless". PNG is always pixel-lossless and ignores this.
+  lossless?: boolean
 }
 
 // One row of the image library / "my uploads" list.
@@ -199,6 +238,12 @@ export interface UploadFileInfo {
   original_name: string
   ip: string
   sha256: string
+  // Variant metadata. source_sha256 is shared by every size of one picture;
+  // transform is empty when the stored bytes are the ones that were uploaded.
+  source_sha256: string
+  /** 同源版本数（含自身）；>1 表示同一张源图存了多个尺寸 */
+  variant_count: number
+  transform: string
   // Thumbnail pipeline state. "failed" is the only state that offers a manual
   // retry: the worker already tried twice on its own.
   thumb_status: '' | 'pending' | 'ready' | 'skip' | 'failed'
@@ -259,11 +304,13 @@ export interface EditorValues {
   title: string
   slug?: string
   body: string
+  body_format?: 'markdown' | 'html'
   status: PostStatus
   category_id?: number
   tags?: string[]
   pinned?: boolean
   cover?: string
+  attachment_ids?: string[]
 }
 
 // --- admin: categories / tags with counts ---
@@ -333,6 +380,9 @@ export interface SiteConfigPublic {
 // Full config (admin only) including image-host token + registration flag.
 export interface SiteConfigFull extends SiteConfigPublic {
   id: number
+  // Build identity stamped by the handler (not a database column). Shown in
+  // Site settings → Basics so the operator can tell which build is running.
+  app_version?: string
   img_host_mode: 'local' | 'smms'
   img_host_token: string
   allow_register: boolean
@@ -344,6 +394,11 @@ export interface SiteConfigFull extends SiteConfigPublic {
  // Daily snapshot settings (root-only surface).
   auto_backup: boolean
   backup_keep: number
+  // Advanced policy. backup_subdir is a RELATIVE folder under BACKUP_DIR.
+  backup_subdir: string
+  backup_interval_days: number
+  backup_hour: number
+  backup_include_uploads: boolean
  // Image storage policy. The three ceilings are bytes; the two
   // switches decide what an ordinary author may do with their own pictures.
   // Sent in full on every save — the server treats a missing/zero ceiling as
@@ -413,8 +468,34 @@ export interface StatusCounts {
 export interface AutoBackupStatus {
   enabled: boolean
   keep: number
+  interval_days: number
+  hour: number
+  include_uploads: boolean
+  subdir: string
+  dir: string
+  dir_abs: string
+  uploads_dir: string
+  uploads_dir_abs: string
+  /** 最新附件快照目录（uploads-YYYYMMDD）；为空表示还没有 */
+  uploads_snapshot_dir: string
+  uploads_snapshot_dir_abs: string
+  /** 快照目录名，还原接口直接使用 */
+  uploads_snapshot_name: string
+  /** 服务器当前时间与时区，用于解释“几点”这个字段 */
+  server_now: string
+  server_zone: string
   last_at: string
   files: number
+  uploads_snapshots: number
+  uploads_last_at: string
+}
+
+/** 附件快照还原结果：只补缺失文件，跳过已存在的文件 */
+export interface UploadsRestoreResult {
+  name: string
+  restored: number
+  skipped: number
+  bytes: number
 }
 
 export interface DashboardData {

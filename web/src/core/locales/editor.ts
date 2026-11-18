@@ -58,6 +58,14 @@ export type EditorTexts = {
     modeSplit: string
     modeIR: string
     modeSource: string
+    formatMarkdown: string
+    formatHTML: string
+    htmlPlaceholder: string
+    uploadPdf: string
+    pdfUploading: string
+    pdfUploadFailed: string
+    attachmentLimit: string
+    attachmentRemove: string
     cover: string
     coverUpload: string
     coverFromBody: string
@@ -105,6 +113,26 @@ export type EditorTexts = {
     confirm: string
     restored: string
     chars: string
+  }
+  // Image upload size/compression dialog (shared by the editor and the
+  // attachment library).
+  uploadOpts: {
+    title: string
+    original: string
+    custom: string
+    maxWidth: string
+    maxHeight: string
+    quality: string
+    lossless: string
+    losslessHint: string
+    pngHint: string
+    unsupported: string
+    ratioHint: string
+    target: string
+    keepOriginal: string
+    remember: string
+    apply: string
+    cancel: string
   }
 }
 
@@ -166,6 +194,14 @@ export const editorZh: EditorTexts = {
     modeSplit: '分屏预览',
     modeIR: '即时渲染',
     modeSource: '纯源码',
+    formatMarkdown: 'Markdown',
+    formatHTML: 'HTML',
+    htmlPlaceholder: '在这里写 HTML 片段（不要写 <html>/<head>/<body> 外壳；脚本、样式、iframe 会被服务端移除）',
+    uploadPdf: 'PDF 附件',
+    pdfUploading: '上传中…',
+    pdfUploadFailed: 'PDF 上传失败',
+    attachmentLimit: '每篇文章最多 10 个 PDF 附件',
+    attachmentRemove: '移除附件',
     cover: '封面图',
     coverUpload: '上传封面',
     coverFromBody: '从正文选择',
@@ -211,6 +247,24 @@ export const editorZh: EditorTexts = {
     confirm: '用这个版本覆盖当前内容？当前内容也会存进历史，可以再回退。',
     restored: '已恢复到该版本',
     chars: '字符',
+  },
+  uploadOpts: {
+    title: '图片上传设置',
+    original: '原图',
+    custom: '自定义',
+    maxWidth: '最大宽度',
+    maxHeight: '最大高度',
+    quality: 'JPEG 质量',
+    lossless: '最高质量（100）',
+    losslessHint: '质量 100 的 JPEG 体积明显变大，但仍是有损编码；只有 PNG 才是像素无损。',
+    pngHint: 'PNG 使用无损压缩，质量设置不影响它。',
+    unsupported: 'WebP / GIF 不支持服务端缩放；GIF 缩放还会丢失动画。请选择原图上传。',
+    ratioHint: '宽高是一个边界框：图片会等比缩放进去，不会变形，也不会放大。',
+    target: '输出尺寸',
+    keepOriginal: '保持原图尺寸',
+    remember: '记住这次设置，多图上传时直接使用',
+    apply: '上传',
+    cancel: '取消',
   }
 }
 
@@ -272,6 +326,14 @@ export const editorEn: EditorTexts = {
     modeSplit: 'Split preview',
     modeIR: 'Instant render',
     modeSource: 'Source',
+    formatMarkdown: 'Markdown',
+    formatHTML: 'HTML',
+    htmlPlaceholder: 'Write an HTML fragment here (no <html>/<head>/<body> shell; scripts, styles and iframes are removed server-side)',
+    uploadPdf: 'PDF attachment',
+    pdfUploading: 'Uploading…',
+    pdfUploadFailed: 'Failed to upload PDF',
+    attachmentLimit: 'A post can carry at most 10 PDF attachments',
+    attachmentRemove: 'Remove attachment',
     cover: 'Cover',
     coverUpload: 'Upload cover',
     coverFromBody: 'Pick from content',
@@ -317,5 +379,23 @@ export const editorEn: EditorTexts = {
     confirm: 'Overwrite the current content with this version? The current text is kept in history too.',
     restored: 'Version restored',
     chars: 'chars',
+  },
+  uploadOpts: {
+    title: 'Image upload settings',
+    original: 'Original',
+    custom: 'Custom',
+    maxWidth: 'Max width',
+    maxHeight: 'Max height',
+    quality: 'JPEG quality',
+    lossless: 'Highest quality (100)',
+    losslessHint: 'Quality 100 makes JPEG files noticeably larger, but JPEG stays lossy; only PNG is pixel-lossless.',
+    pngHint: 'PNG uses lossless compression; the quality setting does not apply.',
+    unsupported: 'WebP / GIF cannot be resized on the server, and resizing a GIF would drop its animation. Upload the original.',
+    ratioHint: 'Width and height are a bounding box: the image scales down proportionally, is never distorted, and is never enlarged.',
+    target: 'Output size',
+    keepOriginal: 'Keep the original size',
+    remember: 'Remember these settings for multi-image uploads',
+    apply: 'Upload',
+    cancel: 'Cancel',
   }
 }

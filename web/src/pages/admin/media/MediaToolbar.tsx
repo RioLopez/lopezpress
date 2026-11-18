@@ -5,6 +5,7 @@ export type StatusFilter = 'live' | 'deleted' | 'all'
 export type RefFilter = '' | 'used' | 'unused'
 
 type Props = {
+  scope: 'image' | 'pdf'
   status: StatusFilter
   kind: string
   refStatus: RefFilter
@@ -30,12 +31,14 @@ export function MediaToolbar(p: Props) {
         <option value="deleted">{t('media.statusDeleted')}</option>
         <option value="all">{t('media.statusAll')}</option>
       </select>
-      <select value={p.kind} onChange={(e) => p.onKind((e.target as HTMLSelectElement).value)}>
-        <option value="">{t('media.kindAll')}</option>
-        <option value="post">{t('media.kindPost')}</option>
-        <option value="avatar">{t('media.kindAvatar')}</option>
-        <option value="site">{t('media.kindSite')}</option>
-      </select>
+      {p.scope === 'image' && (
+        <select value={p.kind} onChange={(e) => p.onKind((e.target as HTMLSelectElement).value)}>
+          <option value="">{t('media.kindImages')}</option>
+          <option value="post">{t('media.kindPost')}</option>
+          <option value="avatar">{t('media.kindAvatar')}</option>
+          <option value="site">{t('media.kindSite')}</option>
+        </select>
+      )}
       <select value={p.refStatus} onChange={(e) => p.onRefStatus((e.target as HTMLSelectElement).value as RefFilter)}>
         <option value="">{t('media.refsFilterAll')}</option>
         <option value="used">{t('media.refsUsed')}</option>

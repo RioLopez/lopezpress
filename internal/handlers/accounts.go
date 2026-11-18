@@ -80,6 +80,10 @@ func GetAdminSiteConfig(w http.ResponseWriter, r *http.Request) {
 	// field (see UpdateSiteConfig), so no client needs the value back.
 	cfg.SmtpPass = ""
 	cfg.ImgHostToken = ""
+	// Build identity belongs to the binary, not the database row. The site
+	// settings page shows it so an operator can tell whether the server they
+	// are looking at is the build they think it is.
+	cfg.AppVersion = version.Short()
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -134,6 +138,10 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 		if cur, cerr := svc.GetSiteConfig(r.Context(), true); cerr == nil {
 			cfg.AutoBackup = cur.AutoBackup
 			cfg.BackupKeep = cur.BackupKeep
+			cfg.BackupSubdir = cur.BackupSubdir
+			cfg.BackupIntervalDays = cur.BackupIntervalDays
+			cfg.BackupHour = cur.BackupHour
+			cfg.BackupIncludeUploads = cur.BackupIncludeUploads
 			cfg.AllowRegister = cur.AllowRegister
 			cfg.SmtpHost = cur.SmtpHost
 			cfg.SmtpPort = cur.SmtpPort
@@ -167,6 +175,7 @@ func UpdateSiteConfig(w http.ResponseWriter, r *http.Request) {
 	// Never echo a secret back, whatever the caller's role.
 	out.SmtpPass = ""
 	out.ImgHostToken = ""
+	out.AppVersion = version.Short()
 	writeJSON(w, http.StatusOK, out)
 }
 

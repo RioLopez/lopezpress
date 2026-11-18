@@ -5,10 +5,11 @@ import { getPost, deletePost, getPostPrevNext, getRelatedPosts, reportView, list
 import type { Post, PostNav, FontSize } from '../core/types'
 import { useAuth } from '../core/auth'
 import { isAdmin } from '../core/roles'
-import { renderMD, wordCount, extractTOC } from '../core/md'
+import { renderBody, wordCount, extractTOC, extractTOCHTML } from '../core/md'
 import { useNav } from '../core/router'
 import { useQuery } from '../core/useQuery'
 import { categoryPath } from '../core/taxonomy'
+import { fmtBytes } from '../core/format'
 
 const FONT_KEY = 'echo.readFont'
 
@@ -225,9 +226,15 @@ export function ReadPage({ id }: { id: string }) {
     }
   }
 
-  const words = wordCount(post.body || '')
+  const bodyFormat = post?.body_format === 'html' ? 'html' : 'markdown'
+  const renderedBody = post ? renderBody(post.body || '', bodyFormat) : ''
+  const words = wordCount(post?.body || '', bodyFormat)
   const readMins = Math.max(1, Math.round(words / WPM))
-  const toc = post ? extractTOC(post.body || '') : []
+  const toc = post
+    ? bodyFormat === 'html'
+      ? extractTOCHTML(renderedBody)
+      : extractTOC(post.body || '')
+    : []
 
   const fontOrder: FontSize[] = ['small', 'medium', 'large', 'xlarge']
   const fontLabel = (f: FontSize) =>
@@ -349,6 +356,23 @@ export function ReadPage({ id }: { id: string }) {
           </div>
         )}
       </header>
+      {(post.attachments?.length || 0) > 0 && (
+        <section class="read-attachments">
+          <h2>{t('read.attachments')}</h2>
+          <ul class="read-attachment-list">
+            {post.attachments!.map((a) => (
+              <li key={a.id} class="read-attachment">
+                <a href={a.url} target="_blank" rel="noopener noreferrer">
+                  <span class="read-attachment-icon" aria-hidden="true">PDF</span>
+                  <span class="read-attachment-name">{a.original_name || a.name}</span>
+                  <span class="read-attachment-size">{fmtBytes(a.size)}</span>
+                  <span class="read-attachment-open">{t('read.openAttachment')}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {toc.length > 0 && (
         <nav
           class={`read-toc ${tocOpen ? 'read-toc--open' : ''}`}
@@ -387,7 +411,7 @@ export function ReadPage({ id }: { id: string }) {
       )}
       <div
         class="read-body md-body"
-        dangerouslySetInnerHTML={{ __html: renderMD(post.body || '') }}
+        dangerouslySetInnerHTML={{ __html: renderedBody }}
       />
       {related.length > 0 && (
         <section class="related-block">

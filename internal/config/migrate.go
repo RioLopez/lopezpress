@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -141,52 +140,40 @@ var migrations = []migration{
 		{name: "theme_color", ddl: "ALTER TABLE site_configs ADD COLUMN theme_color VARCHAR(16)"},
 		{name: "home_layout", ddl: "ALTER TABLE site_configs ADD COLUMN home_layout VARCHAR(16)"},
 	}, `UPDATE site_configs SET home_layout = 'list' WHERE home_layout IS NULL OR home_layout = ''`)},
-}
-
-// disambiguateDuplicateSlugs rewrites colliding slugs so a unique index can be
-// built over them. The oldest row in each group keeps the slug; the rest get a
-// numeric suffix, which is what a sequential allocate would have produced.
-func disambiguateDuplicateSlugs(db *gorm.DB) error {
-	// A brand-new database has no posts table yet — AutoMigrate creates it after
-	// this pass, so there is nothing to disambiguate. Checking first keeps the
-	// migration idempotent on both a fresh install and an upgrade.
-	if !db.Migrator().HasTable(&models.Post{}) {
-		return nil
-	}
-	var groups []string
-	if err := db.Model(&models.Post{}).
-		Where("slug <> ''").
-		Group("slug").
-		Having("COUNT(*) > 1").
-		Pluck("slug", &groups).Error; err != nil {
-		return err
-	}
-	for _, slug := range groups {
-		var rows []models.Post
-		if err := db.Where("slug = ?", slug).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
-			return err
-		}
-		for i := 1; i < len(rows); i++ {
-			// Try successive suffixes; a collision with an existing slug moves
-			// to the next number rather than creating a new duplicate.
-			for n := 2; n < 1000; n++ {
-				candidate := slug + "-" + strconv.Itoa(n)
-				var clash int64
-				if err := db.Model(&models.Post{}).Where("slug = ?", candidate).Count(&clash).Error; err != nil {
-					return err
-				}
-				if clash > 0 {
-					continue
-				}
-				if err := db.Model(&models.Post{}).Where("id = ?", rows[i].ID).
-					Update("slug", candidate).Error; err != nil {
-					return err
-				}
-				break
-			}
-		}
-	}
-	return nil
+	// 0018: post bodies may be Markdown or HTML. Existing rows keep their
+	// current semantics, so the default is "markdown" rather than "html".
+	{version: "0018_add_body_format", up: ensureColumns(&models.Post{}, []columnSpec{
+		{name: "body_format", ddl: "ALTER TABLE posts ADD COLUMN body_format VARCHAR(16) DEFAULT 'markdown'"},
+	})},
+	// 0019: revisions carry the format of the text they snapshot. The column is
+	// on post_revisions (not just posts) because rolling back a Markdown
+	// revision into an HTML post must also roll the renderer back.
+	{version: "0019_add_revision_body_format", up: ensureColumns(&models.PostRevision{}, []columnSpec{
+		{name: "body_format", ddl: "ALTER TABLE post_revisions ADD COLUMN body_format VARCHAR(16) DEFAULT 'markdown'"},
+	})},
+	// 0020: upload variants. One source picture may be stored as several rows
+	// (1920px for the article, 640px for the cover), so the row needs the
+	// original hash to group them and the transform recipe to explain the
+	// difference. Existing rows are back-filled from sha256: their stored bytes
+	// are all the source they ever had.
+	{version: "0020_add_upload_transform", up: ensureColumns(&models.UploadFile{}, []columnSpec{
+		{name: "source_sha256", ddl: "ALTER TABLE upload_files ADD COLUMN source_sha256 VARCHAR(64)"},
+		{name: "transform", ddl: "ALTER TABLE upload_files ADD COLUMN transform VARCHAR(96)"},
+	},
+		"CREATE INDEX IF NOT EXISTS idx_upload_files_source_sha256 ON upload_files(source_sha256)",
+		"UPDATE upload_files SET source_sha256 = sha256 WHERE (source_sha256 IS NULL OR source_sha256 = '') AND sha256 IS NOT NULL",
+	)},
+	// 0021: advanced auto-backup policy. empty backup_subdir = the configured
+	// BACKUP_DIR itself; interval 1 = daily; hour 0 = run as soon as the
+	// interval is due (the pre-existing lazy behaviour). Existing installs keep
+	// exactly what they had.
+	{version: "0021_add_backup_policy", up: ensureColumns(&models.SiteConfig{}, []columnSpec{
+		{name: "backup_subdir", ddl: "ALTER TABLE site_configs ADD COLUMN backup_subdir VARCHAR(128)"},
+		{name: "backup_interval_days", ddl: "ALTER TABLE site_configs ADD COLUMN backup_interval_days INTEGER DEFAULT 1"},
+		{name: "backup_hour", ddl: "ALTER TABLE site_configs ADD COLUMN backup_hour INTEGER DEFAULT 0"},
+		{name: "backup_include_uploads", ddl: "ALTER TABLE site_configs ADD COLUMN backup_include_uploads INTEGER DEFAULT 0"},
+	}, `UPDATE site_configs SET backup_interval_days = 1 WHERE backup_interval_days IS NULL OR backup_interval_days <= 0`,
+		`UPDATE site_configs SET backup_hour = 0 WHERE backup_hour IS NULL OR backup_hour < 0 OR backup_hour > 23`)},
 }
 
 // runManualMigrations applies every registered migration in order. Each is

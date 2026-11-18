@@ -9,8 +9,8 @@ import { getSiteConfig } from './api'
 import type { SiteConfigPublic } from './types'
 
 const DEFAULT: SiteConfigPublic = {
-  site_name: 'Echo',
-  site_title: 'Echo',
+  site_name: 'LopezPress',
+  site_title: 'LopezPress',
   site_logo: '',
   site_favicon: '',
   site_url: '',

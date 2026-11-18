@@ -51,6 +51,25 @@ type SiteConfig struct {
 	// the operator may keep backups at the filesystem level instead.
 	AutoBackup bool `gorm:"default:false" json:"auto_backup"`
 	BackupKeep int  `gorm:"default:7" json:"backup_keep"`
+	// Backup policy. BackupSubdir is a RELATIVE folder under the process's
+	// configured BACKUP_DIR — never an absolute path. Letting the admin form
+	// write to "/etc" or "C:\Windows" would turn a settings field into an
+	// arbitrary-file-write primitive; an operator who needs another disk sets
+	// BACKUP_DIR in .env instead. BackupIntervalDays turns the daily job into
+	// "every N days" (1..30), BackupHour is the earliest local hour it may run
+	// (0 = as soon as the interval is due), and BackupIncludeUploads also
+	// snapshots the upload directory (article images + PDF attachments), which
+	// the database dump deliberately does not contain.
+	BackupSubdir         string `gorm:"size:128" json:"backup_subdir"`
+	BackupIntervalDays   int    `gorm:"default:1" json:"backup_interval_days"`
+	BackupHour           int    `gorm:"default:0" json:"backup_hour"`
+	BackupIncludeUploads bool   `gorm:"default:false" json:"backup_include_uploads"`
+	// AppVersion is not a column: it is stamped onto the admin response only,
+	// so the settings page can tell the operator which build is running. The
+	// service layer has no build identity, so the handler fills it in (the same
+	// way the dashboard does). gorm:"-" keeps it out of AutoMigrate and the
+	// drift check.
+	AppVersion string `gorm:"-" json:"app_version,omitempty"`
 	// SMTP settings for security notifications (login-failure / password
 	// change / new-location login). Empty host disables the feature. The
 	// password is stored in the DB (admin-configurable) — acceptable because

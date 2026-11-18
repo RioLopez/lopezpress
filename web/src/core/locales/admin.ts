@@ -288,7 +288,10 @@ export type AdminTexts = {
   media: {
     title: string
     sub: string
+    tabImages: string
+    tabPdf: string
     upload: string
+    uploadPdf: string
     batchAdded: string
     batchReused: string
     batchFailed: string
@@ -296,9 +299,11 @@ export type AdminTexts = {
     statusDeleted: string
     statusAll: string
     kindAll: string
+    kindImages: string
     kindPost: string
     kindAvatar: string
     kindSite: string
+    kindPdf: string
     siteUsed: string
     deletedUsed: string
     orphans: string
@@ -313,6 +318,9 @@ export type AdminTexts = {
     originalName: string
     sourceIp: string
     sha256: string
+    transform: string
+    variants: string
+    variantsValue: string
     detail: string
     withdraw: string
     withdrawConfirm: string
@@ -347,6 +355,7 @@ export type AdminTexts = {
     refKindBody: string
     refKindAvatar: string
     refKindSite: string
+    refKindAttachment: string
     deleted: string
     deleteFailed: string
     close: string
@@ -625,19 +634,24 @@ export const adminZh: AdminTexts = {
     orderHint: '用上下箭头调整顺序；隐藏只影响侧边栏，页面仍可直接访问。',
   },
   media: {
-    title: '图片库',
-    sub: '全站图片资产：谁传的、什么时候、多大、被哪些文章引用。只有管理员能看到。',
+    title: '附件库',
+    sub: '全站附件资产：图片与 PDF 分开管理，谁传的、多大、被哪些文章引用。只有管理员能看到。',
+    tabImages: '图片',
+    tabPdf: 'PDF 附件',
     upload: '上传图片',
-    batchAdded: '新增 {n} 张',
-    batchReused: '{n} 张已存在，直接复用',
-    batchFailed: '{n} 张失败',
+    uploadPdf: '上传 PDF',
+    batchAdded: '新增 {n} 个',
+    batchReused: '{n} 个已存在，直接复用',
+    batchFailed: '{n} 个失败',
     statusLive: '在用',
     statusDeleted: '已撤下',
     statusAll: '全部',
     kindAll: '全部类型',
+    kindImages: '全部图片',
     kindPost: '正文图',
     kindAvatar: '头像',
     kindSite: '站点图标',
+    kindPdf: 'PDF 附件',
     siteUsed: '磁盘占用 {used} / {quota}',
     deletedUsed: '已撤下仍占用 {size}（{n} 张）',
     orphans: '无人引用 {n} 张',
@@ -652,6 +666,9 @@ export const adminZh: AdminTexts = {
     originalName: '原始文件名',
     sourceIp: '来源 IP',
     sha256: '内容指纹',
+    transform: '处理方式',
+    variants: '同源版本',
+    variantsValue: '同一张源图的 {n} 个尺寸',
     detail: '详情',
     withdraw: '撤下',
     withdrawConfirm: '撤下这张图片？它会从图库消失，其他人无法再使用；已经引用它的文章仍会正常显示。',
@@ -686,6 +703,7 @@ export const adminZh: AdminTexts = {
     refKindBody: '文章',
     refKindAvatar: '头像',
     refKindSite: '站点图标',
+    refKindAttachment: 'PDF 附件',
     deleted: '操作完成',
     deleteFailed: '操作失败',
     close: '关闭',
@@ -964,9 +982,12 @@ export const adminEn: AdminTexts = {
     orderHint: 'Use the arrows to reorder. Hiding an item only removes it from the sidebar; the page stays reachable by URL.',
   },
   media: {
-    title: 'Media library',
-    sub: 'Every image on this site: who uploaded it, when, how large, and which articles use it. Admins only.',
+    title: 'Attachment library',
+    sub: 'Every attachment on this site, with images and PDFs managed separately: who uploaded it, how large, and which articles use it. Admins only.',
+    tabImages: 'Images',
+    tabPdf: 'PDF attachments',
     upload: 'Upload image',
+    uploadPdf: 'Upload PDF',
     batchAdded: '{n} added',
     batchReused: '{n} already existed and were reused',
     batchFailed: '{n} failed',
@@ -974,9 +995,11 @@ export const adminEn: AdminTexts = {
     statusDeleted: 'Withdrawn',
     statusAll: 'All',
     kindAll: 'All kinds',
+    kindImages: 'All images',
     kindPost: 'Article',
     kindAvatar: 'Avatar',
     kindSite: 'Site icon',
+    kindPdf: 'PDF attachment',
     siteUsed: '{used} of {quota} on disk',
     deletedUsed: 'Withdrawn but still on disk: {size} ({n})',
     orphans: '{n} unreferenced',
@@ -991,6 +1014,9 @@ export const adminEn: AdminTexts = {
     originalName: 'Original name',
     sourceIp: 'Source IP',
     sha256: 'Content hash',
+    transform: 'Processing',
+    variants: 'Same source',
+    variantsValue: '{n} sizes of one source picture',
     detail: 'Details',
     withdraw: 'Withdraw',
     withdrawConfirm: 'Withdraw this image? It disappears from the library and nobody else can use it; articles already using it keep rendering.',
@@ -1025,6 +1051,7 @@ export const adminEn: AdminTexts = {
     refKindBody: 'Article',
     refKindAvatar: 'Avatar',
     refKindSite: 'Site icon',
+    refKindAttachment: 'PDF attachment',
     deleted: 'Done',
     deleteFailed: 'Action failed',
     close: 'Close',

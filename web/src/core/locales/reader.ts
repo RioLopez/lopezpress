@@ -80,6 +80,8 @@ export type ReaderTexts = {
     codeCopied: string
     tocTitle: string
     related: string
+    attachments: string
+    openAttachment: string
     home: string
  // Permanent link
     permanentLink: string
@@ -178,6 +180,8 @@ export const readerZh: ReaderTexts = {
     codeCopied: '已复制',
     tocTitle: '本文目录',
     related: '相关文章',
+    attachments: 'PDF 附件',
+    openAttachment: '打开',
     home: '首页',
     permanentLink: '复制永久链接',
     linkCopied: '已复制',
@@ -275,6 +279,8 @@ export const readerEn: ReaderTexts = {
     codeCopied: 'Copied',
     tocTitle: 'On this page',
     related: 'Related posts',
+    attachments: 'PDF attachments',
+    openAttachment: 'Open',
     home: 'Home',
     permanentLink: 'Copy permalink',
     linkCopied: 'Copied',

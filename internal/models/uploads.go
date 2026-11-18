@@ -30,13 +30,26 @@ type UploadFile struct {
 	// say this, but AutoMigrate cannot express one. Rotating the key is the
 	// portable equivalent. Historical rows use "legacy:<name>" so they never
 	// participate in de-duplication at all.
-	LiveKey      string `gorm:"uniqueIndex;size:80;not null" json:"-"`
-	OwnerID      string `gorm:"size:36;index" json:"owner_id"`
-	Size         int64  `json:"size"`
-	Width        int    `json:"width"`
-	Height       int    `json:"height"`
-	Mime         string `gorm:"size:64" json:"mime"`
-	Sha256       string `gorm:"size:64;index" json:"sha256"`
+	LiveKey string `gorm:"uniqueIndex;size:80;not null" json:"-"`
+	OwnerID string `gorm:"size:36;index" json:"owner_id"`
+	Size    int64  `json:"size"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Mime    string `gorm:"size:64" json:"mime"`
+	// Sha256 is the hash of the bytes actually stored (the final bytes after
+	// any resize/re-encode). It is also the live_key, so it is what makes two
+	// identical uploads collapse into one row.
+	Sha256 string `gorm:"size:64;index" json:"sha256"`
+	// SourceSha256 is the hash of the bytes the uploader sent, before any
+	// server-side transform. It groups the variants of one picture: uploading
+	// the same photo at 1920px and 640px creates two independent rows (their
+	// final bytes differ, so the de-dup key differs) that still share this
+	// value, which is how the library can say "these are the same source".
+	SourceSha256 string `gorm:"size:64;index" json:"source_sha256"`
+	// Transform records the resize/compression recipe applied on the way in,
+	// e.g. "1920x960-q82". Empty means the bytes were stored as sent
+	// (PDFs, WebP/GIF passthrough, and a no-op re-encode).
+	Transform    string `gorm:"size:96" json:"transform"`
 	OriginalName string `gorm:"size:255" json:"original_name"`
 	IP           string `gorm:"size:64" json:"ip"`
 	// Kind is the upload purpose: "post" (inline article image, the default),
@@ -97,4 +110,33 @@ type UploadRef struct {
 	Kind      string    `gorm:"size:16;not null;default:'body';uniqueIndex:idx_upload_refs" json:"kind"`
 	UserID    string    `gorm:"size:36;not null;default:'';uniqueIndex:idx_upload_refs" json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// PostAttachment links one article to one PDF in the upload library. It is a
+// join row rather than a column on posts because an article may carry several
+// documents, and because the reference ledger needs one edge per file.
+//
+// UploadID points at upload_files(id); the library row owns the bytes, quota
+// accounting and deletion policy. The join is invisible to the public payload:
+// GET post returns PostAttachmentView rows, never the upload row (which carries
+// owner/IP metadata).
+type PostAttachment struct {
+	ID        int64     `gorm:"primaryKey" json:"id"`
+	PostID    string    `gorm:"size:36;not null;uniqueIndex:idx_post_attachment" json:"post_id"`
+	UploadID  string    `gorm:"size:32;not null;uniqueIndex:idx_post_attachment" json:"upload_id"`
+	SortOrder int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// PostAttachmentView is the reader-facing shape of an attachment. URL is
+// derived from the stored (opaque) file name, never from the original name.
+type PostAttachmentView struct {
+	ID           int64  `json:"id"`
+	UploadID     string `json:"upload_id"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	OriginalName string `json:"original_name"`
+	Size         int64  `json:"size"`
+	Mime         string `json:"mime"`
+	SortOrder    int    `json:"sort_order"`
 }

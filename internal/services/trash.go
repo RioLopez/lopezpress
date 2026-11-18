@@ -144,7 +144,12 @@ func (s *Service) RestoreTrash(ctx context.Context, me models.User, id string) e
 		if res.RowsAffected == 0 {
 			return errLeftTrash
 		}
-		return syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body, post.Cover)
+		if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body, post.Cover); err != nil {
+			return err
+		}
+		// The join rows survived the soft delete; rebuild their ledger edges
+		// too, otherwise a restored article's PDFs look unused in the library.
+		return syncPostAttachmentRefsTx(tx, post.ID, post.AuthorID)
 	})
 	if errors.Is(err, errLeftTrash) {
 		return newErr(http.StatusConflict, "this post is no longer in the trash")
@@ -262,6 +267,13 @@ func (s *Service) PurgeTrash(ctx context.Context, me models.User, id string) err
 // adds no scope to raw SQL), which is correct: a trashed post can be restored,
 // so its edges stay until the row itself is gone.
 func purgeOrphanUploadRefsTx(tx *gorm.DB) error {
+	// Attachment join rows go with the post row. Without this they would keep
+	// pointing at a post that no longer exists, and a later restore/rebuild
+	// would have to guess whether the id was reused.
+	if err := tx.Where("post_id NOT IN (SELECT id FROM posts)").
+		Delete(&models.PostAttachment{}).Error; err != nil {
+		return err
+	}
 	const orphanEdges = "post_id <> '' AND post_id NOT IN (SELECT id FROM posts)"
 	var uploadIDs []string
 	if err := tx.Model(&models.UploadRef{}).Where(orphanEdges).

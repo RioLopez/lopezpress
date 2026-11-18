@@ -31,6 +31,9 @@ export function AdminSitePage() {
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState<'logo' | 'favicon' | null>(null)
   const [testing, setTesting] = useState(false)
+  // Incremented after a successful save; the backup panel uses it to re-read
+  // the server status (the form's values are not yet the server's values).
+  const [savedTick, setSavedTick] = useState(0)
 
   const testMail = async () => {
     setTesting(true)
@@ -86,6 +89,7 @@ export function AdminSitePage() {
       const body = { ...cfg, friend_links: JSON.stringify(links) }
       await updateSiteConfig(body)
       reload()
+      setSavedTick((n) => n + 1)
       pushToast('success', t('site.saved'))
     } catch (e) {
       pushToast('error', errMessage(e, t('site.saveFailed')))
@@ -142,7 +146,7 @@ export function AdminSitePage() {
           {group === 'mail' && (
             <SiteMailSection cfg={cfg} set={set} isRootUser={isRootUser} testing={testing} onTest={testMail} />
           )}
-          {group === 'backup' && isRootUser && <SiteBackupSection cfg={cfg} set={set} />}
+          {group === 'backup' && isRootUser && <SiteBackupSection cfg={cfg} set={set} refreshKey={savedTick} />}
         </div>
       </div>
 

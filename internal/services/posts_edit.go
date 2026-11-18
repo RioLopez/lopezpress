@@ -64,11 +64,21 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// this check was an omission, not a decision — a URL is as much the
 	// author's as the text is.
 	if post.AuthorID != me.ID && IsAdmin(me) {
-		if in.Title != "" || in.Body != "" || in.Cover != nil || in.Slug != "" {
+		if in.Title != "" || in.Body != "" || in.Cover != nil || in.Slug != "" ||
+			in.BodyFormat != "" || in.AttachmentIDs != nil {
 			return models.Post{}, newErr(http.StatusForbidden,
 				"only the author or the root can change a post's title, body, cover or slug; "+
 					"send it back to the author with a review note instead")
 		}
+	}
+
+	// Format is part of the content contract: HTML is admin/root only, and a
+	// post that is already HTML can only be saved by admin/root (a demoted
+	// author must not keep an HTML editing path). Resolved before the snapshot
+	// so a refused format never consumes a revision slot.
+	format, err := resolveUpdateBodyFormat(me, post.BodyFormat, in.BodyFormat)
+	if err != nil {
+		return models.Post{}, err
 	}
 
 	// Keep the pre-edit state so the user can roll back. Snapshotting
@@ -78,14 +88,23 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// The content ceilings are checked before the snapshot, so an over-long
 	// write is refused without leaving a revision behind: otherwise every
 	// rejected attempt would still consume one of the 20 revision slots.
-	if in.Title != "" || in.Body != "" {
-		nextTitle, nextBody := post.Title, post.Body
-		if in.Title != "" {
-			nextTitle = in.Title
-		}
-		if in.Body != "" {
-			nextBody = in.Body
-		}
+	nextTitle := post.Title
+	if in.Title != "" {
+		nextTitle = in.Title
+	}
+	nextBody := post.Body
+	if in.Body != "" {
+		nextBody = in.Body
+	}
+	// Sanitize on every save of an HTML post, not only when the body changes:
+	// the edit may be a format switch (Markdown -> HTML) whose text arrives
+	// unchanged, and re-sanitizing is idempotent.
+	sanitizedBody, serr := preparePostBody(format, nextBody)
+	if serr != nil {
+		return models.Post{}, serr
+	}
+	nextBody = sanitizedBody
+	if in.Title != "" || in.Body != "" || format != storedBodyFormat(post.BodyFormat) {
 		if err := ValidatePostContent(nextTitle, nextBody); err != nil {
 			return models.Post{}, err
 		}
@@ -100,20 +119,18 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// with the operator's id. Twenty such saves erase the author's real
 	// history. A revision is a record of a change, so no change means no row.
 	next := post
-	if in.Title != "" {
-		next.Title = in.Title
-	}
-	if in.Body != "" {
-		next.Body = in.Body
-	}
+	next.Title = nextTitle
+	next.Body = nextBody
+	next.BodyFormat = format
 	// "Content changed" is the test the review rule cares about: it is what a
 	// reader would see differently. Cover counts, because it is the face of
 	// the article in every listing; a swapped image is a changed article.
-	// Slug, category, tags and pinning do not — those are how the post is
-	// filed, not what it says, and demoting an article because an editor
-	// fixed its category would make the console unusable.
+	// The format counts for the same reason: the same bytes render differently
+	// as Markdown and as HTML. Slug, category, tags and pinning do not — those
+	// are how the post is filed, not what it says.
+	formatChanged := format != storedBodyFormat(post.BodyFormat)
 	contentChanged := next.Title != post.Title || next.Body != post.Body ||
-		(in.Cover != nil && *in.Cover != post.Cover)
+		formatChanged || (in.Cover != nil && *in.Cover != post.Cover)
 	// May this caller publish this post outright? Same rule as the review
 	// queue (canPublish): root anything, admin only plain users' posts. The
 	// edit permission above already refused an admin touching an admin's or
@@ -124,7 +141,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	// previous inline switch made "私密" mean "pending", and why a live post
 	// whose words changed has to go back through review.
 	resolveStatusChange(&next, me, in.Status, contentChanged, mayPublish)
-	if next.Title != post.Title || next.Body != post.Body || next.Status != originalStatus {
+	if next.Title != post.Title || next.Body != post.Body || formatChanged || next.Status != originalStatus {
 		s.snapshotRevision(ctx, post, me.ID)
 	}
 	post = next
@@ -154,7 +171,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 	if post.CategoryID == nil {
 		category = gorm.Expr("NULL")
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Content first, guarded by the state read at the top of this function.
 		// `slug` is here because the permanent link is the author's content too:
 		// UpdatePost resolved it above with its own uniqueness probe, and
@@ -169,6 +186,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 			Updates(map[string]any{
 				"title":       post.Title,
 				"body":        post.Body,
+				"body_format": post.BodyFormat,
 				"slug":        post.Slug,
 				"category_id": category,
 				"cover":       post.Cover,
@@ -199,6 +217,13 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 		// saved. It is a diff, so a title-only edit writes nothing.
 		if err := syncPostUploadRefsTx(tx, post.ID, post.AuthorID, post.Body, post.Cover); err != nil {
 			return err
+		}
+		// nil = "leave the attachment set alone"; [] = remove all. Same encoding
+		// rule as tags, and the same transaction as the content write.
+		if in.AttachmentIDs != nil {
+			if err := s.syncPostAttachmentsTx(ctx, tx, post.ID, post.AuthorID, in.AttachmentIDs, me); err != nil {
+				return err
+			}
 		}
 		// Derived from the same originalStatus, so it cannot race the content
 		// write above. Never echo back the status we read: that would undo a
@@ -247,6 +272,7 @@ func (s *Service) UpdatePost(ctx context.Context, me models.User, id string, in 
 		return models.Post{}, newErr(http.StatusInternalServerError, "failed to load post")
 	}
 	post = loaded
+	s.loadPostAttachments(ctx, &post)
 	// An edit performed by someone other than the author is the interesting
 	// case for an audit trail: "root changed the category of alice's post" is
 	// what an operator searches for after a dispute, and it is invisible if the

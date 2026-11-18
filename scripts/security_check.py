@@ -270,6 +270,9 @@ def check_field_ceilings():
         "target": "enum", "action": "enum", "decision": "enum",
         "groupkey": "enum",
         "status": "enum", "sortby": "enum", "order": "enum",
+        # body_format is validated against the two values the renderer knows
+        # (markdown / html) in services/posts_format.go.
+        "bodyformat": "enum",
         # Slug is bounded by Slugify() (slugMaxRunes = 80), which every write
         # path passes through before the value reaches the row.
         "slug": "bounded by Slugify",

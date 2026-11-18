@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/gif"
-	"image/jpeg"
-	"image/png"
 	"net/http"
 )
 
@@ -40,11 +37,18 @@ const (
 // DecodeConfig only reads the IHDR/SOF header, though — it never looks at the
 // pixel data that follows. That is why the upload path ALSO does a full
 // image.Decode and re-encodes from the decoded image (see
-// reencodeStrippedImage): without it, a 64×64 PNG header followed by 1 MB of
+// transformImageBytes): without it, a 64×64 PNG header followed by 1 MB of
 // arbitrary bytes — or by "<?php system($_GET['c']); ?>" — was stored whole
 // and served back with Content-Type: image/png, which made the site a free
 // binary host with a trustworthy-looking extension (R4-09 / R6-04). Anything
 // after IEND is simply not part of the image and is dropped.
+//
+// GIF is the deliberate exception, for the same reason WebP is: image.Decode
+// returns only the first frame, so a re-encode would freeze an animation while
+// the library still called the result "original". GIF bytes are therefore
+// stored verbatim after this header check, and a requested resize is refused
+// with a 400. Do not "fix" that by re-encoding: it silently destroys every
+// frame after the first.
 //
 // WebP is the exception: golang.org/x/image/webp (registered in thumbs.go) is
 // a decoder, not a format police, and it refuses animated WebP outright. A
@@ -107,52 +111,6 @@ func isImplausiblyCompressible(sizeBytes int64, pixels int64) bool {
 	return sizeBytes*200 < pixels
 }
 
-// reencodeStrippedImage decodes the image fully and re-encodes it, returning
-// only the bytes of a well-formed image. Everything the decoder ignores —
-// trailing garbage after IEND, appended payloads, malformed chunk data — is
-// gone, so what lands on disk is exactly what a decoder can read back.
-//
-// Returns (nil, false) when the format is exempt (WebP: no stdlib encoder) or
-// when the full decode fails, which the caller treats as "keep the original
-// bytes" for WebP and as "reject" for the formats we claim to validate.
-func reencodeStrippedImage(data []byte, ext string) ([]byte, bool) {
-	switch normalizeExt(ext) {
-	case ".png", ".jpg", ".jpeg", ".gif":
-	default:
-		return nil, false // webp: no encoder in the stdlib / x-image set
-	}
-	// The decode is the expensive step: the pixel ceiling above caps how big one
-	// decode can be, and the semaphore caps how many are running at once. The
-	// slot is held across the re-encode too, so the peak memory is bounded by
-	// (maxUploadPixels × 4 bytes) × 2, not by however many clients upload at the
-	// same moment.
-	decodeSemaphore <- struct{}{}
-	defer func() { <-decodeSemaphore }()
-
-	src, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, false
-	}
-	var buf bytes.Buffer
-	switch normalizeExt(ext) {
-	case ".png":
-		// BestCompression rather than the default: a PNG that arrives already
-		// optimised (pngquant, optipng) is otherwise re-inflated by the
-		// stdlib's faster setting, so the "re-encode to strip trailing
-		// payloads" step would cost bytes instead of saving them.
-		enc := &png.Encoder{CompressionLevel: png.BestCompression}
-		err = enc.Encode(&buf, src)
-	case ".jpg", ".jpeg":
-		err = jpeg.Encode(&buf, src, &jpeg.Options{Quality: jpegQuality})
-	case ".gif":
-		err = gif.Encode(&buf, src, nil)
-	}
-	if err != nil {
-		return nil, false
-	}
-	return buf.Bytes(), true
-}
-
 // jpegQuality is the re-encode quality for every JPEG this site stores.
 //
 // 90 was chosen when the only goal was "do not visibly degrade a photo", and it
@@ -163,8 +121,8 @@ func reencodeStrippedImage(data []byte, ext string) ([]byte, bool) {
 // past the one-time encode.
 const jpegQuality = 82
 
-// normalizeExt lower-cases an extension so the switch above is case-insensitive
-// (a ".PNG" upload is the same format as ".png").
+// normalizeExt lower-cases an extension so the format switches above are
+// case-insensitive (a ".PNG" upload is the same format as ".png").
 func normalizeExt(ext string) string {
 	out := make([]byte, 0, len(ext))
 	for i := 0; i < len(ext); i++ {
@@ -177,12 +135,10 @@ func normalizeExt(ext string) string {
 	return string(out)
 }
 
-// reencodeStrippedImage decodes the image fully and re-encodes it, returning
-// only the bytes of a well-formed image. Everything the decoder ignores —
-
 // prepareUploadBytes is the last gate before bytes are stored. It answers
 // three questions that all amount to "is this really an image we should keep",
-// and returns the bytes that should actually be written:
+// and returns the bytes that should actually be written plus a short
+// description of the transform that produced them:
 //
 //  1. Is the byte size plausible for the pixel count? (R6-05) The quota counts
 //     bytes; the cost of an image is counted in pixels. A 24 MP solid-colour
@@ -194,16 +150,18 @@ func normalizeExt(ext string) string {
 //     ALL THE WAY THROUGH. A 64×64 PNG header followed by 1 MB of arbitrary
 //     bytes — or by "<?php system($_GET['c']); ?>" — passed every earlier check
 //     and was stored verbatim, then served back as image/png.
-//  3. Re-encode from the decoded bitmap, so everything the decoder ignored is
-//     gone and what lands on disk is exactly what a decoder can read back.
+//  3. Re-encode from the decoded bitmap (optionally scaled first), so
+//     everything the decoder ignored is gone and what lands on disk is exactly
+//     what a decoder can read back.
 //
 // The returned bytes are what the quota is charged for, which is the size that
 // actually occupies the disk.
 //
-// WebP is exempt from (2) and (3): the registered decoder refuses animated
-// WebP, and there is no WebP encoder in the standard library set, so a
-// legitimate animated sticker would be rejected by a full re-encode.
-func prepareUploadBytes(data []byte, ext string) ([]byte, error) {
+// WebP is exempt from (2) and (3) when no transform is requested: the
+// registered decoder refuses animated WebP, and there is no WebP encoder in the
+// standard library set, so a legitimate animated sticker would be rejected by
+// a full re-encode.
+func prepareUploadBytes(data []byte, ext string, opts UploadOptions) ([]byte, string, error) {
 	if w, h, _ := imageGeometry(data); w > 0 && h > 0 {
 		// Hard pixel ceiling, independent of compression. The compression guard
 		// below catches the "24 MP in 23 KB" lie; this catches the honest case
@@ -213,23 +171,15 @@ func prepareUploadBytes(data []byte, ext string) ([]byte, error) {
 		// ceiling, so one upload never decodes larger than the background job
 		// is already prepared to handle.
 		if int64(w)*int64(h) > maxUploadPixels {
-			return nil, newErr(http.StatusRequestEntityTooLarge,
+			return nil, "", newErr(http.StatusRequestEntityTooLarge,
 				fmt.Sprintf("image is too large (max %d megapixels)", maxUploadPixels/1000000))
 		}
 		if isImplausiblyCompressible(int64(len(data)), int64(w)*int64(h)) {
-			return nil, newErr(http.StatusBadRequest,
+			return nil, "", newErr(http.StatusBadRequest,
 				"this image is too large in pixels for its file size; re-export it as a normal photo")
 		}
 	}
-	if stripped, ok := reencodeStrippedImage(data, ext); ok {
-		return stripped, nil
-	}
-	if normalizeExt(ext) != ".webp" {
-		// The header decoded but the pixels did not: truncated or corrupt.
-		// Refuse rather than store something we cannot render.
-		return nil, newErr(http.StatusBadRequest, "file content is not a supported image")
-	}
-	return data, nil
+	return transformImageBytes(data, ext, opts)
 }
 
 // maxUploadPixels caps a single upload's decode size. A decoded image is RGBA

@@ -7,6 +7,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"lopezpress/internal/models"
+	"lopezpress/internal/services"
 )
 
 // --- RSS 2.0 feed (GET /feed, public) ---
@@ -75,7 +78,7 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 		title = cfg.SiteName
 	}
 	if title == "" {
-		title = "Echo"
+		title = "LopezPress"
 	}
 	// A feed <description> is the channel's tagline, not the page footer.
 	// Footer text is copyright/site-notice copy and reads out of place in an
@@ -97,6 +100,15 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 			Items:         make([]rssItem, 0, len(posts)),
 		},
 	}
+	feed.Channel.Items = rssItems(base, posts)
+	writeXML(w, "application/rss+xml", feed)
+}
+
+// rssItems turns the published set into feed items. Split out of FeedRSS so
+// the handler stays under the 60-line architecture ceiling; the excerpt rule
+// lives here because it depends on each post's body format.
+func rssItems(base string, posts []models.Post) []rssItem {
+	items := make([]rssItem, 0, len(posts))
 	for _, p := range posts {
 		link := permalink(base, p.Slug, p.ID)
 		// pubDate is the last edit, not the create date: an edited article
@@ -105,15 +117,20 @@ func FeedRSS(w http.ResponseWriter, r *http.Request) {
 		if pub.IsZero() {
 			pub = p.CreatedAt
 		}
-		feed.Channel.Items = append(feed.Channel.Items, rssItem{
+		body := p.Body
+		if p.BodyFormat == models.BodyFormatHTML {
+			// An HTML post's excerpt is its visible text, not its markup.
+			body = services.HTMLToText(body)
+		}
+		items = append(items, rssItem{
 			Title:       p.Title,
 			Link:        link,
-			Description: feedExcerpt(p.Body, 320),
+			Description: feedExcerpt(body, 320),
 			GUID:        rssGUID{Value: link, PermaLink: "true"},
 			PubDate:     pub.UTC().Format(time.RFC1123Z),
 		})
 	}
-	writeXML(w, "application/rss+xml", feed)
+	return items
 }
 
 // Sitemap serves a sitemap XML of the public pages and every published post.

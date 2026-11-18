@@ -72,6 +72,13 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 	if err := db.Unscoped().Find(&uploadFiles).Error; err != nil {
 		return BackupResult{}, newErr(http.StatusInternalServerError, "failed to read upload_files")
 	}
+	// PDF attachments are content of the article, not of the media library:
+	// without this slice a restored site would keep the posts and the files but
+	// lose every "this article carries this PDF" link.
+	var postAttachments []models.PostAttachment
+	if err := db.Find(&postAttachments).Error; err != nil {
+		return BackupResult{}, newErr(http.StatusInternalServerError, "failed to read post_attachments")
+	}
 	// LiveKey is json:"-" on the model (an internal de-dup key), but it is
 	// covered by a UNIQUE index, so it has to round-trip or every imported row
 	// collides on the empty string. Carry it beside the rows, keyed by name.
@@ -122,17 +129,18 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 		// SmtpPass/ImgHostToken, but a backup is a restore artifact and must
 		// round-trip them, so they land here in plaintext — the file is the
 		// secret, not just the hashes.
-		"security_note": "This backup contains bcrypt password hashes AND live credentials (SMTP password, image-host token) in plaintext. Treat the ENTIRE file as a secret key: restrict access (chmod 600), never commit to version control or share publicly. SMTP passwords are frequently reused as login passwords, so a leaked backup can compromise accounts beyond this site.",
-		"users":           users,
-		"password_hashes": pwHashes,
-		"categories":      categories,
-		"tags":            tags,
-		"posts":           posts,
-		"post_tags":       postTags,
-		"site_configs":    siteConfigs,
-		"revisions":       revisions,
-		"upload_files":    uploadFiles,
-		"upload_livekeys": uploadLiveKeys,
+		"security_note":    "This backup contains bcrypt password hashes AND live credentials (SMTP password, image-host token) in plaintext. Treat the ENTIRE file as a secret key: restrict access (chmod 600), never commit to version control or share publicly. SMTP passwords are frequently reused as login passwords, so a leaked backup can compromise accounts beyond this site.",
+		"users":            users,
+		"password_hashes":  pwHashes,
+		"categories":       categories,
+		"tags":             tags,
+		"posts":            posts,
+		"post_tags":        postTags,
+		"site_configs":     siteConfigs,
+		"revisions":        revisions,
+		"upload_files":     uploadFiles,
+		"upload_livekeys":  uploadLiveKeys,
+		"post_attachments": postAttachments,
 	}
 	if err := enc.Encode(payload); err != nil {
 		_ = os.Remove(full)
@@ -160,12 +168,32 @@ func (s *Service) ExportBackup(ctx context.Context) (BackupResult, error) {
 	}, nil
 }
 
-// backupDir returns the configured backup directory.
+// backupDir returns the configured backup directory, including the optional
+// admin-configured subfolder.
+//
+// The subfolder lives in site_configs (not .env) because "where do my
+// automatic backups live" is an operational setting an admin should be able to
+// change from the UI. It is only ever a RELATIVE path under the deployment's
+// BACKUP_DIR: that keeps a web form from becoming an arbitrary-file-write
+// primitive, while an operator who needs another disk still controls the root
+// through the environment.
 func (s *Service) backupDir() string {
+	base := "data/backups"
 	if s.cfg != nil && s.cfg.BackupDir != "" {
-		return s.cfg.BackupDir
+		base = s.cfg.BackupDir
 	}
-	return "data/backups"
+	if s.db == nil {
+		return base
+	}
+	var sub string
+	if err := s.db.Raw("SELECT COALESCE(backup_subdir, '') FROM site_configs WHERE id = 1").Scan(&sub).Error; err != nil {
+		return base
+	}
+	clean, err := NormalizeBackupSubdir(sub)
+	if err != nil || clean == "" {
+		return base
+	}
+	return filepath.Join(base, filepath.FromSlash(clean))
 }
 
 // snapshotBeforeImport runs VACUUM INTO to write a file-level copy of the

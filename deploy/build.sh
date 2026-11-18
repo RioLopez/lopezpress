@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 
 # Go toolchain floor.
 #
-# go.mod declares `go 1.26.11` because every Go release below it ships the
+# go.mod declares a toolchain floor because every Go release below it ships the
 # standard library with reachable advisories in net/http, net/url, crypto/x509
 # and encoding/asn1 — 46 of them, measured with govulncheck on Go 1.22.12.
 # Building with an older toolchain silently reintroduces all of them into the
@@ -26,7 +26,12 @@ cd "$(dirname "$0")/.."
 # just works. The exception is a machine with GOSUMDB=off (this one): the
 # download is refused for lack of checksum verification, and the error reads
 # "checksum database disabled" rather than anything about versions.
-need_go="1.26.11"
+# 版本只从 go.mod 读，不要在这里手写第二份；读不到就明确报错，不要静默 fallback。
+need_go="$(grep -m1 '^go ' go.mod | awk '{print $2}' || true)"
+if [ -z "$need_go" ]; then
+	echo "无法从 go.mod 读取声明的 Go 版本（^go 行），拒绝用未知工具链构建" >&2
+	exit 65
+fi
 have_go="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
 echo "go    : ${have_go:-unknown} (need >= ${need_go})"
 
@@ -58,7 +63,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 	cat >&2 <<'EOF'
 
 build failed. If the message mentions "checksum database disabled", this shell
-has GOSUMDB=off, which blocks the toolchain download that `go 1.26.11` in
+has GOSUMDB=off, which blocks the toolchain download that the `go` directive in
 go.mod triggers. Re-run with:
 
     GOSUMDB=sum.golang.org bash deploy/build.sh

@@ -46,6 +46,28 @@ export type SiteTexts = {
     autoBackupHint: string
     backupKeep: string
     backupKeepHint: string
+    currentVersion: string
+    versionHint: string
+    backupInterval: string
+    backupIntervalHint: string
+    backupHour: string
+    backupHourHint: string
+    backupSubdir: string
+    backupSubdirHint: string
+    backupIncludeUploads: string
+    backupIncludeUploadsHint: string
+    backupLocation: string
+    backupUploadsLocation: string
+    backupUploadsSnapshot: string
+    backupRestoreUploads: string
+    backupRestoreConfirm: string
+    backupRestoreDone: string
+    backupServerTime: string
+    backupLast: string
+    backupNever: string
+    backupFiles: string
+    backupRunNow: string
+    backupRunDone: string
     register: string
     registerOpen: string
     registerOpenHint: string
@@ -192,9 +214,31 @@ export const siteZh: SiteTexts = {
     publicRead: '公开阅读',
     publicReadHint: '开启后未登录访客也能浏览文章；关闭则必须登录才能看',
     autoBackup: '每日自动备份',
-    autoBackupHint: '开启后每天生成一份数据库快照，出错可一键回到某一天；占用等于数据库文件大小',
+    autoBackupHint: '开启后按下面的策略生成数据库快照，出错可一键回到某一天；占用约等于数据库文件大小',
     backupKeep: '快照保留份数',
     backupKeepHint: '超过份数的最旧快照会被自动删除（1–90 天）',
+    currentVersion: '当前服务版本',
+    versionHint: '升级方法：先做一次备份，再用新版本二进制替换并重启服务。',
+    backupInterval: '备份频率',
+    backupIntervalHint: '每隔多少天生成一次快照；服务未运行时会顺延到下次启动。',
+    backupHour: '最早执行时间',
+    backupHourHint: '服务器本地时间的几点之后才允许执行；0 表示不限制（一旦到期就执行）。',
+    backupSubdir: '备份子目录',
+    backupSubdirHint: '相对于部署时配置的 BACKUP_DIR（默认 data/backups），只能填相对路径。留空即直接写到 BACKUP_DIR。修改子目录不会移动已生成的快照，旧目录需要手工清理。',
+    backupIncludeUploads: '同时备份图片与 PDF 附件',
+    backupIncludeUploadsHint: '数据库快照不含附件文件。开启后会把上传目录一起做成快照；未变化的文件用硬链接复用，不会成倍占用磁盘。需要时可从下面的最新快照补回缺失的附件文件。',
+    backupLocation: '实际写入位置',
+    backupUploadsLocation: '附件目录',
+    backupUploadsSnapshot: '最新附件快照',
+    backupRestoreUploads: '从快照补回附件',
+    backupRestoreConfirm: '只补回上传目录中缺失的文件，不会覆盖现有文件。建议先恢复同一时间的数据库快照，再补附件。继续？',
+    backupRestoreDone: '已补回 {n} 个文件，跳过 {s} 个已存在的文件',
+    backupServerTime: '服务器时间（备份定时按此时钟）',
+    backupLast: '上次数据库快照',
+    backupNever: '还没有快照',
+    backupFiles: '已有 {n} 份数据库快照 · {u} 份附件快照',
+    backupRunNow: '立即快照',
+    backupRunDone: '已生成快照：{file}',
     register: '公开注册',
     registerOpen: '允许访客自行注册账号',
     registerOpenHint: '关闭后访客无法注册，只能由管理员在后台创建账号',
@@ -335,9 +379,31 @@ export const siteEn: SiteTexts = {
     publicRead: 'Public reading',
     publicReadHint: 'When on, visitors can read without signing in; when off, reading requires a login',
     autoBackup: 'Daily automatic backup',
-    autoBackupHint: 'One database snapshot per day so any day can be restored; costs disk equal to the database size',
+    autoBackupHint: 'One database snapshot per the policy below, so any day can be restored; costs disk roughly equal to the database size',
     backupKeep: 'Snapshots to keep',
     backupKeepHint: 'Older snapshots beyond this count are deleted automatically (1–90 days)',
+    currentVersion: 'Running version',
+    versionHint: 'To upgrade: take a backup first, then replace the binary and restart the service.',
+    backupInterval: 'Backup interval',
+    backupIntervalHint: 'Take a snapshot every N days; if the service is down, it runs after the next start.',
+    backupHour: 'Earliest hour',
+    backupHourHint: 'Only run after this hour (server local time); 0 means no restriction.',
+    backupSubdir: 'Backup subfolder',
+    backupSubdirHint: 'Relative to the deployment’s BACKUP_DIR (default data/backups). Only relative paths are accepted; empty means BACKUP_DIR itself. Changing it does not move existing snapshots; the old folder stays until removed by hand.',
+    backupIncludeUploads: 'Also back up images and PDF attachments',
+    backupIncludeUploadsHint: 'The database snapshot does not contain attachment files. When on, the upload directory is snapshotted too; unchanged files are hard-linked, so disk use does not multiply. Missing attachments can be copied back from the latest snapshot below.',
+    backupLocation: 'Actual location',
+    backupUploadsLocation: 'Upload directory',
+    backupUploadsSnapshot: 'Latest upload snapshot',
+    backupRestoreUploads: 'Restore missing attachments',
+    backupRestoreConfirm: 'Only files missing from the upload directory are copied back; existing files are never overwritten. Restoring the database snapshot from the same day first is recommended. Continue?',
+    backupRestoreDone: 'Restored {n} missing file(s), skipped {s} existing file(s)',
+    backupServerTime: 'Server time (the schedule uses this clock)',
+    backupLast: 'Last database snapshot',
+    backupNever: 'No snapshot yet',
+    backupFiles: '{n} database snapshot(s) · {u} upload snapshot(s)',
+    backupRunNow: 'Snapshot now',
+    backupRunDone: 'Snapshot written: {file}',
     register: 'Public registration',
     registerOpen: 'Allow visitors to self-register',
     registerOpenHint: 'When off, visitors cannot register; accounts must be created by an admin',

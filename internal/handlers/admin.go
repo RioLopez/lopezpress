@@ -218,12 +218,27 @@ func GetAutoBackupStatus(w http.ResponseWriter, r *http.Request) {
 // answerable without waiting a day. It is idempotent: when today's file is
 // already there the service returns an empty name instead of overwriting.
 func RunAutoBackupNow(w http.ResponseWriter, r *http.Request) {
-	name, err := svc.MaybeAutoBackup(r.Context())
+	name, err := svc.MaybeAutoBackupNow(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"file": name})
+}
+
+// RestoreUploadsSnapshot copies files that are missing from the live upload
+// directory back from one uploads-YYYYMMDD snapshot.
+// POST /api/admin/backup/uploads/{name}/restore (root only)
+//
+// Additive on purpose: existing files are never overwritten, so the call is
+// safe to repeat and cannot rewrite a picture that is still in use.
+func RestoreUploadsSnapshot(w http.ResponseWriter, r *http.Request) {
+	res, err := svc.RestoreUploadsSnapshot(r.Context(), userFromContext(r), r.PathValue("name"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // ListTrash returns soft-deleted posts inside the 7-day recovery window.

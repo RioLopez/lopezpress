@@ -78,7 +78,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
             ) : (
               <span class="brand-dot" />
             )}
-            <span class="brand-name">{config.site_name || 'Echo Content'}</span>
+            <span class="brand-name">{config.site_name || 'LopezPress'}</span>
           </AppLink>
         </div>
         <button

@@ -89,7 +89,7 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	kind := r.FormValue("kind")
-	out, err := svc.UploadImage(r.Context(), header.Filename, data, kind)
+	out, err := svc.UploadImageWithOptions(r.Context(), header.Filename, data, kind, uploadOptionsFromForm(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

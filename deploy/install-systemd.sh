@@ -36,7 +36,7 @@ fi
 # 2. 创建系统用户（非交互，nologin）
 if ! id "$SERVICE_USER" &>/dev/null; then
   useradd --system --create-home --home-dir "$APP_DIR" --shell /usr/sbin/nologin \
-    --comment "Echo Content API service" "$SERVICE_USER"
+    --comment "LopezPress API service" "$SERVICE_USER"
   echo "已创建用户 $SERVICE_USER"
 fi
 groupadd "$SERVICE_GROUP" 2>/dev/null || true

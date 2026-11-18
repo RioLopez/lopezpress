@@ -20,6 +20,14 @@ export function SiteBasicsSection({ cfg, set, uploading, onUpload, links, onLink
     <>
       <section class="settings-section">
         <h3>{t('site.basic')}</h3>
+        {/* Read-only, stamped by the server from the binary's build identity.
+            An operator upgrading by copying a binary needs to see which one is
+            actually running, not which one they think they copied. */}
+        <div class="settings-field">
+          <label>{t('site.currentVersion')}</label>
+          <input value={cfg.app_version || '—'} readOnly class="media-mono" />
+          <p class="settings-hint">{t('site.versionHint')}</p>
+        </div>
         <div class="settings-field">
           <label>{t('site.siteName')}</label>
           <input value={cfg.site_name} onInput={(e) => set('site_name', (e.target as HTMLInputElement).value)} />

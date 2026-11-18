@@ -130,6 +130,7 @@ var routes = []route{
 	// Any signed-in author may upload (an article needs pictures). The
 	// LIBRARY, however, is not theirs: see the admin block below.
 	{method: "POST", path: "/api/upload", auth: authRequired, maxBody: maxUploadBodyLimit, handler: handlers.UploadImage},
+	{method: "POST", path: "/api/uploads/pdf", auth: authRequired, maxBody: maxUploadBodyLimit, handler: handlers.UploadPDF},
 	// Personal view: only the caller's own uploads. This exists so "withdraw
 	// an image I uploaded" has somewhere to live without handing out a
 	// site-wide directory.
@@ -205,6 +206,7 @@ var routes = []route{
 	{method: "GET", path: "/api/backup/snapshots", auth: authRequired, roles: rootRoles, handler: handlers.ListSnapshots},
 	{method: "GET", path: "/api/admin/backup/auto", auth: authRequired, roles: rootRoles, handler: handlers.GetAutoBackupStatus},
 	{method: "POST", path: "/api/admin/backup/auto", auth: authRequired, roles: rootRoles, handler: handlers.RunAutoBackupNow},
+	{method: "POST", path: "/api/admin/backup/uploads/{name}/restore", auth: authRequired, roles: rootRoles, handler: handlers.RestoreUploadsSnapshot},
 
 	// ---- Admin (admin|root): image library ----
 	// Site-wide asset view: who uploaded what, when, from where, and what still

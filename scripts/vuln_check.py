@@ -92,6 +92,16 @@ def go_on_path(env: dict[str, str]) -> dict[str, str] | None:
     return None
 
 
+def declared_go_version() -> str | None:
+    """从 go.mod 读取 `go` 指令 —— 工具链版本只有这一个真相源。"""
+    try:
+        text = (ROOT / "go.mod").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r"(?m)^go\s+([\d.]+)", text)
+    return m.group(1) if m else None
+
+
 def run(cmd: list[str], cwd: Path) -> tuple[int, str]:
     env = go_on_path(dict(os.environ))
     if env is None:
@@ -102,6 +112,13 @@ def run(cmd: list[str], cwd: Path) -> tuple[int, str]:
     # right there. Pin the public sumdb for the subprocess: the scan then
     # measures the dependency graph instead of the shell's environment.
     env["GOSUMDB"] = "sum.golang.org"
+    # 扫描结果取决于用哪个 Go 标准库：不固定工具链时，本机 1.27.3 会假报
+    # GO-2026-6859，而 dev.sh gate（固定 1.26.11）报 0，同一份代码两种结论。
+    # 版本只从 go.mod 读，避免再出现第二份手写版本号；setdefault 保留外部覆盖。
+    go_ver = declared_go_version()
+    if go_ver is None:
+        return 127, "go.mod: cannot read the `go` directive"
+    env.setdefault("GOTOOLCHAIN", "go" + go_ver)
     # `go` cannot start without a build cache either, and this shell has no
     # %LocalAppData% to derive one from. Give the subprocess a cache whenever
     # the environment has none.
@@ -136,6 +153,14 @@ def check_go() -> int:
         print("  FAIL  Go toolchain download blocked by GOSUMDB=off.")
         print("        Re-run with GOSUMDB=sum.golang.org in the environment.")
         return 2
+
+    # govulncheck changed its success wording: older builds printed
+    # "Your code is affected by 0 vulnerabilities", newer ones print
+    # "No vulnerabilities found." Treat the new sentence as a clean scan
+    # instead of an unparsable result.
+    if "No vulnerabilities found" in out:
+        print("  ok    0 reachable vulnerabilities in the Go module graph")
+        return 0
 
     m = re.search(r"Your code is affected by (\d+) vulnerabilit", out)
     if not m:
@@ -202,9 +227,16 @@ def check_npm() -> int:
 
 def main() -> int:
     print("== dependency vulnerability gate ==")
-    worst = 0
-    worst = max(worst, check_go())
-    worst = max(worst, check_npm())
+    # 退出码不是「数字越大越严重」：1 = 确认的真实漏洞，2 = 这次没测成。
+    # 用 max() 会让 2 盖过 1，于是「Go 侧真报漏洞 + npm 扫描器缺失」被
+    # 降级成 CI 的 warning 而放行发布。真漏洞必须优先阻断。
+    codes = [check_go(), check_npm()]
+    if 1 in codes:
+        worst = 1
+    elif 2 in codes:
+        worst = 2
+    else:
+        worst = 0
     print()
     if worst == 0:
         print("PASS -- no known reachable vulnerabilities.")

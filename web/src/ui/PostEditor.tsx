@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
 import { useI18n } from '../core/i18n'
-import { wordCount } from '../core/md'
-import { errMessage, listCategories, listTags, uploadImage } from '../core/api'
+import { wordCount, renderHTML } from '../core/md'
+import { errMessage, listCategories, listTags, uploadImage, uploadPDF } from '../core/api'
 import { useAuth } from '../core/auth'
 import { useApp } from '../core/app'
 import { isAdmin, isRoot } from '../core/roles'
-import type { EditorValues, PostStatus, Category, Tag } from '../core/types'
+import type { EditorValues, PostStatus, Category, Tag, PostAttachment, ImageUploadOptions } from '../core/types'
+import { getUploadPrefs, prefsToOptions } from '../core/uploadPrefs'
 import { VditorEditor, type EditorMode } from './VditorEditor'
 import { EditorSettingsDrawer } from './EditorSettingsDrawer'
+import { ImageUploadDialog } from './ImageUploadDialog'
 
 const DRAFT_TTL_DAYS = 30
 const DRAFT_TTL_MS = DRAFT_TTL_DAYS * 24 * 60 * 60 * 1000
@@ -26,11 +28,13 @@ interface Draft {
   title: string
   slug: string
   body: string
+  bodyFormat: 'markdown' | 'html'
   status: Visibility
   category: number | ''
   tags: string[]
   pinned: boolean
   cover: string
+  attachments: PostAttachment[]
   ts: number
 }
 
@@ -74,12 +78,14 @@ export interface PostEditorProps {
   initialTitle?: string
   initialSlug?: string
   initialBody?: string
+  initialBodyFormat?: 'markdown' | 'html'
   initialStatus?: PostStatus
   initialReviewNote?: string
   initialCategory?: number
   initialTags?: string[]
   initialPinned?: boolean
   initialCover?: string
+  initialAttachments?: PostAttachment[]
   publishing?: boolean
   onCancel: () => void
   onSubmit: (v: EditorValues) => void
@@ -90,12 +96,14 @@ export function PostEditor({
   initialTitle = '',
   initialSlug = '',
   initialBody = '',
+  initialBodyFormat = 'markdown',
   initialStatus = 'published',
   initialReviewNote = '',
   initialCategory,
   initialTags,
   initialPinned,
   initialCover = '',
+  initialAttachments = [],
   publishing = false,
   onCancel,
   onSubmit,
@@ -129,18 +137,35 @@ export function PostEditor({
   const [tags, setTags] = useState<string[]>((initialTags || []).filter(Boolean))
   const [pinned, setPinned] = useState(!!initialPinned && canPin)
   const [cover, setCover] = useState(initialCover)
+  // PDF attachments are stored as a complete ordered list on every save. The
+  // editor keeps the display metadata (name/size) so it does not have to
+  // re-fetch the library after each upload.
+  const [attachments, setAttachments] = useState<PostAttachment[]>(initialAttachments)
   // Split preview needs two side-by-side panes; at ≤639 there is no room for
   // two, so the first paint starts in the single-pane IR mode.
   const [mode, setMode] = useState<EditorMode>(() =>
     window.matchMedia('(max-width: 639px)').matches ? 'ir' : 'split',
   )
   const [body, setBody] = useState(initialBody)
+  // HTML is a root/admin authoring mode. A plain user's editor never shows the
+  // switch, and the server refuses body_format=html from them regardless.
+  const canHTML = isAdmin(user?.role)
+  const [bodyFormat, setBodyFormat] = useState<'markdown' | 'html'>(
+    initialBodyFormat === 'html' ? 'html' : 'markdown',
+  )
   const [categories, setCategories] = useState<Category[]>([])
   const [savedAt, setSavedAt] = useState<number | null>(null)
   // The site's existing tags, handed to the settings drawer for autocomplete.
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [coverBusy, setCoverBusy] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // One pending single-image prompt. Vditor calls its upload handler for a
+  // paste/drop/toolbar pick; a single file gets a settings dialog, a batch uses
+  // the remembered defaults (askOptions is only called for files.length === 1).
+  const [uploadPrompt, setUploadPrompt] = useState<{
+    file: File
+    resolve: (opts: ImageUploadOptions | null) => void
+  } | null>(null)
   const settingsBtnRef = useRef<HTMLButtonElement>(null)
 
   const bodyRef = useRef(initialBody)
@@ -150,8 +175,8 @@ export function PostEditor({
   const [showRestore, setShowRestore] = useState(!!initialDraft.current)
   const [restoreDecided, setRestoreDecided] = useState(false)
 
-  const valuesRef = useRef({ title, slug, status, category, tags, pinned, cover })
-  valuesRef.current = { title, slug, status, category, tags, pinned, cover }
+  const valuesRef = useRef({ title, slug, status, category, tags, pinned, cover, bodyFormat, attachments })
+  valuesRef.current = { title, slug, status, category, tags, pinned, cover, bodyFormat, attachments }
 
   useEffect(() => {
     pruneOldDrafts()
@@ -167,11 +192,13 @@ export function PostEditor({
       title: valuesRef.current.title,
       slug: valuesRef.current.slug,
       body: bodyRef.current,
+      bodyFormat: valuesRef.current.bodyFormat,
       status: valuesRef.current.status,
       category: valuesRef.current.category,
       tags: valuesRef.current.tags,
       pinned: valuesRef.current.pinned,
       cover: valuesRef.current.cover,
+      attachments: valuesRef.current.attachments,
       ts: Date.now(),
     }
     try {
@@ -200,12 +227,28 @@ export function PostEditor({
     [scheduleAutosave],
   )
 
+  const askUploadOptions = useCallback(
+    (files: File[]) =>
+      new Promise<ImageUploadOptions | null>((resolve) => {
+        setUploadPrompt({ file: files[0], resolve })
+      }),
+    [],
+  )
+
+  const closeUploadPrompt = (opts: ImageUploadOptions | null) => {
+    uploadPrompt?.resolve(opts)
+    setUploadPrompt(null)
+  }
+
   // Image ingestion for the editor. Vditor hands over the pasted or dropped
   // files and inserts whatever markdown this returns, so the upload endpoint
   // and the dedupe message stay in one place.
   const uploadForEditor = useCallback(
-    async (file: File) => {
-      const r = await uploadImage(file)
+    async (file: File, opts?: ImageUploadOptions) => {
+      // A batch (multi-file drop) never opens the prompt; it reuses the
+      // settings the author confirmed last time.
+      const options = opts ?? prefsToOptions(getUploadPrefs(), file)
+      const r = await uploadImage(file, 'post', options)
       // Tell the author when the library already had these exact bytes.
       // Nothing new was stored, and saying so avoids "why is my gallery full
       // of the same picture".
@@ -245,6 +288,8 @@ export function PostEditor({
       setTags((d.tags || []).filter(Boolean))
       setPinned(!!d.pinned && canPin)
       setCover(d.cover || '')
+      setAttachments(Array.isArray(d.attachments) ? d.attachments : [])
+      setBodyFormat(d.bodyFormat === 'html' && canHTML ? 'html' : 'markdown')
       setBodyValue(d.body || '')
     }
     setShowRestore(false)
@@ -274,13 +319,18 @@ export function PostEditor({
   }
 
   const pickCoverFromBody = () => {
-    const m = bodyRef.current.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+|[^)\s]+)\)/)
-    if (m) setCover(m[1])
+    const md = bodyRef.current.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+|[^)\s]+)\)/)
+    const html = bodyRef.current.match(/<img[^>]+src=["']([^"']+)["']/i)
+    const found = md?.[1] || html?.[1]
+    if (found) setCover(found)
   }
   const uploadCover = async (file: File) => {
+    // The cover is a single image by definition, so it always gets the dialog.
+    const opts = await askUploadOptions([file])
+    if (opts === null) return
     setCoverBusy(true)
     try {
-      const r = await uploadImage(file)
+      const r = await uploadImage(file, 'post', opts)
       setCover(r.url)
     } catch (e) {
       // Swallowing this left the button flashing "上传中…" and then nothing at
@@ -290,6 +340,41 @@ export function PostEditor({
     } finally {
       setCoverBusy(false)
     }
+  }
+
+  const [attachBusy, setAttachBusy] = useState(false)
+  const addAttachment = async (file: File) => {
+    if (attachments.length >= 10) {
+      pushToast('error', t('editor.attachmentLimit'))
+      return
+    }
+    setAttachBusy(true)
+    try {
+      const r = await uploadPDF(file)
+      if (attachments.some((a) => a.upload_id === r.id)) return
+      setAttachments((prev) => [
+        ...prev,
+        {
+          id: 0,
+          upload_id: r.id,
+          name: r.name,
+          url: r.url,
+          original_name: file.name,
+          size: r.size,
+          mime: r.mime,
+          sort_order: prev.length,
+        },
+      ])
+      scheduleAutosave()
+    } catch (e) {
+      pushToast('error', errMessage(e, t('editor.pdfUploadFailed')))
+    } finally {
+      setAttachBusy(false)
+    }
+  }
+  const removeAttachment = (uploadId: string) => {
+    setAttachments((prev) => prev.filter((a) => a.upload_id !== uploadId))
+    scheduleAutosave()
   }
 
   const doSubmit = () => {
@@ -308,6 +393,7 @@ export function PostEditor({
       // dropped the way an absent field would be.
       slug: slug.trim(),
       body: bodyRef.current,
+      body_format: bodyFormat,
       status: effectiveStatus,
       category_id: category !== '' ? Number(category) : undefined,
       // The tag set is always sent, empty included: the API reads an absent
@@ -317,10 +403,11 @@ export function PostEditor({
       pinned,
       // Same rule for the cover: "" is the instruction to remove it.
       cover,
+      attachment_ids: attachments.map((a) => a.upload_id),
     })
   }
 
-  const wc = wordCount(body)
+  const wc = wordCount(body, bodyFormat)
   const readMin = wc ? Math.max(1, Math.round(wc / 300)) : 0
   // The button has to say what will actually happen. For a non-root author,
   // "发布" was a lie: the post goes to the review queue, not to readers. And a
@@ -392,20 +479,75 @@ export function PostEditor({
 
       {/* Mode switch only. Vditor renders its own formatting toolbar inside
           the editing area, and a second one up here would be a duplicate
-          source of truth for the same commands. */}
+          source of truth for the same commands. HTML is a separate authoring
+          surface (root/admin only), so the Markdown layout controls are
+          hidden while it is active. */}
       <div class="pe-toolbar">
-        <div class="pe-modes" role="group" aria-label="editor mode">
-          <button class={`pe-mode pe-mode--split ${mode === 'split' ? 'pe-mode--active' : ''}`} onClick={() => setMode('split')}>
-            {t('editor.modeSplit')}
-          </button>
-          <button class={`pe-mode ${mode === 'ir' ? 'pe-mode--active' : ''}`} onClick={() => setMode('ir')}>
-            {t('editor.modeIR')}
-          </button>
-          <button class={`pe-mode ${mode === 'source' ? 'pe-mode--active' : ''}`} onClick={() => setMode('source')}>
-            {t('editor.modeSource')}
-          </button>
+        {canHTML && (
+          <div class="pe-formats" role="group" aria-label="body format">
+            <button
+              class={`pe-mode ${bodyFormat === 'markdown' ? 'pe-mode--active' : ''}`}
+              onClick={() => { setBodyFormat('markdown'); scheduleAutosave() }}
+            >
+              {t('editor.formatMarkdown')}
+            </button>
+            <button
+              class={`pe-mode ${bodyFormat === 'html' ? 'pe-mode--active' : ''}`}
+              onClick={() => { setBodyFormat('html'); scheduleAutosave() }}
+            >
+              {t('editor.formatHTML')}
+            </button>
+          </div>
+        )}
+        {bodyFormat === 'markdown' && (
+          <div class="pe-modes" role="group" aria-label="editor mode">
+            <button class={`pe-mode pe-mode--split ${mode === 'split' ? 'pe-mode--active' : ''}`} onClick={() => setMode('split')}>
+              {t('editor.modeSplit')}
+            </button>
+            <button class={`pe-mode ${mode === 'ir' ? 'pe-mode--active' : ''}`} onClick={() => setMode('ir')}>
+              {t('editor.modeIR')}
+            </button>
+            <button class={`pe-mode ${mode === 'source' ? 'pe-mode--active' : ''}`} onClick={() => setMode('source')}>
+              {t('editor.modeSource')}
+            </button>
+          </div>
+        )}
+        <div class="pe-attach">
+          <label class="btn btn-ghost btn-sm">
+            {attachBusy ? t('editor.pdfUploading') : t('editor.uploadPdf')}
+            <input
+              type="file"
+              accept="application/pdf"
+              hidden
+              disabled={attachBusy}
+              onChange={(e) => {
+                const input = e.target as HTMLInputElement
+                const f = input.files?.[0]
+                if (f) addAttachment(f)
+                input.value = ''
+              }}
+            />
+          </label>
+          <span class="pe-attach-count">{attachments.length}/10</span>
         </div>
       </div>
+
+      {attachments.length > 0 && (
+        <div class="pe-attachlist">
+          {attachments.map((a) => (
+            <span key={a.upload_id} class="pe-attachchip">
+              <span class="pe-attachchip-name">{a.original_name}</span>
+              <button
+                class="pe-attachchip-del"
+                onClick={() => removeAttachment(a.upload_id)}
+                aria-label={t('editor.attachmentRemove')}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* A rejected post keeps its reviewer note on the canvas: that text is
           the reason the author is editing at all, and hiding it behind a
@@ -422,15 +564,33 @@ export function PostEditor({
       )}
 
       <div class="pe-canvas">
-        <VditorEditor
-          value={body}
-          onChange={setBodyValue}
-          mode={mode}
-          lang={locale === 'zh' ? 'zh_CN' : 'en_US'}
-          placeholder={t('editor.bodyPlaceholder')}
-          onUploadImage={uploadForEditor}
-          onUploadError={(m) => pushToast('error', m)}
-        />
+        {bodyFormat === 'html' ? (
+          <div class="pe-html">
+            <textarea
+              class="pe-html-editor"
+              value={body}
+              placeholder={t('editor.htmlPlaceholder')}
+              spellcheck={false}
+              onInput={(e) => setBodyValue((e.target as HTMLTextAreaElement).value)}
+            />
+            <div
+              class="pe-html-preview md-body"
+              aria-label={t('editor.preview')}
+              dangerouslySetInnerHTML={{ __html: renderHTML(body) }}
+            />
+          </div>
+        ) : (
+          <VditorEditor
+            value={body}
+            onChange={setBodyValue}
+            mode={mode}
+            lang={locale === 'zh' ? 'zh_CN' : 'en_US'}
+            placeholder={t('editor.bodyPlaceholder')}
+            onUploadImage={uploadForEditor}
+            askOptions={askUploadOptions}
+            onUploadError={(m) => pushToast('error', m)}
+          />
+        )}
 
         <div class="pe-statline">
           <span>{t('editor.stats', { n: String(wc) })}</span>
@@ -470,6 +630,14 @@ export function PostEditor({
         onUploadCover={uploadCover}
         onPickCoverFromBody={pickCoverFromBody}
       />
+
+      {uploadPrompt && (
+        <ImageUploadDialog
+          file={uploadPrompt.file}
+          onCancel={() => closeUploadPrompt(null)}
+          onConfirm={(opts) => closeUploadPrompt(opts)}
+        />
+      )}
     </div>
   )
 }

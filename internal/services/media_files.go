@@ -18,15 +18,19 @@ import (
 // uploadResult renders a metadata row as the transport-facing struct.
 func uploadResult(f models.UploadFile, deduped bool) UploadResult {
 	return UploadResult{
-		ID:      f.ID,
-		Name:    f.Name,
-		URL:     "/uploads/" + f.Name,
-		Size:    f.Size,
-		Width:   f.Width,
-		Height:  f.Height,
-		Mime:    f.Mime,
-		Kind:    f.Kind,
-		Deduped: deduped,
+		ID:     f.ID,
+		Name:   f.Name,
+		URL:    "/uploads/" + f.Name,
+		Size:   f.Size,
+		Width:  f.Width,
+		Height: f.Height,
+		Mime:   f.Mime,
+		Kind:   f.Kind,
+		// The transform description is what lets the editor say "已压缩到
+		// 1280×853"; empty means the stored bytes are untouched.
+		Transform:    f.Transform,
+		SourceSha256: f.SourceSha256,
+		Deduped:      deduped,
 	}
 }
 

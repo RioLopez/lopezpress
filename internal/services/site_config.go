@@ -26,7 +26,8 @@ func (s *Service) GetSiteConfig(ctx context.Context, admin bool) (models.SiteCon
 			cfg = models.SiteConfig{
 				ID: 1, SiteName: "LopezPress", SiteTitle: "LopezPress",
 				ImgHostMode: "local", AllowRegister: false, BackupKeep: 7,
-				ThemeColor: "#b8492c", HomeLayout: "list",
+				BackupIntervalDays: 1,
+				ThemeColor:         "#b8492c", HomeLayout: "list",
 			}
 			if err2 := s.db.WithContext(ctx).Create(&cfg).Error; err2 != nil {
 				return cfg, newErr(http.StatusInternalServerError, "failed to init site config")
@@ -39,6 +40,11 @@ func (s *Service) GetSiteConfig(ctx context.Context, admin bool) (models.SiteCon
 	// exist). Read it as the default so the admin select and the typed public
 	// contract never see an empty enum.
 	cfg.HomeLayout = normalizeHomeLayout(cfg.HomeLayout)
+	// A row written before the backup-policy migration has no interval/hour.
+	// Reading them back through the clamps makes the admin form show what the
+	// job will actually do instead of zeroes.
+	cfg.BackupIntervalDays = ClampBackupInterval(cfg.BackupIntervalDays)
+	cfg.BackupHour = ClampBackupHour(cfg.BackupHour)
 	return cfg, nil
 }
 
@@ -74,6 +80,9 @@ func (s *Service) UpdateSiteConfig(ctx context.Context, in models.SiteConfig) (m
 	// "delete every snapshot", which is never what an operator means.
 	existing.AutoBackup = in.AutoBackup
 	existing.BackupKeep = ClampBackupKeep(in.BackupKeep)
+	if err := applyBackupPolicy(&existing, in); err != nil {
+		return models.SiteConfig{}, err
+	}
 	// Anonymous-read switch.
 	existing.PublicRead = in.PublicRead
 	applyStoragePolicy(&existing, in)
@@ -110,6 +119,21 @@ func applySiteIdentity(dst *models.SiteConfig, in models.SiteConfig) {
 	dst.FooterText = in.FooterText
 	dst.IcpNo = in.IcpNo
 	dst.FriendLinks = in.FriendLinks
+}
+
+// applyBackupPolicy merges the advanced backup fields. The subdirectory is
+// validated rather than trusted: it is joined onto the configured BACKUP_DIR,
+// so an absolute path or ".." would write outside it.
+func applyBackupPolicy(dst *models.SiteConfig, in models.SiteConfig) error {
+	sub, err := NormalizeBackupSubdir(in.BackupSubdir)
+	if err != nil {
+		return err
+	}
+	dst.BackupSubdir = sub
+	dst.BackupIntervalDays = ClampBackupInterval(in.BackupIntervalDays)
+	dst.BackupHour = ClampBackupHour(in.BackupHour)
+	dst.BackupIncludeUploads = in.BackupIncludeUploads
+	return nil
 }
 
 // saveSiteBrandingTx records the two branding slots as ledger edges. Split out
@@ -189,9 +213,13 @@ func SiteConfigFromMap(m map[string]any) models.SiteConfig {
 		AllowRegister:   cfgBool(m, "allow_register"),
 		// Absent/invalid page_size -> 0, which UpdateSiteConfig
 		// clamps back to the default.
-		PageSize:   cfgInt(m, "page_size"),
-		AutoBackup: cfgBool(m, "auto_backup"),
-		BackupKeep: cfgInt(m, "backup_keep"),
+		PageSize:             cfgInt(m, "page_size"),
+		AutoBackup:           cfgBool(m, "auto_backup"),
+		BackupKeep:           cfgInt(m, "backup_keep"),
+		BackupSubdir:         cfgStr(m, "backup_subdir"),
+		BackupIntervalDays:   cfgInt(m, "backup_interval_days"),
+		BackupHour:           cfgInt(m, "backup_hour"),
+		BackupIncludeUploads: cfgBool(m, "backup_include_uploads"),
 		// Absent -> false. The admin form always sends the current
 		// value, so a missing field means a hand-built payload; false is the
 		// safe (locked-down) reading in that case.

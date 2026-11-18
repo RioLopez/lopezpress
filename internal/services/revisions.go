@@ -24,11 +24,12 @@ const maxRevisionsPerPost = 20
 // Best-effort: a failure here must never block the user's save.
 func (s *Service) snapshotRevision(ctx context.Context, post models.Post, editorID string) {
 	rec := models.PostRevision{
-		PostID:   post.ID,
-		Title:    post.Title,
-		Body:     post.Body,
-		Status:   post.Status,
-		EditorID: editorID,
+		PostID:     post.ID,
+		Title:      post.Title,
+		Body:       post.Body,
+		BodyFormat: storedBodyFormat(post.BodyFormat),
+		Status:     post.Status,
+		EditorID:   editorID,
 	}
 	if err := s.db.WithContext(ctx).Create(&rec).Error; err != nil {
 		return
@@ -92,7 +93,12 @@ func (s *Service) RestoreRevision(ctx context.Context, user models.User, postID 
 	// undoable. It also writes its own "update_post" row; the extra row here
 	// records WHICH revision was restored, which the generic update cannot
 	// express.
-	restored, err := s.UpdatePost(ctx, user, postID, UpdatePostInput{Title: rev.Title, Body: rev.Body})
+	revFormat := storedBodyFormat(rev.BodyFormat)
+	restored, err := s.UpdatePost(ctx, user, postID, UpdatePostInput{
+		Title:      rev.Title,
+		Body:       rev.Body,
+		BodyFormat: revFormat,
+	})
 	if err != nil {
 		return models.Post{}, err
 	}

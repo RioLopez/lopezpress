@@ -71,12 +71,18 @@ type LoginInput struct {
 type CreatePostInput struct {
 	Title string `json:"title"`
 	// Slug lets the client pin the permanent link; empty = derive from title.
-	Slug       string   `json:"slug"`
-	Body       string   `json:"body"`
+	Slug string `json:"slug"`
+	Body string `json:"body"`
+	// BodyFormat is "markdown" (default) or "html". HTML requires admin/root
+	// and is sanitized before storage.
+	BodyFormat string   `json:"body_format"`
 	Status     string   `json:"status"`
 	CategoryID *int64   `json:"category_id"`
 	Tags       []string `json:"tags"`
 	Pinned     *bool    `json:"pinned"`
+	// AttachmentIDs lists the PDF uploads to attach, in display order. Empty
+	// or absent means none.
+	AttachmentIDs []string `json:"attachment_ids"`
 	// Cover was missing here while the editor already sent it on create
 	// (contract drift found in the round-33 cross-stack audit): Go's JSON
 	// decoder silently drops unknown fields, so a cover chosen at creation
@@ -137,9 +143,12 @@ type UpdatePostInput struct {
 	// Slug: empty means "leave the permanent link alone" (a link must not
 	// change just because the title was edited). A post always has a link, so
 	// an empty string has nothing else it could mean.
-	Slug   string `json:"slug"`
-	Body   string `json:"body"`
-	Status string `json:"status"`
+	Slug string `json:"slug"`
+	Body string `json:"body"`
+	// BodyFormat: empty = keep the current format; "markdown"/"html" = change
+	// it. Changing to html requires admin/root.
+	BodyFormat string `json:"body_format"`
+	Status     string `json:"status"`
 	// CategoryID: nil = unchanged, 0 = move to "no category", >0 = that
 	// category. 0 rather than a nullable pointer-to-pointer because
 	// UpdateCategoryInput.ParentID already uses 0 for "top level"; the
@@ -152,6 +161,9 @@ type UpdatePostInput struct {
 	Pinned *bool    `json:"pinned"`
 	// Cover: nil = unchanged, "" = remove the cover.
 	Cover *string `json:"cover"`
+	// AttachmentIDs: nil = unchanged, present-but-empty = remove every
+	// attachment, otherwise the complete ordered replacement set.
+	AttachmentIDs []string `json:"attachment_ids"`
 }
 
 // CreateCategoryInput is the decoded payload for POST /api/categories.
@@ -402,6 +414,9 @@ type ImportData struct {
 	SiteConfigs []models.SiteConfig   `json:"site_configs,omitempty"`
 	Revisions   []models.PostRevision `json:"revisions,omitempty"`
 	UploadFiles []models.UploadFile   `json:"upload_files,omitempty"`
+	// PostAttachments carries the article → PDF links. A backup without it
+	// restores the files and the posts but silently detaches every document.
+	PostAttachments []models.PostAttachment `json:"post_attachments,omitempty"`
 	// UploadLiveKeys carries the de-duplication key for each upload, keyed by
 	// name. models.UploadFile marks LiveKey json:"-" (it is an internal key),
 	// but the UNIQUE index on it means an import that left it empty would make
@@ -537,10 +552,51 @@ type TopPost struct {
 
 // AutoBackupStatus is what the settings page shows about the daily snapshot.
 type AutoBackupStatus struct {
-	Enabled bool   `json:"enabled"`
-	Keep    int    `json:"keep"`
-	LastAt  string `json:"last_at"` // RFC3339, empty when never run
-	Files   int    `json:"files"`
+	Enabled bool `json:"enabled"`
+	Keep    int  `json:"keep"`
+	// Advanced policy, echoed back so the form can render the effective values
+	// (already clamped) rather than whatever was typed.
+	IntervalDays   int    `json:"interval_days"`
+	Hour           int    `json:"hour"`
+	IncludeUploads bool   `json:"include_uploads"`
+	Subdir         string `json:"subdir"`
+	// Dir / DirAbs answer "where does it actually write?". Both are exposed:
+	// the relative-looking one matches BACKUP_DIR, the absolute one is what an
+	// operator needs in order to rsync or mount it.
+	Dir    string `json:"dir"`
+	DirAbs string `json:"dir_abs"`
+	// UploadsDir is the directory the database snapshot does NOT contain;
+	// IncludeUploads decides whether the job copies it alongside.
+	UploadsDir    string `json:"uploads_dir"`
+	UploadsDirAbs string `json:"uploads_dir_abs"`
+	// UploadsSnapshotDir / UploadsSnapshotDirAbs point at the NEWEST uploads-*
+	// snapshot (empty when none exists). Nothing in the restore path consumes
+	// that directory yet, so showing its exact path is what makes the
+	// "attachments are backed up" claim actionable: an operator can copy it
+	// back with a plain rsync.
+	UploadsSnapshotDir    string `json:"uploads_snapshot_dir"`
+	UploadsSnapshotDirAbs string `json:"uploads_snapshot_dir_abs"`
+	// UploadsSnapshotName is the bare folder name (uploads-YYYYMMDD) the
+	// restore endpoint takes, so the UI does not have to parse a path.
+	UploadsSnapshotName string `json:"uploads_snapshot_name"`
+	// ServerNow / ServerZone answer "whose 04:00 is the hour field?". The
+	// schedule runs on the server's local clock, which is not necessarily the
+	// operator's.
+	ServerNow        string `json:"server_now"`
+	ServerZone       string `json:"server_zone"`
+	LastAt           string `json:"last_at"` // RFC3339, empty when never run
+	Files            int    `json:"files"`
+	UploadsSnapshots int    `json:"uploads_snapshots"`
+	UploadsLastAt    string `json:"uploads_last_at"`
+}
+
+// UploadsRestoreResult summarises one additive restore of an uploads snapshot:
+// how many missing files were copied back and how many already existed.
+type UploadsRestoreResult struct {
+	Name     string `json:"name"`
+	Restored int    `json:"restored"`
+	Skipped  int    `json:"skipped"`
+	Bytes    int64  `json:"bytes"`
 }
 
 // BatchSkip records one post that could not be processed, with the
@@ -571,6 +627,18 @@ type MarkdownImportResult struct {
 	Skipped []MarkdownSkip `json:"skipped"`
 }
 
+// UploadOptions is the wire-level request for one upload's transform. Zero
+// values mean "no change" / "server default".
+type UploadOptions struct {
+	MaxWidth  int `json:"max_width"`
+	MaxHeight int `json:"max_height"`
+	// Quality applies to JPEG only. 0 = the site default (82); accepted range
+	// 50..100.
+	Quality int `json:"quality"`
+	// Lossless forces JPEG quality 100. For PNG it is the default anyway.
+	Lossless bool `json:"lossless"`
+}
+
 // UploadResult is what an upload endpoint returns. `deduped` tells
 // the editor "the library already had this exact picture, nothing was stored
 // twice", which it surfaces as a small notice instead of silently pretending a
@@ -585,6 +653,10 @@ type UploadResult struct {
 	Mime    string `json:"mime"`
 	Kind    string `json:"kind"`
 	Deduped bool   `json:"deduped"`
+	// Transform describes the resize/compression recipe applied on the way in
+	// (empty = stored as sent). SourceSha256 groups the variants of one picture.
+	Transform    string `json:"transform,omitempty"`
+	SourceSha256 string `json:"source_sha256,omitempty"`
 	// Remote marks an image that lives on the external host (SM.MS). It has no
 	// row in upload_files: this instance does not own the bytes.
 	Remote bool `json:"remote,omitempty"`
@@ -608,6 +680,15 @@ type UploadFileInfo struct {
 	OriginalName string `json:"original_name"`
 	IP           string `json:"ip"`
 	Sha256       string `json:"sha256"`
+	// Variant metadata: SourceSha256 is shared by every size of one picture;
+	// Transform says what was applied (empty = original bytes).
+	SourceSha256 string `json:"source_sha256"`
+	Transform    string `json:"transform"`
+	// VariantCount is how many live rows share this row's source picture
+	// (including itself). 1 means "the only stored size of this upload"; the
+	// gallery uses it to say "same picture, N sizes" instead of showing the
+	// variants as unrelated files.
+	VariantCount int `json:"variant_count"`
 	// ThumbStatus lets the gallery offer a retry only on the rows that need
 	// one. ThumbAttempts is exposed for the same reason: a "failed" row shows
 	// how many automatic attempts already happened.

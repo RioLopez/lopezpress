@@ -32,11 +32,13 @@ export function CreatePage() {
             title: v.title,
             slug: v.slug,
             body: v.body,
+            body_format: v.body_format,
             status: v.status,
             category_id: v.category_id,
             tags: v.tags,
             pinned: v.pinned,
             cover: v.cover,
+            attachment_ids: v.attachment_ids,
           })
           // Drop the anonymous draft (CreatePage has no id) so the next
           // visit to /create always starts from a clean slate.

@@ -1,6 +1,7 @@
 import { useI18n } from '../../../core/i18n'
 
 type Props = {
+  scope: 'image' | 'pdf'
   uploading: boolean
   progress: { done: number; total: number } | null
   isRootUser: boolean
@@ -26,10 +27,12 @@ export function MediaHeader(p: Props) {
             ? p.progress
               ? `${p.progress.done}/${p.progress.total}`
               : t('common.loading')
-            : t('media.upload')}
+            : p.scope === 'pdf'
+              ? t('media.uploadPdf')
+              : t('media.upload')}
           <input
             type="file"
-            accept="image/*"
+            accept={p.scope === 'pdf' ? 'application/pdf' : 'image/*'}
             multiple
             hidden
             disabled={p.uploading}

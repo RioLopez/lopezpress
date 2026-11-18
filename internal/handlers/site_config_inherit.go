@@ -43,6 +43,20 @@ func inheritSiteConfigSwitches(in map[string]any, cur models.SiteConfig, cfg *mo
 	if _, ok := in["backup_keep"]; !ok {
 		cfg.BackupKeep = cur.BackupKeep
 	}
+	// Advanced backup policy. A partial PUT that does not mention them must not
+	// quietly reset the schedule or move the backups back to the root folder.
+	if _, ok := in["backup_subdir"]; !ok {
+		cfg.BackupSubdir = cur.BackupSubdir
+	}
+	if _, ok := in["backup_interval_days"]; !ok {
+		cfg.BackupIntervalDays = cur.BackupIntervalDays
+	}
+	if _, ok := in["backup_hour"]; !ok {
+		cfg.BackupHour = cur.BackupHour
+	}
+	if _, ok := in["backup_include_uploads"]; !ok {
+		cfg.BackupIncludeUploads = cur.BackupIncludeUploads
+	}
 	if _, ok := in["page_size"]; !ok {
 		cfg.PageSize = cur.PageSize
 	}

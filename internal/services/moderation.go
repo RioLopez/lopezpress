@@ -308,6 +308,12 @@ func (s *Service) DeleteBannedPermanently(ctx context.Context, actor models.User
 		if err := tx.Where("post_id = ?", id).Delete(&models.PostTag{}).Error; err != nil {
 			return err
 		}
+		// Attachment join rows are content of the post; the uploads themselves
+		// stay in the library (soft-deleted files are still served to any
+		// article that already references them).
+		if err := releasePostAttachmentsTx(tx, id); err != nil {
+			return err
+		}
 		// The post is gone for good, so its image edges must go with it. Without
 		// this every body image and the cover of a purged article stay pinned at
 		// ref_count > 0 forever: the gallery reports "still used" for a post that

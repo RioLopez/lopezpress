@@ -1,5 +1,5 @@
 /* =========================================================================
-   Echo Content — minimal theme
+   LopezPress — minimal theme
    - Square / rectangular, no rounded corners, no shadows, hairline borders
    - Light + dark via [data-theme] on <html>
    - One brand color, neutral palette, generous whitespace
@@ -1304,6 +1304,28 @@ tr.row-selected { transition: background .12s; }
 /* Ancestor segments in the article breadcrumb (PHP / php教程): plain text, so
    the reader can tell the leaf category is the linkable one. */
 .read-crumbs .crumb-ancestor { color: var(--text-muted); }
+/* PDF attachments: a compact card list between the header and the body. */
+.read-attachments {
+  margin: 28px 0 8px; padding: 16px 18px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.read-attachments h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+.read-attachment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.read-attachment a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); text-decoration: none;
+}
+.read-attachment a:hover { border-color: var(--primary); }
+.read-attachment-icon {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--primary);
+  border: 1px solid currentColor; border-radius: 4px; padding: 2px 4px;
+}
+.read-attachment-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.read-attachment-size { flex: 0 0 auto; color: var(--text-muted); font-size: 12px; }
+.read-attachment-open { flex: 0 0 auto; color: var(--primary); font-size: 12px; }
+
 .related-block { margin: 42px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
 .related-block h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 .related-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
@@ -1759,6 +1781,21 @@ tr.row-selected { transition: background .12s; }
   background: var(--surface); padding: 6px 10px;
 }
 .pe-modes { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; margin-left: auto; flex: 0 0 auto; }
+.pe-formats { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; flex: 0 0 auto; }
+.pe-attach { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.pe-attach-count { color: var(--text-muted); font-size: 12px; }
+.pe-attachlist { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.pe-attachchip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 10px;
+  background: var(--surface); font-size: 12px;
+}
+.pe-attachchip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.pe-attachchip-del {
+  border: none; background: transparent; color: var(--text-muted); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 0 2px;
+}
+.pe-attachchip-del:hover { color: var(--danger, #b3261e); }
 .pe-mode {
   border: none; background: transparent; color: var(--text-muted); cursor: pointer;
   padding: 7px 12px; font-size: 13px; border-radius: calc(var(--radius) - 2px); font-family: inherit;
@@ -1777,6 +1814,21 @@ tr.row-selected { transition: background .12s; }
 /* Editor body + statline share the column height: the editing surface flexes,
    the statline stays fixed at the bottom. */
 .pe-canvas .vd-host { flex: 1 1 auto; min-height: 0; }
+/* HTML authoring: source on the left, sanitized preview on the right. The
+   preview uses the same renderer as the reader, so what the author sees here
+   is what the allowlist will actually keep. */
+.pe-html { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; }
+.pe-html-editor {
+  width: 100%; height: 100%; min-height: 0; resize: none; outline: none;
+  border: none; border-right: 1px solid var(--border); padding: 16px;
+  background: var(--surface); color: var(--text);
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.pe-html-preview { overflow: auto; padding: 24px; min-width: 0; }
+@media (max-width: 1023px) {
+  .pe-html { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  .pe-html-editor { border-right: none; border-bottom: 1px solid var(--border); }
+}
 .pe-statline { flex: 0 0 auto; }
 
 .pe-topbar-actions { display: flex; align-items: center; gap: 8px; }
@@ -2252,6 +2304,9 @@ html { -webkit-text-size-adjust: 100%; }
 
 /* --- Spec 36: image library (admin media page + "my images") ---------- */
 .media-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+/* Top-level split (images / PDF attachments), styled like the settings page's
+   基本 / 内容与显示 / 外观 row so the two admin surfaces feel the same. */
+.media-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 2px; }
 .media-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .media-check { position: absolute; top: 6px; left: 6px; z-index: 2; background: var(--surface); border-radius: 4px; padding: 2px 4px; line-height: 0; }
 .media-view-toggle { display: inline-flex; gap: 4px; }
@@ -2271,11 +2326,43 @@ html { -webkit-text-size-adjust: 100%; }
 .media-ref-kind { display: inline-block; min-width: 56px; margin-right: 8px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-size: 12px; }
 .media-stats { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 12px 0 4px; font-size: 13px; color: var(--text-muted); }
 .media-stat-warn { color: var(--danger); }
+
+/* --- image upload size/compression dialog ----------------------------- */
+.upload-opt { display: flex; flex-direction: column; gap: 12px; }
+.upload-opt-preview { display: flex; gap: 12px; align-items: center; }
+.upload-opt-preview img {
+  width: 120px; height: 90px; object-fit: contain;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.upload-opt-meta { min-width: 0; }
+.upload-opt-name { font-weight: 600; word-break: break-all; }
+.upload-opt-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.upload-opt-presets .is-active { background: var(--surface-2); color: var(--primary); border-color: var(--border); }
+.upload-opt-size { align-items: flex-end; }
+.upload-opt-size .settings-field { flex: 1; margin: 0; }
+.upload-opt-quality { display: flex; align-items: center; gap: 10px; }
+.upload-opt-quality input[type="range"] { flex: 1; }
 .media-filters { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
 .media-filters select { min-width: 130px; }
 .media-grid { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
 .image-card-thumb { display: block; width: 100%; padding: 0; border: 0; background: var(--bg); cursor: zoom-in; }
 .image-card-thumb img { width: 100%; height: 120px; object-fit: cover; display: block; }
+/* PDF rows have no thumbnail; a text badge keeps the same card geometry. */
+.image-card-file {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 120px; background: var(--bg);
+  color: var(--primary); font-weight: 700; letter-spacing: .08em; font-size: 18px;
+}
+.media-row-file {
+  width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--primary); font-size: 11px; font-weight: 700;
+}
+.media-detail-file {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 18px; border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--primary); text-decoration: none;
+}
 .image-card--deleted { opacity: .62; }
 .image-card--deleted .image-card-thumb img { filter: grayscale(1); }
 .image-card-actions { display: flex; gap: 6px; padding: 0 10px 8px; }

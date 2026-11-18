@@ -28,6 +28,7 @@ func clearContentTablesTx(tx *gorm.DB) error {
 		model    any
 		unscoped bool // soft-delete-aware tables must be purged including trashed rows
 	}{
+		{&models.PostAttachment{}, true},
 		{&models.PostTag{}, true},
 		{&models.Post{}, true},
 		{&models.PostRevision{}, false},
