@@ -165,7 +165,14 @@ sha256sums.txt
 | `ReadWritePaths` 含 `/opt/lopezpress` | 进程必须能 rename 应用目录内的文件（沙箱唯一妥协，`NoNewPrivileges`/`SystemCallFilter` 等全部保留） |
 | 服务器能访问 `api.github.com` + 对象下载 | 公开仓库匿名即可，无需 token；转 private 时在 `.env` 配 `GITHUB_TOKEN` |
 
-相关 `.env`（可选覆盖）：`GITHUB_REPO`（默认 `RioLopez/lopezpress`）、`GITHUB_TOKEN`、`WEB_DIR`（默认 `web`）、`UPDATE_DIR`（默认 `data/updates`）。
+相关 `.env`（可选覆盖）：`GITHUB_REPO`（默认 `RioLopez/lopezpress`）、`GITHUB_TOKEN`、`WEB_DIR`（默认 `web`）、`UPDATE_DIR`（默认 `data/updates`）、`UPDATE_MIRROR`（下载镜像前缀）。
+
+**慢网络两条出路**：
+
+| 路径 | 做法 |
+|---|---|
+| 下载镜像 | `.env` 配 `UPDATE_MIRROR=https://<镜像域名>`（ghproxy 类反代或自建反代均可，拼在原始 GitHub 下载 URL 前）。Release **元数据**仍走 GitHub API（60s 缓存，频率低不构成痛点），只有大文件下载走镜像。sha256 校验照常执行 |
+| 网页上传 | 更新中心「手动上传更新包」：本地下载 `.tar.gz`，浏览器上传（≤64MB，建议同时填 Release `sha256sums.txt` 里的哈希）。服务端走与在线更新完全相同的 校验 → DB 快照 → 换新 → 重启 流水线，完全不依赖服务器出网 |
 
 **新版本启动失败的兜底**：保留的 `lopezpress.v<ver>` / `web.v<ver>` 就是逃生门——
 

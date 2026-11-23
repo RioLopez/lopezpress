@@ -104,6 +104,10 @@ type UpdateJobState struct {
 	Target    string `json:"target,omitempty"`
 	StartedAt string `json:"started_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// Download progress (phase == downloading). BytesTotal is 0 for local
+	// uploads, where there is nothing to download.
+	BytesDone  int64 `json:"bytes_done,omitempty"`
+	BytesTotal int64 `json:"bytes_total,omitempty"`
 }
 
 type UpdateHistoryEntry struct {
@@ -116,12 +120,14 @@ type UpdateHistoryEntry struct {
 }
 
 type UpdateStatusDTO struct {
-	Current         UpdateCurrentInfo      `json:"current"`
-	Latest          *UpdateReleaseInfo     `json:"latest"`
-	UpdateAvailable bool                   `json:"update_available"`
-	Rollback        []UpdateRollbackOption `json:"rollback"`
-	Job             UpdateJobState         `json:"job"`
-	History         []UpdateHistoryEntry   `json:"history"`
+	Current         UpdateCurrentInfo  `json:"current"`
+	Latest          *UpdateReleaseInfo `json:"latest"`
+	UpdateAvailable bool               `json:"update_available"`
+	// Mirror is the configured download-mirror prefix ("" = direct GitHub).
+	Mirror   string                 `json:"mirror"`
+	Rollback []UpdateRollbackOption `json:"rollback"`
+	Job      UpdateJobState         `json:"job"`
+	History  []UpdateHistoryEntry   `json:"history"`
 }
 
 // --- GitHub API shapes (only the fields we read) -----------------------------
@@ -226,6 +232,25 @@ func (st *updaterState) failJob(err error) {
 	st.job.Error = err.Error()
 	st.job.UpdatedAt = now
 	st.running = false
+}
+
+// setProgress carries download progress into the polled job state. Called
+// from the download reader roughly every progressChunk bytes.
+func (st *updaterState) setProgress(done, total int64) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.job.BytesDone = done
+	st.job.BytesTotal = total
+	st.job.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+}
+
+// mirrorURL routes a GitHub download through the configured mirror prefix.
+// Empty mirror = original URL.
+func (s *Service) mirrorURL(raw string) string {
+	if s.cfg.UpdateMirror == "" {
+		return raw
+	}
+	return s.cfg.UpdateMirror + "/" + raw
 }
 
 func (st *updaterState) snapshot() UpdateJobState {
@@ -334,7 +359,8 @@ func (s *Service) UpdateStatus(ctx context.Context) (*UpdateStatusDTO, error) {
 			Built:   version.BuildTime,
 			Dirty:   version.Dirty == "true",
 		},
-		Job: s.upd.snapshot(),
+		Mirror: s.cfg.UpdateMirror,
+		Job:    s.upd.snapshot(),
 	}
 	if latest != nil {
 		ver := strings.TrimPrefix(latest.TagName, "v")
@@ -497,8 +523,20 @@ func (s *Service) runUpdate(targetVersion string) {
 	}
 
 	// 5. Swap binary + web dir, then schedule the restart.
-	s.upd.setJob(updatePhaseSwapping, "解包并替换文件…")
-	if err := s.swapIn(assetPath, assetVersion, "update"); err != nil {
+	s.upd.setJob(updatePhaseSwapping, "解包并自检新二进制…")
+	extractDir, newVersion, err := s.extractAndSmoke(assetPath)
+	if err != nil {
+		s.upd.failJob(err)
+		return
+	}
+	if newVersion != assetVersion {
+		s.upd.failJob(fmt.Errorf("Release 标签为 %s，但包内二进制自报 %s，拒绝安装", assetVersion, newVersion))
+		return
+	}
+	// Clean the staging copy; keep the extracted dir for forensics until the
+	// next run overwrites it.
+	_ = os.Remove(assetPath)
+	if err := s.swapFromExtract(extractDir, newVersion, "update"); err != nil {
 		s.upd.failJob(err)
 		return
 	}
@@ -512,7 +550,7 @@ func (s *Service) downloadAsset(ctx context.Context, url, dest string, size int6
 	if size > maxAssetBytes {
 		return newErr(502, "Release 资产超出预期大小，拒绝下载")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.mirrorURL(url), nil)
 	if err != nil {
 		return err
 	}
@@ -527,23 +565,44 @@ func (s *Service) downloadAsset(ctx context.Context, url, dest string, size int6
 	if resp.StatusCode != http.StatusOK {
 		return newErr(502, fmt.Sprintf("资产下载返回 %d", resp.StatusCode))
 	}
+	// Stream to disk while feeding the polled job state: the reader reports
+	// every progressChunk bytes so the UI can draw a real progress bar
+	// (nginx's 60s read timeout means nobody is watching a synchronous
+	// response — polling is the only channel).
+	const progressChunk = 256 << 10
 	f, err := os.Create(dest)
 	if err != nil {
 		return newErr(500, "无法写入暂存文件："+err.Error())
 	}
 	defer f.Close()
-	// LimitReader, not MaxBytesReader: the latter needs an http.ResponseWriter
-	// (nil here would panic on overflow) and we already capped `size` above.
-	n, err := io.Copy(f, io.LimitReader(resp.Body, maxAssetBytes+1))
-	if err != nil {
-		return fmt.Errorf("下载中断: %w", err)
+	var done int64
+	reader := io.LimitReader(resp.Body, maxAssetBytes+1)
+	buf := make([]byte, 64<<10)
+	for {
+		n, rerr := reader.Read(buf)
+		if n > 0 {
+			if _, werr := f.Write(buf[:n]); werr != nil {
+				return newErr(500, "无法写入暂存文件："+werr.Error())
+			}
+			done += int64(n)
+			if done/progressChunk != (done-int64(n))/progressChunk {
+				s.upd.setProgress(done, size)
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return fmt.Errorf("下载中断: %w", rerr)
+		}
 	}
-	if n > maxAssetBytes {
+	if done > maxAssetBytes {
 		return fmt.Errorf("资产超出大小上限 %d 字节，拒绝", maxAssetBytes)
 	}
-	if size > 0 && n != size {
-		return fmt.Errorf("下载不完整: got %d want %d bytes", n, size)
+	if size > 0 && done != size {
+		return fmt.Errorf("下载不完整: got %d want %d bytes", done, size)
 	}
+	s.upd.setProgress(done, size)
 	return nil
 }
 
@@ -561,7 +620,7 @@ func (s *Service) verifyChecksum(ctx context.Context, rel *githubRelease, assetN
 	if sumsURL == "" {
 		return fmt.Errorf("Release 缺少 sha256sums.txt，拒绝应用（完整性无法确认）")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.mirrorURL(sumsURL), nil)
 	if err != nil {
 		return err
 	}
@@ -607,55 +666,76 @@ func (s *Service) verifyChecksum(ctx context.Context, rel *githubRelease, assetN
 // swapIn unpacks the verified tar.gz, smoke-tests the new binary, backs up
 // the current binary + web dir and moves the new ones into place. On any
 // error before the first rename, nothing on disk has changed.
-func (s *Service) swapIn(assetPath, newVersion, action string) error {
+// extractAndSmoke unpacks the release tar.gz and smoke-tests the new binary.
+// Returns the extraction dir and the version the new binary claims — that
+// claim is the single source of truth for the history "to" field and the
+// boot-state file (the online flow additionally checks the claim against the
+// release tag; the upload flow has no tag, so the binary's own word is the
+// record).
+func (s *Service) extractAndSmoke(assetPath string) (extractDir, newVersion string, err error) {
+	// The updater assumes the standard deployment layout: the web dir next to
+	// the binary. Anything else means this install is laid out differently
+	// and the operator should update it by hand instead of half-updating it.
+	appDir, err := s.updateAppDir()
+	if err != nil {
+		return "", "", err
+	}
+	webPath := filepath.Join(appDir, s.cfg.WebDir)
+	if info, err := os.Stat(webPath); err != nil || !info.IsDir() {
+		return "", "", newErr(409, fmt.Sprintf("前端目录 %s 不存在，布局与预期不符；请用 deploy/ 手动更新", webPath))
+	}
+
+	extractDir = filepath.Join(s.stagingDir(), "extract-"+time.Now().UTC().Format("20060102-150405"))
+	if err := extractTarGz(assetPath, extractDir); err != nil {
+		return "", "", fmt.Errorf("解包失败: %w", err)
+	}
+	newBin := filepath.Join(extractDir, "lopezpress")
+	newWeb := filepath.Join(extractDir, "web")
+	if info, err := os.Stat(newBin); err != nil || info.IsDir() {
+		return "", "", fmt.Errorf("解包产物缺少 lopezpress 二进制")
+	}
+	if info, err := os.Stat(newWeb); err != nil || !info.IsDir() {
+		return "", "", fmt.Errorf("解包产物缺少 web 目录")
+	}
+	// tar does not always preserve the exec bit; make sure.
+	if err := os.Chmod(newBin, 0o755); err != nil {
+		return "", "", err
+	}
+
+	// Smoke test: the new binary must at least identify itself. A build from
+	// a broken tag — or a random file someone uploaded — dies HERE instead of
+	// taking the site down at boot.
+	smokeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(smokeCtx, newBin, "-version").CombinedOutput()
+	if err != nil {
+		return "", "", fmt.Errorf("新二进制自检失败: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) == 0 || !versionNameRe.MatchString(strings.TrimPrefix(fields[0], "v")) {
+		return "", "", fmt.Errorf("无法从自检输出解析版本: %q", strings.TrimSpace(string(out)))
+	}
+	return extractDir, sanitizeVersion(fields[0]), nil
+}
+
+// swapFromExtract installs the extracted binary + web dir over the running
+// one, keeping the current pair as .v backups.
+//
+// Point of no return: everything below are renames inside one directory
+// (atomic per file on Linux) and the failure mode afterwards is "old
+// files still on disk as .v backups", which rollback + SSH can fix.
+func (s *Service) swapFromExtract(extractDir, newVersion, action string) error {
 	appDir, err := s.updateAppDir()
 	if err != nil {
 		return err
 	}
 	binPath := filepath.Join(appDir, "lopezpress")
 	webPath := filepath.Join(appDir, s.cfg.WebDir)
-
-	// The updater assumes the standard deployment layout: the web dir next to
-	// the binary. Anything else means this install is laid out differently
-	// and the operator should update it by hand instead of half-updating it.
-	if info, err := os.Stat(webPath); err != nil || !info.IsDir() {
-		return newErr(409, fmt.Sprintf("前端目录 %s 不存在，布局与预期不符；请用 deploy/ 手动更新", webPath))
-	}
-
-	extractDir := filepath.Join(s.stagingDir(), "extract-"+time.Now().UTC().Format("20060102-150405"))
-	if err := extractTarGz(assetPath, extractDir); err != nil {
-		return fmt.Errorf("解包失败: %w", err)
-	}
 	newBin := filepath.Join(extractDir, "lopezpress")
 	newWeb := filepath.Join(extractDir, "web")
-	if info, err := os.Stat(newBin); err != nil || info.IsDir() {
-		return fmt.Errorf("解包产物缺少 lopezpress 二进制")
-	}
-	if info, err := os.Stat(newWeb); err != nil || !info.IsDir() {
-		return fmt.Errorf("解包产物缺少 web 目录")
-	}
-	// tar does not always preserve the exec bit; make sure.
-	if err := os.Chmod(newBin, 0o755); err != nil {
-		return err
-	}
-
-	// Smoke test: the new binary must at least identify itself. A build from
-	// a broken tag dies HERE instead of taking the site down at boot.
-	smokeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(smokeCtx, newBin, "-version").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("新二进制自检失败: %v: %s", err, strings.TrimSpace(string(out)))
-	}
-	if !strings.Contains(string(out), newVersion) {
-		return fmt.Errorf("新二进制自报版本 %q 与 Release %s 不符", strings.TrimSpace(string(out)), newVersion)
-	}
 
 	cur := sanitizeVersion(version.Version)
 
-	// Point of no return: everything below are renames inside one directory
-	// (atomic per file on Linux) and the failure mode afterwards is "old
-	// files still on disk as .v backups", which rollback + SSH can fix.
 	backupBin := filepath.Join(appDir, "lopezpress.v"+cur)
 	backupWeb := filepath.Join(appDir, s.cfg.WebDir+".v"+cur)
 	_ = os.RemoveAll(backupBin) // a stale backup of the same version is worthless
@@ -689,10 +769,6 @@ func (s *Service) swapIn(assetPath, newVersion, action string) error {
 	_ = os.WriteFile(stateFile(s), []byte(fmt.Sprintf(
 		`{"phase":%q,"target":%q,"from":%q,"to":%q,"at":%q}`,
 		statePendingRestart, newVersion, version.Version, newVersion, time.Now().UTC().Format(time.RFC3339))), 0o644)
-
-	// Clean the staging copy; keep the extracted dir for forensics until the
-	// next run overwrites it.
-	_ = os.Remove(assetPath)
 	return nil
 }
 
@@ -766,6 +842,155 @@ func (s *Service) RollbackUpdate(target string) error {
 
 	s.TriggerRestartAfterDelay(1 * time.Second)
 	return nil
+}
+
+// --- local upload path --------------------------------------------------------
+//
+// The online path depends on the server being able to reach GitHub (or a
+// mirror). This path does not: the operator downloads the release asset on
+// any machine that can, uploads it through the update center, and the server
+// runs the SAME verify → snapshot → swap pipeline. Integrity notes:
+//   - the client may supply the expected sha256 (from the release's
+//     sha256sums.txt); when present it is enforced;
+//   - regardless, the extracted binary must pass the -version smoke test
+//     before anything on disk is touched.
+
+// MaxUpdateUploadBytes caps the operator-supplied asset. The real asset is
+// ~10 MB; 64 MB leaves room without inviting abuse. Keep in sync with the
+// route's maxBody in internal/router (bodylimit.maxUpdateUploadLimit).
+const MaxUpdateUploadBytes = 64 << 20
+
+// StageUpdateUpload streams the uploaded asset into the staging dir and
+// returns its path. Size accounting uses the multipart header's declared
+// size, with the byte ceiling enforced during the copy.
+func (s *Service) StageUpdateUpload(src io.Reader, declaredSize int64) (string, error) {
+	if declaredSize > MaxUpdateUploadBytes {
+		return "", newErr(413, "上传文件超过 64MB 上限")
+	}
+	if err := os.MkdirAll(s.stagingDir(), 0o755); err != nil {
+		return "", newErr(500, "更新目录不可写："+err.Error())
+	}
+	dest := filepath.Join(s.stagingDir(), "upload-"+time.Now().UTC().Format("20060102-150405")+".tar.gz")
+	f, err := os.Create(dest)
+	if err != nil {
+		return "", newErr(500, "无法写入暂存文件："+err.Error())
+	}
+	defer f.Close()
+	n, err := io.Copy(f, io.LimitReader(src, MaxUpdateUploadBytes+1))
+	if err != nil {
+		_ = os.Remove(dest)
+		return "", newErr(500, "保存上传文件失败："+err.Error())
+	}
+	if n > MaxUpdateUploadBytes {
+		_ = os.Remove(dest)
+		return "", newErr(413, "上传文件超过 64MB 上限")
+	}
+	if declaredSize > 0 && n != declaredSize {
+		_ = os.Remove(dest)
+		return "", newErr(400, "上传不完整，请重试")
+	}
+	return dest, nil
+}
+
+// DiscardStagedUpload removes a staged upload that was refused before the
+// job started (guards failed, bad checksum input, ...).
+func (s *Service) DiscardStagedUpload(path string) { _ = os.Remove(path) }
+
+// StartUpdateFromUpload validates the staged asset and spawns the same job
+// pipeline the online path uses, minus the download step. clientSHA is the
+// operator-entered expected sha256 ("" = skip the cross-check; the smoke
+// test still runs).
+func (s *Service) StartUpdateFromUpload(assetPath, clientSHA string) error {
+	clientSHA = strings.ToLower(strings.TrimSpace(clientSHA))
+	if clientSHA != "" && (len(clientSHA) != 64 || !isHex(clientSHA)) {
+		return newErr(400, "sha256 格式不合法（应为 64 位十六进制）")
+	}
+	if version.Version == "0.0.0-dev" {
+		return newErr(409, "当前是未烙印版本号的开发构建（go run），请在生产二进制上执行更新")
+	}
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		return newErr(409, "更新包只发布 linux-amd64，当前平台不支持在线更新")
+	}
+	if s.upd.isRunning() {
+		return newErr(409, "已有更新任务正在进行")
+	}
+	if info, err := os.Stat(assetPath); err != nil || info.IsDir() {
+		return newErr(400, "上传文件暂存失败或已被清理，请重新上传")
+	}
+
+	s.upd.mu.Lock()
+	if s.upd.running {
+		s.upd.mu.Unlock()
+		return newErr(409, "已有更新任务正在进行")
+	}
+	s.upd.running = true
+	s.upd.job = UpdateJobState{Phase: updatePhaseVerifying, StartedAt: time.Now().UTC().Format(time.RFC3339)}
+	s.upd.mu.Unlock()
+
+	go s.runUploadUpdate(assetPath, clientSHA)
+	return nil
+}
+
+func (s *Service) runUploadUpdate(assetPath, clientSHA string) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.upd.failJob(fmt.Errorf("panic: %v", r))
+		}
+	}()
+
+	// 1. Cross-check the operator-supplied sha256 (optional but recommended —
+	// it comes from the release's sha256sums.txt).
+	if clientSHA != "" {
+		f, err := os.Open(assetPath)
+		if err != nil {
+			s.upd.failJob(err)
+			return
+		}
+		h := sha256.New()
+		_, _ = io.Copy(h, f)
+		f.Close()
+		got := hex.EncodeToString(h.Sum(nil))
+		if subtle.ConstantTimeCompare([]byte(got), []byte(clientSHA)) != 1 {
+			_ = os.Remove(assetPath)
+			s.upd.failJob(fmt.Errorf("sha256 不匹配（got %s…），文件可能损坏或被篡改", got[:12]))
+			return
+		}
+	}
+
+	// 2. Extract + smoke test. The claimed version becomes the record.
+	s.upd.setJob(updatePhaseVerifying, "解包并自检新二进制…")
+	extractDir, newVersion, err := s.extractAndSmoke(assetPath)
+	if err != nil {
+		_ = os.Remove(assetPath)
+		s.upd.failJob(err)
+		return
+	}
+	_ = os.Remove(assetPath)
+
+	// 3. Database snapshot, then swap.
+	s.upd.setJob(updatePhaseSnapshot, "拍摄数据库快照…")
+	if _, err := s.snapshotBeforeImport(context.Background()); err != nil {
+		s.upd.failJob(fmt.Errorf("数据库快照失败: %w", err))
+		return
+	}
+	s.upd.setJob(updatePhaseSwapping, "替换文件…")
+	if err := s.swapFromExtract(extractDir, newVersion, "update"); err != nil {
+		s.upd.failJob(err)
+		return
+	}
+
+	s.upd.setJob(updatePhaseRestarting, "文件已就位，服务即将重启以加载新版本…")
+	s.TriggerRestartAfterDelay(3 * time.Second)
+}
+
+// isHex reports whether s is a non-empty lowercase/uppercase hex string.
+func isHex(s string) bool {
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // FinishPendingUpdate runs once on boot. If the previous process exited for

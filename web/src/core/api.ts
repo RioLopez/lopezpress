@@ -253,6 +253,16 @@ export const rollbackUpdate = (version: string) =>
     body: JSON.stringify({ version }),
   })
 
+// Offline path: upload a release asset downloaded elsewhere. The server runs
+// the same verify → snapshot → swap pipeline; `sha256` (from the release's
+// sha256sums.txt) is optional but enforced when provided.
+export const uploadUpdate = (file: File, sha256?: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  if (sha256) form.append('sha256', sha256)
+  return upload<{ started: boolean }>('/api/admin/update/upload', form)
+}
+
 // Copies missing files back from one uploads-* snapshot. Additive: existing
 // files are never overwritten, so a repeat run is harmless.
 export const restoreUploadsSnapshot = (name: string) =>

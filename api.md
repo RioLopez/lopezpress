@@ -179,6 +179,7 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/admin/update/status` | **root** | 在线更新状态：`{current{version,commit,built,dirty}, latest{tag,version,name,published_at,url,notes}\|null, update_available, rollback[{version,binary,web}], job{phase,message,error,target,started_at,updated_at}, history[]}`。GitHub 最新 Release 查询有 60s 缓存，可放心轮询 |
 | POST | `/api/admin/update/apply` | **root** | 启动更新任务（异步，202 即返回）：下载 Release 资产 → sha256 校验 → DB 快照 → 备份并换新二进制+web 目录 → 优雅退出自重启。body `{version:""}`=最新 Release，`{version:"1.0.34"}`=指定版本 |
 | POST | `/api/admin/update/rollback` | **root** | 回滚到磁盘保留的旧版本（`lopezpress.v<ver>` + `web.v<ver>` 成对才允许），body `{version:"1.0.33"}`，返回前已调度重启 |
+| POST | `/api/admin/update/upload` | **root** | 离线路径：multipart 上传 Release 资产（`file`=tar.gz，≤64MiB；`sha256`=可选，提供则强制校验），服务端走与 apply 相同的 校验→快照→换新→重启 流水线，202 即返回 |
 
 ---
 
@@ -371,6 +372,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 版本 / 轮次 | 契约变化 |
 |---|---|
+| 1.0.35 | `GET /api/admin/update/status` 新增 `mirror` 字段与 `job.bytes_done`/`job.bytes_total`（下载进度）；新增 `POST /api/admin/update/upload`（root，multipart ≤64MiB，离线上传更新包）；`.env` 新增可选 `UPDATE_MIRROR`（下载镜像前缀）；「已是最新」时更新按钮降级为「重装此版本」 |
 | 1.0.34 | 新增在线更新端点 `GET /api/admin/update/status`、`POST /api/admin/update/apply`、`POST /api/admin/update/rollback`（均 root）；`.env` 新增可选 `GITHUB_REPO`/`GITHUB_TOKEN`/`WEB_DIR`/`UPDATE_DIR` |
 | 1.0.33 | 新增 `POST /api/admin/backup/uploads/{name}/restore`（root）：从 `uploads-YYYYMMDD` 快照补回**缺失**附件，返回 `{name, restored, skipped, bytes}`，只补不覆盖；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_name` |
 | 1.0.32 | `GET /api/uploads` 行新增 `variant_count`（同源活跃版本数）；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_dir`/`uploads_snapshot_dir_abs`/`server_now`/`server_zone`。行为修正：GIF 不再重编码（原样存储，动画帧不再被丢弃），`lossless` 仍为 JPEG 质量 100 |

@@ -1,6 +1,10 @@
 package router
 
-import "net/http"
+import (
+	"net/http"
+
+	"lopezpress/internal/services"
+)
 
 // --- request body ceilings --------------------------------------------------
 //
@@ -22,14 +26,14 @@ const defaultBodyLimit = 1 << 20
 // worth stating plainly: a route ceiling that is SMALLER than the handler's own
 // limit silently wins, and the handler's limit becomes dead code. The route
 // layer runs first, so a 1 MiB default on the backup-import route means an
-// operator can export a 2 MiB backup and then be unable to restore it — data
+// operator can export a 2 MiB backup and then be unable to restore it 鈥?data
 // loss disguised as a 413. Every route that carries a file or a whole-database
 // payload therefore declares its real ceiling here, and security_check.py (S9)
 // fails the build if a handler ever allows more than its route.
 
 // maxUploadBodyLimit covers the largest image the service will accept
 // (upload_max_image, clamped to 20 MiB) plus multipart framing. The handler
-// applies the operator's configured limit afterwards — usually tighter.
+// applies the operator's configured limit afterwards 鈥?usually tighter.
 const maxUploadBodyLimit = 24 << 20
 
 // maxBackupImportLimit matches `services.ImportBackup`'s own cap. A restore is
@@ -39,8 +43,14 @@ const maxUploadBodyLimit = 24 << 20
 const maxBackupImportLimit = 20 << 20
 
 // maxMarkdownImportLimit matches `handlers.ImportMarkdown`'s documented
-// "200 files × 2 MB" contract.
+// "200 files 脳 2 MB" contract.
 const maxMarkdownImportLimit = 24 << 20
+
+// maxUpdateUploadLimit covers the operator-uploaded release asset (binary +
+// frontend dist, ~10 MB today) plus multipart framing. Must stay >=
+// services.maxUpdateUploadBytes (64 MiB); security_check.py (S9) enforces the
+// handler-vs-route agreement.
+const maxUpdateUploadLimit = services.MaxUpdateUploadBytes
 
 // limitBody wraps a handler so the request body cannot exceed n bytes.
 //
@@ -49,7 +59,7 @@ const maxMarkdownImportLimit = 24 << 20
 //  1. A client that declares Content-Length larger than n is refused before a
 //     single byte is read. That is the common case (every browser, curl, and
 //     HTTP library sets it), and refusing up front means an oversized request
-//     costs nothing at all — not even the read buffer.
+//     costs nothing at all 鈥?not even the read buffer.
 //  2. A chunked request carries no declared length, so MaxBytesReader is the
 //     backstop: it fails the read once n bytes have been consumed, which caps
 //     the allocation at n instead of the payload size.

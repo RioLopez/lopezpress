@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { useApp } from '../core/app'
 import { useI18n } from '../core/i18n'
-import { applyUpdate, getUpdateStatus, rollbackUpdate, errMessage } from '../core/api'
+import { applyUpdate, getUpdateStatus, rollbackUpdate, uploadUpdate, errMessage } from '../core/api'
 import type { UpdateStatus } from '../core/types'
 
 // Update center (root-only). The page is a poll target, not a command console:
@@ -35,7 +35,11 @@ export function AdminUpdatePage() {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [awaitingRestart, setAwaitingRestart] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadSha, setUploadSha] = useState('')
   const loadRef = useRef(false)
+
+  const fmtMB = (n?: number) => ((n ?? 0) / 1048576).toFixed(1)
 
   const load = useCallback(
     async (quiet: boolean) => {
@@ -89,6 +93,41 @@ export function AdminUpdatePage() {
     }
   }
 
+  // Already on the latest release: reinstall the same build (repair path for
+  // damaged program files), explicitly confirmed so it cannot be hit by habit.
+  const doReinstall = async () => {
+    if (!(await confirmDialog(t('admin.reinstallConfirm')))) return
+    setBusy(true)
+    try {
+      await applyUpdate(status?.latest?.tag)
+      pushToast('info', t('admin.applyStarted'))
+      await load(true)
+    } catch (e) {
+      pushToast('error', errMessage(e, t('admin.jobFailed')))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doUpload = async () => {
+    if (!uploadFile) {
+      pushToast('error', t('admin.uploadNoFile'))
+      return
+    }
+    if (!(await confirmDialog(t('admin.applyConfirm')))) return
+    setBusy(true)
+    try {
+      await uploadUpdate(uploadFile, uploadSha || undefined)
+      pushToast('info', t('admin.uploadStarted'))
+      setUploadFile(null)
+      await load(true)
+    } catch (e) {
+      pushToast('error', errMessage(e, t('admin.jobFailed')))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const doRollback = async (version: string) => {
     if (!(await confirmDialog(t('admin.rollbackConfirm', { version })))) return
     setBusy(true)
@@ -111,11 +150,23 @@ export function AdminUpdatePage() {
   return (
     <div class="admin-page">
       <p class="muted">{t('admin.updateSub')}</p>
+      {status?.mirror && <p class="muted update-mirror">UPDATE_MIRROR: {status.mirror}</p>}
 
       {jobActive && job && (
         <div class="update-banner update-banner--active">
           <strong>{jobPhaseLabel}</strong>
           {job.message && <span> {job.message}</span>}
+          {job.phase === 'downloading' && (job.bytes_total ?? 0) > 0 && (
+            <div class="update-progress">
+              <div class="update-progress-bar">
+                <div
+                  class="update-progress-fill"
+                  style={{ width: `${Math.min(100, Math.round(((job.bytes_done ?? 0) / (job.bytes_total ?? 1)) * 100))}%` }}
+                />
+              </div>
+              <span class="muted">{fmtMB(job.bytes_done)} / {fmtMB(job.bytes_total)} MB</span>
+            </div>
+          )}
         </div>
       )}
       {awaitingRestart && (
@@ -157,9 +208,17 @@ export function AdminUpdatePage() {
                 </details>
               )}
               <div class="update-card-actions">
-                <button class="btn btn-primary" disabled={locked} onClick={doApply}>
-                  {t('admin.applyUpdate')}
-                </button>
+                {status.update_available ? (
+                  <button class="btn btn-primary" disabled={locked} onClick={doApply}>
+                    {t('admin.applyUpdate')}
+                  </button>
+                ) : (
+                  // Up to date: the loud button goes away; what remains is the
+                  // quiet repair path — reinstalling the same build.
+                  <button class="btn btn-ghost" disabled={locked} onClick={doReinstall}>
+                    {t('admin.reinstallBtn')}
+                  </button>
+                )}
                 <a class="btn btn-ghost" href={status.latest.url} target="_blank" rel="noreferrer">
                   {t('admin.viewRelease')}
                 </a>
@@ -206,6 +265,30 @@ export function AdminUpdatePage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div class="update-section">
+        <h2>{t('admin.uploadTitle')}</h2>
+        <p class="muted">{t('admin.uploadSub')}</p>
+        <div class="update-upload">
+          <input
+            type="file"
+            accept=".tar.gz,.gz"
+            disabled={locked}
+            onChange={(e) => setUploadFile((e.target as HTMLInputElement).files?.[0] ?? null)}
+          />
+          <input
+            class="update-sha"
+            type="text"
+            placeholder={t('admin.shaHint')}
+            disabled={locked}
+            value={uploadSha}
+            onChange={(e) => setUploadSha((e.target as HTMLInputElement).value)}
+          />
+          <button class="btn btn-primary" disabled={locked || !uploadFile} onClick={doUpload}>
+            {t('admin.uploadBtn')}
+          </button>
+        </div>
       </div>
 
       <div class="update-section">

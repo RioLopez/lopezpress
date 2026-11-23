@@ -2993,7 +2993,7 @@ input.search-input {
 
 
 /* =========================================================================
-   Update center (root-only) ¡ª 2026-11-23
+   Update center (root-only) â€” 2026-11-23
    Reuses .admin-page / .admin-table / .btn tokens; only the two version
    cards and the job banner need their own classes.
    ========================================================================= */
@@ -3080,4 +3080,37 @@ input.search-input {
   max-height: 220px;
   overflow: auto;
   margin: 8px 0 0;
+}
+
+/* Download progress (1.0.35) */
+.update-progress { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+.update-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width .4s var(--ease);
+}
+.update-progress .muted { font-size: 12px; flex: 0 0 auto; }
+.update-mirror { font-size: 12px; margin-top: -6px; }
+.update-upload {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.update-upload input[type="file"] { font-size: 13px; color: var(--text-muted); }
+.update-sha {
+  flex: 1 1 260px;
+  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
 }

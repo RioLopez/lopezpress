@@ -171,6 +171,14 @@ export type AdminTexts = {
     viewRelease: string
     noRelease: string
     releaseNotes: string
+    reinstallBtn: string
+    reinstallConfirm: string
+    uploadTitle: string
+    uploadSub: string
+    uploadBtn: string
+    uploadNoFile: string
+    uploadStarted: string
+    shaHint: string
     // trash
     trashTitle: string
     trashSub: string
@@ -566,6 +574,14 @@ export const adminZh: AdminTexts = {
     viewRelease: '查看 Release',
     noRelease: '仓库还没有发布任何 Release',
     releaseNotes: '更新说明',
+    reinstallBtn: '重装此版本',
+    reinstallConfirm: '当前已是最新版本，将重新安装同一版本（可用于修复被意外改动的程序文件）。继续？',
+    uploadTitle: '手动上传更新包',
+    uploadSub: '服务器访问 GitHub 困难时，把 Release 页下载的 .tar.gz 从本地浏览器上传；建议同时填写同页 sha256sums.txt 中的哈希值用于校验。',
+    uploadBtn: '上传并更新',
+    uploadNoFile: '请先选择 .tar.gz 更新包',
+    uploadStarted: '上传完成，更新任务已开始',
+    shaHint: 'sha256（可选，来自 Release 的 sha256sums.txt）',
     trashTitle: '回收站',
     trashSub: '最近 7 天内删除的文章，可一键恢复',
     restore: '恢复',
@@ -953,6 +969,14 @@ export const adminEn: AdminTexts = {
     viewRelease: 'View release',
     noRelease: 'No release published yet',
     releaseNotes: 'Notes',
+    reinstallBtn: 'Reinstall this version',
+    reinstallConfirm: 'You are already on the latest version; this reinstalls the same build (useful to repair modified program files). Continue?',
+    uploadTitle: 'Upload an update package',
+    uploadSub: 'When the server cannot reach GitHub, download the .tar.gz from the release page anywhere and upload it here. Providing the hash from the release sha256sums.txt is recommended.',
+    uploadBtn: 'Upload and update',
+    uploadNoFile: 'Choose a .tar.gz asset first',
+    uploadStarted: 'Upload finished — update job started',
+    shaHint: 'sha256 (optional, from the release sha256sums.txt)',
     trashTitle: 'Trash',
     trashSub: 'Posts deleted in the last 7 days — restore in one click',
     restore: 'Restore',

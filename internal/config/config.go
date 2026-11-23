@@ -99,6 +99,14 @@ type Config struct {
 	// UpdateDir is the updater's scratch area: staging copy, job state and
 	// update history. Lives under data/ like every other mutable directory.
 	UpdateDir string
+	// UpdateMirror is an OPTIONAL download mirror prefix for release assets,
+	// e.g. "https://mirror.example.com" (a ghproxy-style reverse proxy of
+	// github.com). When set, asset and checksum downloads go to
+	// <mirror>/<original-url> while release METADATA still comes from the
+	// GitHub API (cached 60s, so slow is tolerable). Trailing slash stripped.
+	// Integrity is unaffected: the sha256 verification still runs on whatever
+	// bytes arrive.
+	UpdateMirror string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -162,10 +170,11 @@ func Load() *Config {
 		HealthShowVersion: envBoolOr("HEALTH_SHOW_VERSION", false),
 		// Self-update: where releases are polled and where the frontend dist
 		// lives. Defaults match the systemd deployment layout in deploy/.
-		GitHubRepo:  envOr("GITHUB_REPO", "RioLopez/lopezpress"),
-		GitHubToken: os.Getenv("GITHUB_TOKEN"),
-		WebDir:      envOr("WEB_DIR", "web"),
-		UpdateDir:   envOr("UPDATE_DIR", "data/updates"),
+		GitHubRepo:   envOr("GITHUB_REPO", "RioLopez/lopezpress"),
+		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
+		WebDir:       envOr("WEB_DIR", "web"),
+		UpdateDir:    envOr("UPDATE_DIR", "data/updates"),
+		UpdateMirror: strings.TrimRight(os.Getenv("UPDATE_MIRROR"), "/"),
 	}
 }
 

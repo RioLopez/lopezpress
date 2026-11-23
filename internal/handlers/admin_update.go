@@ -2,7 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
+
+	"lopezpress/internal/services"
 )
 
 // Self-update surface (root-only; the router table enforces that, handlers do
@@ -70,4 +74,54 @@ func RollbackUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"restarting": true})
+}
+
+// UploadUpdate accepts a release asset uploaded by the operator and runs the
+// same verify → snapshot → swap pipeline as the online update. This is the
+// offline path: servers that cannot reach GitHub (or a mirror) can still be
+// updated, because the operator downloads the asset anywhere and hands it in
+// through this endpoint.
+//
+// The stream is written to the staging dir by the service; only then does the
+// job start (202). All integrity gates still apply: optional client sha256,
+// the -version smoke test on the extracted binary, the DB snapshot and the
+// rollback backups.
+// POST /api/admin/update/upload  multipart: file=<asset.tar.gz>, sha256=<optional> (auth, root)
+func UploadUpdate(w http.ResponseWriter, r *http.Request) {
+	// Belt-and-suspenders cap: the router table already limits the body; this
+	// also guards direct exposure without nginx.
+	r.Body = http.MaxBytesReader(w, r.Body, services.MaxUpdateUploadBytes+(1<<20))
+	const maxFormBytes = 1 << 20
+	if err := r.ParseMultipartForm(maxFormBytes); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "上传文件过大（上限 64MB）")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "无效的 multipart 表单")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "缺少 file 字段")
+		return
+	}
+	defer file.Close()
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".tar.gz") {
+		writeError(w, http.StatusBadRequest, "请上传 .tar.gz 更新包（Release 页下载的 lopezpress-<ver>-linux-amd64.tar.gz）")
+		return
+	}
+
+	assetPath, err := svc.StageUpdateUpload(file, header.Size)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	sha := strings.TrimSpace(r.FormValue("sha256"))
+	if err := svc.StartUpdateFromUpload(assetPath, sha); err != nil {
+		svc.DiscardStagedUpload(assetPath)
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }

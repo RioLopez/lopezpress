@@ -216,6 +216,9 @@ var routes = []route{
 	{method: "GET", path: "/api/admin/update/status", auth: authRequired, roles: rootRoles, handler: handlers.GetUpdateStatus},
 	{method: "POST", path: "/api/admin/update/apply", auth: authRequired, roles: rootRoles, handler: handlers.ApplyUpdate},
 	{method: "POST", path: "/api/admin/update/rollback", auth: authRequired, roles: rootRoles, handler: handlers.RollbackUpdate},
+	// Offline path: the operator uploads a release asset downloaded elsewhere.
+	// Same pipeline as apply; the body cap matches services' 64 MiB ceiling.
+	{method: "POST", path: "/api/admin/update/upload", auth: authRequired, roles: rootRoles, maxBody: maxUpdateUploadLimit, handler: handlers.UploadUpdate},
 
 	// ---- Admin (admin|root): image library ----
 	// Site-wide asset view: who uploaded what, when, from where, and what still

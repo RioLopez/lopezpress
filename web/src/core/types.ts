@@ -621,6 +621,8 @@ export interface UpdateJobState {
   target?: string
   started_at?: string
   updated_at?: string
+  bytes_done?: number
+  bytes_total?: number
 }
 
 export interface UpdateHistoryEntry {
@@ -636,6 +638,7 @@ export interface UpdateStatus {
   current: UpdateCurrentInfo
   latest: UpdateReleaseInfo | null
   update_available: boolean
+  mirror: string
   rollback: UpdateRollbackOption[]
   job: UpdateJobState
   history: UpdateHistoryEntry[]
