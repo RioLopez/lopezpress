@@ -131,6 +131,46 @@ export type AdminTexts = {
     stPosts: string
     stCats: string
     stTags: string
+    // self-update (root-only)
+    updateTitle: string
+    updateSub: string
+    currentVersion: string
+    latestRelease: string
+    upToDate: string
+    updateAvailable: string
+    applyUpdate: string
+    applyConfirm: string
+    applyStarted: string
+    restartPending: string
+    restartDone: string
+    jobFailed: string
+    rollbackTitle: string
+    rollbackSub: string
+    rollbackEmpty: string
+    rollbackBtn: string
+    rollbackConfirm: string
+    rollbackStarted: string
+    historyTitle: string
+    historyEmpty: string
+    hisUpdate: string
+    hisRollback: string
+    hisNote: string
+    resultPending: string
+    resultSuccess: string
+    resultFailed: string
+    phChecking: string
+    phDownloading: string
+    phVerifying: string
+    phSnapshotting: string
+    phSwapping: string
+    phRestarting: string
+    builtAt: string
+    commit: string
+    dirtyBadge: string
+    publishedAt: string
+    viewRelease: string
+    noRelease: string
+    releaseNotes: string
     // trash
     trashTitle: string
     trashSub: string
@@ -487,6 +527,45 @@ export const adminZh: AdminTexts = {
     stPosts: '文章',
     stCats: '分类',
     stTags: '标签',
+    updateTitle: '更新中心',
+    updateSub: '检查 GitHub 最新 Release，一键更新或回滚。更新前自动拍摄数据库快照；更新包同时包含后端与前端，不会出现版本错配。',
+    currentVersion: '当前运行版本',
+    latestRelease: '最新 Release',
+    upToDate: '已是最新',
+    updateAvailable: '有可用更新',
+    applyUpdate: '立即更新',
+    applyConfirm: '确认更新？服务将在下载并校验完成后自动重启，期间站点会短暂不可用（约几秒）。',
+    applyStarted: '更新任务已开始，可关闭本页，稍后回来查看结果',
+    restartPending: '文件已就位，服务正在重启…页面会自动恢复，请稍候。',
+    restartDone: '更新完成：新版本已启动',
+    jobFailed: '更新失败',
+    rollbackTitle: '回滚',
+    rollbackSub: '以下版本保留在服务器磁盘上，可随时退回。回滚只换程序文件，不动数据。',
+    rollbackEmpty: '暂无可回滚的版本（首次更新后会保留最近 3 个版本）。',
+    rollbackBtn: '回滚到此版本',
+    rollbackConfirm: '确认回滚到 {version}？服务将自动重启。',
+    rollbackStarted: '回滚已开始，服务即将重启',
+    historyTitle: '更新历史',
+    historyEmpty: '还没有更新记录',
+    hisUpdate: '更新',
+    hisRollback: '回滚',
+    hisNote: '备注',
+    resultPending: '待重启确认',
+    resultSuccess: '成功',
+    resultFailed: '失败',
+    phChecking: '检查 Release…',
+    phDownloading: '下载更新包…',
+    phVerifying: '校验 sha256…',
+    phSnapshotting: '拍摄数据库快照…',
+    phSwapping: '替换文件…',
+    phRestarting: '重启服务…',
+    builtAt: '构建时间',
+    commit: '提交',
+    dirtyBadge: '未复现构建',
+    publishedAt: '发布于',
+    viewRelease: '查看 Release',
+    noRelease: '仓库还没有发布任何 Release',
+    releaseNotes: '更新说明',
     trashTitle: '回收站',
     trashSub: '最近 7 天内删除的文章，可一键恢复',
     restore: '恢复',
@@ -835,6 +914,45 @@ export const adminEn: AdminTexts = {
     stPosts: 'posts',
     stCats: 'categories',
     stTags: 'tags',
+    updateTitle: 'Updates',
+    updateSub: 'Check the latest GitHub Release, update or roll back with one click. A database snapshot is taken before every update; the package ships backend and frontend together, so the two halves can never drift.',
+    currentVersion: 'Current version',
+    latestRelease: 'Latest release',
+    upToDate: 'Up to date',
+    updateAvailable: 'Update available',
+    applyUpdate: 'Update now',
+    applyConfirm: 'Apply this update? The service restarts automatically after download and verification; the site is briefly unavailable (a few seconds).',
+    applyStarted: 'Update job started — you can leave this page and check back later',
+    restartPending: 'Files in place, service restarting… this page will recover automatically.',
+    restartDone: 'Update finished: new version is running',
+    jobFailed: 'Update failed',
+    rollbackTitle: 'Rollback',
+    rollbackSub: 'These versions are kept on the server disk. Rolling back swaps program files only and never touches data.',
+    rollbackEmpty: 'No rollback copies yet (the last 3 versions are kept after the first update).',
+    rollbackBtn: 'Roll back to this version',
+    rollbackConfirm: 'Roll back to {version}? The service restarts automatically.',
+    rollbackStarted: 'Rollback started — the service restarts now',
+    historyTitle: 'Update history',
+    historyEmpty: 'No updates yet',
+    hisUpdate: 'Update',
+    hisRollback: 'Rollback',
+    hisNote: 'Note',
+    resultPending: 'Pending restart',
+    resultSuccess: 'Success',
+    resultFailed: 'Failed',
+    phChecking: 'Checking release…',
+    phDownloading: 'Downloading package…',
+    phVerifying: 'Verifying sha256…',
+    phSnapshotting: 'Taking a database snapshot…',
+    phSwapping: 'Swapping files…',
+    phRestarting: 'Restarting…',
+    builtAt: 'Built',
+    commit: 'Commit',
+    dirtyBadge: 'dirty build',
+    publishedAt: 'Published',
+    viewRelease: 'View release',
+    noRelease: 'No release published yet',
+    releaseNotes: 'Notes',
     trashTitle: 'Trash',
     trashSub: 'Posts deleted in the last 7 days — restore in one click',
     restore: 'Restore',

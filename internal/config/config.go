@@ -81,6 +81,24 @@ type Config struct {
 	// startup log line. Turn this on only for a private/staging deploy where a
 	// load balancer needs to read it over HTTP.
 	HealthShowVersion bool
+	// GitHubRepo is owner/name the self-updater polls for releases
+	// (GET /repos/<repo>/releases/latest). Change it if the site is forked
+	// and releases are published elsewhere.
+	GitHubRepo string
+	// GitHubToken is an OPTIONAL bearer token for release API/download calls.
+	// A public repo needs none; set one only if the repo goes private or the
+	// anonymous API rate limit is being exhausted. Held server-side like
+	// SmmsToken, never exposed through any endpoint.
+	GitHubToken string
+	// WebDir is the frontend dist directory name the updater swaps during an
+	// update. It is resolved RELATIVE TO THE BINARY's directory in the
+	// updater (/opt/lopezpress/web next to /opt/lopezpress/lopezpress), so
+	// the env value only records the name; a deployment that moved the dist
+	// elsewhere can override it.
+	WebDir string
+	// UpdateDir is the updater's scratch area: staging copy, job state and
+	// update history. Lives under data/ like every other mutable directory.
+	UpdateDir string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -142,6 +160,12 @@ func Load() *Config {
 		CaptchaEnabled: envBoolOr("CAPTCHA_ENABLED", true),
 		// Default off: a public probe should not answer "which build is this".
 		HealthShowVersion: envBoolOr("HEALTH_SHOW_VERSION", false),
+		// Self-update: where releases are polled and where the frontend dist
+		// lives. Defaults match the systemd deployment layout in deploy/.
+		GitHubRepo:  envOr("GITHUB_REPO", "RioLopez/lopezpress"),
+		GitHubToken: os.Getenv("GITHUB_TOKEN"),
+		WebDir:      envOr("WEB_DIR", "web"),
+		UpdateDir:   envOr("UPDATE_DIR", "data/updates"),
 	}
 }
 

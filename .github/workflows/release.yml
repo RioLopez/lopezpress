@@ -1,0 +1,96 @@
+# Release pipeline: a pushed `v*` tag builds the exact two artifacts the
+# in-panel updater deploys — the linux-amd64 server binary and the SPA dist —
+# packaged together so the backend and the frontend can never drift apart
+# (that drift is what deploy/check-live.sh exists to catch after the fact).
+#
+# The release asset layout is a contract with internal/services/updater.go:
+#   lopezpress            # static linux-amd64 binary, version stamped
+#   web/                  # contents of web/dist (index.html at web root)
+# plus a sibling sha256sums.txt asset the updater verifies before swapping
+# anything. Changing the layout means changing the updater in the same commit.
+#
+# Version truth: the tag is the release; the binary stamps come from it.
+# The repo-root VERSION file stays the development-side pointer and is bumped
+# in the same commit the tag points at.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go (toolchain floor from go.mod)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web dist
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build server binary (linux-amd64, CGO off)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-s -w \
+            -X lopezpress/internal/version.Version=${VER} \
+            -X lopezpress/internal/version.Commit=${COMMIT} \
+            -X lopezpress/internal/version.BuildTime=${BUILT} \
+            -X lopezpress/internal/version.Dirty=false"
+          echo "building lopezpress ${VER} (commit ${COMMIT}, built ${BUILT})"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="${LDFLAGS}" -o lopezpress ./cmd/server
+
+      - name: Package release asset
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+          ASSET="lopezpress-${VER}-linux-amd64.tar.gz"
+          # Flat layout, exactly what the updater expects:
+          #   lopezpress  +  web/
+          mkdir -p pkg
+          mv lopezpress pkg/lopezpress
+          cp -r web/dist pkg/web
+          test -f pkg/web/index.html || { echo "dist missing index.html"; exit 1; }
+          tar -czf "${ASSET}" -C pkg lopezpress web
+          sha256sum "${ASSET}" > sha256sums.txt
+          ls -lh "${ASSET}" sha256sums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+          gh release create "${TAG}" \
+            --title "lopezpress ${VER}" \
+            --generate-notes \
+            "lopezpress-${VER}-linux-amd64.tar.gz#lopezpress-${VER}-linux-amd64.tar.gz" \
+            "sha256sums.txt#sha256sums.txt"

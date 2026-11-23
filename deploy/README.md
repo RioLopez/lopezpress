@@ -137,7 +137,45 @@ admin 密码是**随机 22 位**，在 stderr 打印一次横幅（不进日志�
 
 ## 6. 升级 / 回滚
 
-升级只换二进制 + 前端产物，数据（`data/app.db`）独立保留：
+### 6.1 在线更新（推荐，root 在后台完成）
+
+代码推送 GitHub 后打一个 `v*` tag，`.github/workflows/release.yml` 自动构建
+linux-amd64 二进制 + 前端 dist（**同包发布，杜绝版本错配**），产出 Release 资产：
+
+```
+lopezpress-<ver>-linux-amd64.tar.gz   # 内含 lopezpress 二进制 + web/
+sha256sums.txt
+```
+
+之后在后台 **更新中心**（`/admin/update`，仅 root）：
+
+1. 页面显示当前版本 vs 最新 Release 对比；
+2. 点「立即更新」→ 服务端异步执行：下载资产 → sha256 校验 → **数据库快照** →
+   备份当前二进制/前端为 `lopezpress.v<ver>` / `web.v<ver>`（保留 3 份）→ 原子换新 →
+   进程优雅退出 → systemd（`Restart=always`）5 秒内拉起新版本；
+3. 回滚：回滚列表里一键退回任意保留版本（本地 rename，秒级完成，不动数据）；
+4. 更新历史记录在 `data/updates/history.json`（新版本启动成功后自动把
+   "待重启确认"关闭为"成功"）。
+
+**前置条件**（`lopezpress.service` 已内置）：
+
+| 配置 | 为什么 |
+|---|---|
+| `Restart=always` | 更新器换完文件后主动退出 0，靠 always 拉起新二进制；显式 `systemctl stop` 依然能正常停服 |
+| `ReadWritePaths` 含 `/opt/lopezpress` | 进程必须能 rename 应用目录内的文件（沙箱唯一妥协，`NoNewPrivileges`/`SystemCallFilter` 等全部保留） |
+| 服务器能访问 `api.github.com` + 对象下载 | 公开仓库匿名即可，无需 token；转 private 时在 `.env` 配 `GITHUB_TOKEN` |
+
+相关 `.env`（可选覆盖）：`GITHUB_REPO`（默认 `RioLopez/lopezpress`）、`GITHUB_TOKEN`、`WEB_DIR`（默认 `web`）、`UPDATE_DIR`（默认 `data/updates`）。
+
+**新版本启动失败的兜底**：保留的 `lopezpress.v<ver>` / `web.v<ver>` 就是逃生门——
+
+```bash
+ssh root@VPS 'cd /opt/lopezpress && mv lopezpress lopezpress.broken && \
+  mv lopezpress.v1.0.30 lopezpress && mv web web.broken && \
+  mv web.v1.0.30 web && systemctl restart lopezpress'
+```
+
+### 6.2 手动部署（离线 / 不走 CI）
 
 ```bash
 bash deploy/build.sh                                   # 构建 bin/lopezpress-<ver>-linux-amd64

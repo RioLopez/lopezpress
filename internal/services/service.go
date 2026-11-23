@@ -67,6 +67,11 @@ type Service struct {
 	// busy indefinitely.
 	uploadMu    sync.Mutex
 	uploadGates map[string]*uploadBuckets
+
+	// upd carries the self-update job state, release cache and restart hook
+	// (updater.go). One pointer so the updater internals do not widen this
+	// struct's field list.
+	upd *updaterState
 }
 
 // New builds a Service backed by db and cfg.
@@ -76,6 +81,7 @@ func New(db *gorm.DB, cfg *config.Config) *Service {
 		cfg:         cfg,
 		mailT:       newMailThrottler(),
 		thumbs:      make(chan string, thumbQueueCap),
+		upd:         newUpdaterState(),
 		viewPending: make(map[string]int64),
 		viewSeen:    make(map[string]struct{}),
 		// Start the flush clock at construction. Left at the zero value the

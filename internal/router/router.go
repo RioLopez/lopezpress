@@ -208,6 +208,15 @@ var routes = []route{
 	{method: "POST", path: "/api/admin/backup/auto", auth: authRequired, roles: rootRoles, handler: handlers.RunAutoBackupNow},
 	{method: "POST", path: "/api/admin/backup/uploads/{name}/restore", auth: authRequired, roles: rootRoles, handler: handlers.RestoreUploadsSnapshot},
 
+	// ---- Root-only: self-update via GitHub Releases ----
+	// Replacing the binary is strictly more powerful than importing a backup,
+	// so the whole surface rides the same root gate. Status is read-only and
+	// cached server-side; apply is async (202) and swaps files before the
+	// process exits for systemd to restart; rollback is local renames.
+	{method: "GET", path: "/api/admin/update/status", auth: authRequired, roles: rootRoles, handler: handlers.GetUpdateStatus},
+	{method: "POST", path: "/api/admin/update/apply", auth: authRequired, roles: rootRoles, handler: handlers.ApplyUpdate},
+	{method: "POST", path: "/api/admin/update/rollback", auth: authRequired, roles: rootRoles, handler: handlers.RollbackUpdate},
+
 	// ---- Admin (admin|root): image library ----
 	// Site-wide asset view: who uploaded what, when, from where, and what still
 	// references it. Plain admins get it too — they moderate content, and the

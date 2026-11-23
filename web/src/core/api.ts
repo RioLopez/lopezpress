@@ -42,6 +42,7 @@ import type {
   UserPublic,
   UserStats,
   UserWithDisabled,
+  UpdateStatus,
 } from './types'
 
 // --- auth ---
@@ -230,6 +231,27 @@ export const getAutoBackupStatus = () =>
 
 export const runAutoBackup = () =>
   request<{ file: string }>('/api/admin/backup/auto', { method: 'POST' })
+
+// --- self-update (root-only) ---
+// Status is the poll target while a job runs: the UI refreshes it every few
+// seconds; the server caches the GitHub "latest release" lookup for 60s so
+// polling never turns into GitHub quota burn.
+export const getUpdateStatus = () => request<UpdateStatus>('/api/admin/update/status')
+
+// Apply fires an async job and returns immediately (202). Empty/missing
+// version = latest release; a pinned version targets that tag.
+export const applyUpdate = (version?: string) =>
+  request<{ started: boolean }>('/api/admin/update/apply', {
+    method: 'POST',
+    body: JSON.stringify({ version: version ?? '' }),
+  })
+
+// Rollback swaps the running build for a kept previous version and restarts.
+export const rollbackUpdate = (version: string) =>
+  request<{ restarting: boolean }>('/api/admin/update/rollback', {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  })
 
 // Copies missing files back from one uploads-* snapshot. Additive: existing
 // files are never overwritten, so a repeat run is harmless.

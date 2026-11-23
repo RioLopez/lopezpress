@@ -122,6 +122,18 @@ func main() {
 	svc := services.New(db, cfg)
 	handlers.Init(db, cfg, svc)
 
+	// Self-update plumbing. FinishPendingUpdate closes the previous process's
+	// planned-update entry in data/updates/history.json (success vs
+	// "planned but did not come up") — it reads one small JSON file and
+	// returns immediately when there is none.
+	svc.FinishPendingUpdate()
+	// The restart hook is the updater's ONLY exit path: cancelling this
+	// signal context is byte-for-byte equivalent to receiving SIGTERM, so the
+	// normal graceful path (drain HTTP, flush views) runs before the process
+	// exits 0 and systemd's Restart=always brings up the new binary. No
+	// sudo, no systemctl, no shell — the sandbox stays intact.
+	svc.SetRestartHook(func() { stop() })
+
 	// Thumbnail pipeline: one goroutine produces thumbnails for the image library,
 	// one image at a time, out of the request path. It re-queues whatever a
 	// previous run left pending, so a crash mid-queue costs nothing.

@@ -2877,4 +2877,207 @@ input.search-input {
   .pe-drawer-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 }
 
+/* =========================================================================
+   Editorial chrome — override layer (2026-11-23)
+   头部与侧栏的编辑风重排：内容为主、边栏为注。
+   - Header：topbar 内容与 1120 版心对齐；导航从胶囊改为文字 + 主色下划线
+     指示条；品牌名换衬线（与列表页 h1 同一排版语言）。
+   - 侧栏（≥1024）：去盒化（无框无底色，细分隔线 + muted 小标题），
+     sticky 吸附在 topbar 下方，宽度固定 256px，主栏拿走剩余全部空间
+     → 视觉重心回到左侧正文。
+   ≤1023 侧栏仍走底部抽屉筛选，≤639 导航仍是下拉菜单，均不受本层影响。
+   ========================================================================= */
 
+/* Header: align with the page's 1120px container so the brand sits on the
+   same vertical line as the content below (full-width padding was the main
+   reason the old bar read as "后台感"). */
+@media (min-width: 640px) {
+  .topbar { padding: 0 max(20px, calc((100% - 1120px) / 2)); }
+  /* The editor route is an app-like full-bleed canvas (max 1440): keep its
+     bar edge-aligned with that canvas instead of the reading column. */
+  .layout--editor .topbar { padding: 0 24px; }
+
+  .topbar-brand {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    letter-spacing: .01em;
+  }
+  .brand-dot { width: 10px; height: 10px; }
+
+  /* Nav: quiet text links with a primary underline that lands exactly on the
+     topbar's bottom border. Pills fought the serif/editorial voice. */
+  .topbar-nav { margin-left: 40px; gap: 28px; }
+  .topbar-nav .nav-link {
+    background: none;
+    border-radius: 0;
+    padding: 0;
+    font-size: 14px;
+    color: var(--text-muted);
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+  }
+  .topbar-nav .nav-link::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 2px;
+    background: transparent;
+    transition: background .15s var(--ease);
+  }
+  .topbar-nav .nav-link:hover { background: none; color: var(--text); }
+  .topbar-nav .nav-link--active { background: none; color: var(--text); font-weight: 600; }
+  .topbar-nav .nav-link--active::after { background: var(--primary); }
+  /* "管理" keeps a pill — it is an action into another surface, not a place
+     inside this one, so it earns a border instead of an underline. */
+  .topbar-nav .nav-link--admin {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    align-self: center;
+    height: auto;
+    padding: 4px 12px;
+    font-size: 13px;
+  }
+  .topbar-nav .nav-link--admin::after { display: none; }
+  .topbar-nav .nav-link--admin:hover { color: var(--primary); border-color: var(--primary); }
+}
+
+/* Sidebar: sticky + de-boxed editorial (desktop only; ≤1023 keeps the bottom
+   sheet with its boxed sections). */
+@media (min-width: 1024px) {
+  /* Narrow the reading container a touch: 1120 - 256 sidebar - 44 gap leaves
+     the main column at 820, wide enough for cards, narrow enough that the
+     eye starts on the left text and the sidebar reads as a footnote rail. */
+  .list-page { max-width: 1120px; }
+  .list-layout { gap: 44px; }
+  .list-main { flex: 1 1 auto; }
+
+  .sidebar {
+    position: sticky;
+    top: calc(var(--topbar-h) + 24px);
+    flex: 0 0 256px;
+    min-width: 0;
+    align-self: flex-start;
+  }
+
+  /* De-box: no borders/backgrounds per section — hairline dividers only.
+     Scoping to ≥1024 keeps the ≤1023 bottom sheet's card look intact. */
+  .sidebar-section { background: transparent; border: 0; padding: 0; }
+  .sidebar-section:first-child { border-radius: 0; }
+  .sidebar-section:last-child { border-radius: 0; }
+  .sidebar-section + .sidebar-section {
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: .08em;
+  }
+  .sidebar-link { font-size: 13.5px; padding: 5px 0; }
+  .sidebar-link:hover { color: var(--text); }
+  .sidebar-link--active { color: var(--primary); }
+  .sidebar-link--child { font-size: 13px; }
+
+  /* Quieter pills so the tag cloud doesn't re-box the de-boxed column. */
+  .tag-pill { border-radius: 999px; padding: 3px 10px; }
+
+  .recent-title { font-weight: 400; }
+  .recent-item:hover .recent-title { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+}
+
+
+
+/* =========================================================================
+   Update center (root-only) �� 2026-11-23
+   Reuses .admin-page / .admin-table / .btn tokens; only the two version
+   cards and the job banner need their own classes.
+   ========================================================================= */
+.update-cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 0 8px;
+}
+.update-card {
+  flex: 1 1 300px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.update-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.update-card-version {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.update-card-meta { font-size: 13px; margin-top: 4px; }
+.update-card-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.update-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.update-badge--new {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+.update-badge--ok { background: var(--surface-2); }
+.update-result--success {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: var(--success);
+  color: var(--success);
+}
+.update-result--failed {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.update-banner {
+  padding: 12px 16px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 14px;
+}
+.update-banner--active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.update-banner--error {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+.update-section { margin-top: 28px; }
+.update-section h2 { font-size: 17px; margin: 0 0 4px; }
+.update-notes { margin-top: 12px; font-size: 13px; }
+.update-notes summary { cursor: pointer; }
+.update-notes pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface-2);
+  padding: 12px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+}

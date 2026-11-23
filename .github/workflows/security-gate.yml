@@ -26,8 +26,24 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Backend unit tests
+        run: go test -count=1 ./internal/...
+
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Frontend typecheck
+        run: npm run typecheck
+        working-directory: web
+
+      - name: Frontend tests
+        # --no-file-parallelism: parallel runs miss files in this suite.
+        run: npx vitest run --no-file-parallelism
+        working-directory: web
 
       - name: Architecture gate
         run: python3 scripts/arch_check.py

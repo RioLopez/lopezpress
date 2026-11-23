@@ -39,6 +39,7 @@ import { AdminMenusPage } from './pages/AdminMenusPage'
 import { AuthorPage } from './pages/AuthorPage'
 import { AdminReviewPage } from './pages/AdminReviewPage'
 import { AdminBanVaultPage } from './pages/AdminBanVaultPage'
+import { AdminUpdatePage } from './pages/AdminUpdatePage'
 
 // Authed content pages redirect to /login when there is no JWT.
 function Guarded({ children }: { children: any }) {
@@ -215,6 +216,11 @@ function AppView() {
       <Route
         path="/admin/banned"
         component={() => <AdminGuarded roles={['root']}><AdminBanVaultPage /></AdminGuarded>}
+      />
+      {/* Update center: replacing the binary is root-only by definition. */}
+      <Route
+        path="/admin/update"
+        component={() => <AdminGuarded roles={['root']}><AdminUpdatePage /></AdminGuarded>}
       />
 
       <Route

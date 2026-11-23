@@ -176,6 +176,9 @@ Base URL：`http://localhost:8080`（可用 `PORT` 环境变量覆盖）
 | GET | `/api/admin/backup/auto` | root | 自动备份状态：`{enabled, keep, interval_days, hour, include_uploads, subdir, dir, dir_abs, uploads_dir, uploads_dir_abs, uploads_snapshot_dir, uploads_snapshot_dir_abs, uploads_snapshot_name, server_now, server_zone, last_at, files, uploads_snapshots, uploads_last_at}`。`dir_abs` 是实际写入的绝对路径；`uploads_dir_abs` 是数据库快照**不含**的附件目录；`uploads_snapshot_dir_abs` 是最新 `uploads-*` 快照的实际路径（没有则为空串）；`uploads_snapshot_name` 是该目录名，可直接传给还原端点；`server_now`/`server_zone` 是服务器当前时间与时区，`hour` 按此时钟解释 |
 | POST | `/api/admin/backup/auto` | root | 立即生成当日快照（跳过频率/时间门槛，但当天已有文件时仍幂等返回空 `file`） |
 | POST | `/api/admin/backup/uploads/{name}/restore` | root | 从 `uploads-YYYYMMDD` 快照**补回缺失的附件文件**，返回 `{name, restored, skipped, bytes}`。**只补缺失、不覆盖已存在文件**，可重复执行；不改数据库，建议先恢复同一时间的 `.db` 快照。名称非法（路径分隔符、`..`、非日期形状）返回 400，快照不存在返回 404 |
+| GET | `/api/admin/update/status` | **root** | 在线更新状态：`{current{version,commit,built,dirty}, latest{tag,version,name,published_at,url,notes}\|null, update_available, rollback[{version,binary,web}], job{phase,message,error,target,started_at,updated_at}, history[]}`。GitHub 最新 Release 查询有 60s 缓存，可放心轮询 |
+| POST | `/api/admin/update/apply` | **root** | 启动更新任务（异步，202 即返回）：下载 Release 资产 → sha256 校验 → DB 快照 → 备份并换新二进制+web 目录 → 优雅退出自重启。body `{version:""}`=最新 Release，`{version:"1.0.34"}`=指定版本 |
+| POST | `/api/admin/update/rollback` | **root** | 回滚到磁盘保留的旧版本（`lopezpress.v<ver>` + `web.v<ver>` 成对才允许），body `{version:"1.0.33"}`，返回前已调度重启 |
 
 ---
 
@@ -368,6 +371,7 @@ frontmatter 支持 `title / date / category / tags / draft`；无 frontmatter �
 
 | 版本 / 轮次 | 契约变化 |
 |---|---|
+| 1.0.34 | 新增在线更新端点 `GET /api/admin/update/status`、`POST /api/admin/update/apply`、`POST /api/admin/update/rollback`（均 root）；`.env` 新增可选 `GITHUB_REPO`/`GITHUB_TOKEN`/`WEB_DIR`/`UPDATE_DIR` |
 | 1.0.33 | 新增 `POST /api/admin/backup/uploads/{name}/restore`（root）：从 `uploads-YYYYMMDD` 快照补回**缺失**附件，返回 `{name, restored, skipped, bytes}`，只补不覆盖；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_name` |
 | 1.0.32 | `GET /api/uploads` 行新增 `variant_count`（同源活跃版本数）；`GET /api/admin/backup/auto` 新增 `uploads_snapshot_dir`/`uploads_snapshot_dir_abs`/`server_now`/`server_zone`。行为修正：GIF 不再重编码（原样存储，动画帧不再被丢弃），`lossless` 仍为 JPEG 质量 100 |
 | 1.0.31 | `POST /api/upload` 新增可选 `max_width`/`max_height`/`quality`/`lossless`，响应新增 `transform`/`source_sha256`；`GET /api/uploads` 的 `kind` 支持合成值 `image`（非 PDF），`stats` 按同一口径统计，行新增 `transform`/`source_sha256`；`GET /api/admin/site-config` 新增只读 `app_version`；`PUT /api/admin/site-config` 新增 `backup_subdir`/`backup_interval_days`/`backup_hour`/`backup_include_uploads`；`GET /api/admin/backup/auto` 新增位置与频率字段 |

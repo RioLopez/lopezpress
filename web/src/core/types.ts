@@ -590,3 +590,53 @@ export interface MenuItem {
   visible: boolean
   sort: number
 }
+
+// --- self-update (root-only; mirrors internal/services/updater.go DTOs) ---
+export interface UpdateCurrentInfo {
+  version: string
+  commit: string
+  built: string
+  dirty: boolean
+}
+
+export interface UpdateReleaseInfo {
+  tag: string
+  version: string
+  name: string
+  published_at: string
+  url: string
+  notes: string
+}
+
+export interface UpdateRollbackOption {
+  version: string
+  binary: boolean
+  web: boolean
+}
+
+export interface UpdateJobState {
+  phase: 'idle' | 'checking' | 'downloading' | 'verifying' | 'snapshotting' | 'swapping' | 'restarting' | 'done' | 'failed'
+  message?: string
+  error?: string
+  target?: string
+  started_at?: string
+  updated_at?: string
+}
+
+export interface UpdateHistoryEntry {
+  action: 'update' | 'rollback' | 'note'
+  from: string
+  to: string
+  at: string
+  result: 'pending-restart' | 'success' | 'failed'
+  note?: string
+}
+
+export interface UpdateStatus {
+  current: UpdateCurrentInfo
+  latest: UpdateReleaseInfo | null
+  update_available: boolean
+  rollback: UpdateRollbackOption[]
+  job: UpdateJobState
+  history: UpdateHistoryEntry[]
+}

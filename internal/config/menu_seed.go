@@ -25,19 +25,33 @@ var menuSeeds = []models.MenuItem{
 	{Key: "menus", LabelKey: "menuAdmin.title", Path: "/admin/menus", GroupKey: "system", RootOnly: true, Sort: 110},
 	{Key: "backup", LabelKey: "admin.backupTitle", Path: "/admin/backup", GroupKey: "system", Sort: 120},
 	{Key: "audit", LabelKey: "audit.title", Path: "/admin/audit", GroupKey: "system", Sort: 130},
+	{Key: "update", LabelKey: "admin.updateTitle", Path: "/admin/update", GroupKey: "system", RootOnly: true, Sort: 140},
 }
 
-// seedMenuItems inserts the built-in rows once. An existing install keeps
-// whatever the operator has reordered, hidden or added; a fresh install gets
-// the same sidebar the hardcoded array used to produce.
+// seedMenuItems inserts the built-in rows once. A fresh install gets the full
+// set; an EXISTING install keeps whatever the operator has reordered, hidden
+// or added — and still picks up built-in rows that shipped later (the update
+// center, for one): a built-in key missing from the table is inserted once,
+// never re-applied over an edited row.
 func seedMenuItems(db *gorm.DB) {
 	var n int64
-	if err := db.Model(&models.MenuItem{}).Count(&n).Error; err != nil || n > 0 {
+	if err := db.Model(&models.MenuItem{}).Count(&n).Error; err != nil {
+		return
+	}
+	if n == 0 {
+		for _, item := range menuSeeds {
+			row := item
+			row.Visible = true
+			_ = db.Create(&row).Error
+		}
 		return
 	}
 	for _, item := range menuSeeds {
-		row := item
-		row.Visible = true
-		_ = db.Create(&row).Error
+		var c int64
+		if err := db.Model(&models.MenuItem{}).Where("key = ?", item.Key).Count(&c).Error; err == nil && c == 0 {
+			row := item
+			row.Visible = true
+			_ = db.Create(&row).Error
+		}
 	}
 }
